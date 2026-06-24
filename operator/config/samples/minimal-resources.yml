@@ -1,0 +1,28 @@
+# File: Test_App.yaml
+# resource_type: application
+id: 019ef999-0000-7000-a000-000000000001
+ouId: 019ef800-2f41-7e0c-a156-8ea590c5e97b
+name: Test App
+description: Minimal test application
+authFlowId: 019ef800-36c3-74b3-a4ae-b0f933267cac
+isRegistrationFlowEnabled: false
+isRecoveryFlowEnabled: false
+assertion:
+  validityPeriod: 3600
+loginConsent:
+  validityPeriod: 0
+allowedUserTypes:
+  - Person
+inboundAuthConfig:
+  - type: oauth2
+    config:
+      clientId: TEST_APP
+      redirectUris:
+        - http://localhost:3000
+      grantTypes:
+        - authorization_code
+      responseTypes:
+        - code
+      tokenEndpointAuthMethod: none
+      pkceRequired: true
+      publicClient: true

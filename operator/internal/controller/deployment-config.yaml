@@ -1,0 +1,56 @@
+server:
+  hostname: "0.0.0.0"
+  port: 8090
+  public_url: "%s"
+
+tls:
+  min_version: "1.3"
+  cert_file: "repository/resources/security/server.cert"
+  key_file: "repository/resources/security/server.key"
+
+database:
+  config:
+    type: "sqlite"
+    sqlite:
+      path: "repository/database/configdb.db"
+      options: "_journal_mode=WAL&_busy_timeout=5000&_pragma=foreign_keys(1)"
+      max_open_conns: 500
+      max_idle_conns: 100
+      conn_max_lifetime: 3600
+  runtime:
+    type: "sqlite"
+    sqlite:
+      path: "repository/database/runtimedb.db"
+      options: "_journal_mode=WAL&_busy_timeout=5000&_pragma=foreign_keys(1)"
+      max_open_conns: 500
+      max_idle_conns: 100
+      conn_max_lifetime: 3600
+  user:
+    type: "sqlite"
+    sqlite:
+      path: "repository/database/userdb.db"
+      options: "_journal_mode=WAL&_busy_timeout=5000&_pragma=foreign_keys(1)"
+      max_open_conns: 500
+      max_idle_conns: 100
+      conn_max_lifetime: 3600
+
+crypto:
+  encryption:
+    key: "file://repository/resources/security/crypto.key"
+  password_hashing:
+    algorithm: "PBKDF2"
+  keys:
+    - id: "default-key"
+      cert_file: "repository/resources/security/signing.cert"
+      key_file: "repository/resources/security/signing.key"
+
+jwt:
+  preferred_key_id: "default-key"
+
+cors:
+  allowed_origins:
+    - "%s"
+
+passkey:
+  allowed_origins:
+    - "%s"

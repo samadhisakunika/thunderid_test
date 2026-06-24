@@ -1,0 +1,153 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ThunderIDInstance
+metadata:
+  name: test-inline
+  namespace: default
+spec:
+  image: ghcr.io/thunder-id/thunderid:latest
+  replicas: 1
+  domain: thunderid.local
+  resourcesYAML: |
+    # File: Default.yaml
+    # resource_type: organization_unit
+    id: 019ef85a-0aa4-7736-9357-d25edba4db95
+    handle: default
+    name: Default
+    description: Default organization unit
+    parent: null
+    logoUrl: emoji:🏛️
+    createdAt:
+    updatedAt:
+    ---
+    # File: Default_Basic_Authentication_Flow.yaml
+    # resource_type: flow
+    id: 019ef85a-0cae-7fda-b271-e0c1adbc49da
+    handle: default-basic-flow
+    name: Default Basic Authentication Flow
+    flowType: AUTHENTICATION
+    activeVersion: 1
+    nodes:
+      - id: start
+        type: START
+        onSuccess: prompt_credentials
+      - id: prompt_credentials
+        type: PROMPT
+        meta: '{"components":[{"alt":"{{ t(signin:images.app_logo.alt) }}","category":"DISPLAY","height":"60","id":"image","resourceType":"ELEMENT","src":"{{ meta(application.logoUrl) }}","type":"IMAGE","width":""},{"align":"center","id":"text_001","label":"{{ t(signin:forms.credentials.title) }}","type":"TEXT","variant":"HEADING_1"},{"components":[{"id":"input_001","label":"{{ t(signin:forms.credentials.fields.username.label) }}","placeholder":"{{ t(signin:forms.credentials.fields.username.placeholder) }}","ref":"username","required":true,"type":"TEXT_INPUT"},{"id":"input_002","label":"{{ t(signin:forms.credentials.fields.password.label) }}","placeholder":"{{ t(signin:forms.credentials.fields.password.placeholder) }}","ref":"password","required":true,"type":"PASSWORD_INPUT"},{"eventType":"SUBMIT","id":"action_001","label":"{{ t(signin:forms.credentials.actions.submit.label) }}","type":"ACTION","variant":"PRIMARY"}],"id":"block_001","type":"BLOCK"}]}'
+        prompts:
+          - inputs:
+              - ref: input_001
+                type: TEXT_INPUT
+                identifier: username
+                required: true
+              - ref: input_002
+                type: PASSWORD_INPUT
+                identifier: password
+                required: true
+            action:
+              ref: action_001
+              nextNode: credentials_auth
+      - id: credentials_auth
+        type: TASK_EXECUTION
+        executor:
+          name: CredentialsAuthExecutor
+        onSuccess: authorization_check
+        onIncomplete: prompt_credentials
+      - id: authorization_check
+        type: TASK_EXECUTION
+        executor:
+          name: AuthorizationExecutor
+        onSuccess: auth_assert
+      - id: auth_assert
+        type: TASK_EXECUTION
+        executor:
+          name: AuthAssertExecutor
+        onSuccess: end
+      - id: end
+        type: END
+    ---
+    # File: Test_App.yaml
+    # resource_type: application
+    id: 019ef861-4b48-7318-97b6-4fcceea9a365
+    ouId: 019ef85a-0aa4-7736-9357-d25edba4db95
+    name: Test App NEW
+    template: custom
+    authFlowId: 019ef85a-0cae-7fda-b271-e0c1adbc49da
+    isRegistrationFlowEnabled: false
+    isRecoveryFlowEnabled: false
+    assertion:
+      validityPeriod: 3600
+    loginConsent:
+      validityPeriod: 0
+    inboundAuthConfig:
+      - type: oauth2
+        config:
+          clientId: TEST_APP
+          redirectUris: []
+          grantTypes:
+            - client_credentials
+          tokenEndpointAuthMethod: client_secret_basic
+          pkceRequired: false
+          publicClient: false
+          requirePushedAuthorizationRequests: false
+          dpopBoundAccessTokens: false
+          includeActClaim: false
+          token:
+            accessToken:
+              validityPeriod: 3600
+            idToken:
+              validityPeriod: 3600
+            refreshToken:
+              validityPeriod: 86400
+          scopes:
+            - openid
+            - profile
+            - email
+          userInfo:
+            responseType: JSON
+    
+    ---
+    # File: Employee.yaml
+    # resource_type: user_type
+    id: <generate-a-new-uuid>
+    category: user
+    name: Custom Employee
+    ouId: 019ef85a-0aa4-7736-9357-d25edba4db95
+    systemAttributes:
+      display: username
+    schema: {
+        "username": {
+          "type": "string",
+          "displayName": "Username",
+          "required": true,
+          "unique": true
+        },
+        "email": {
+          "type": "string",
+          "displayName": "Email",
+          "required": true,
+          "unique": true,
+          "regex": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+        },
+        "given_name": {
+          "type": "string",
+          "displayName": "First Name",
+          "required": false
+        },
+        "family_name": {
+          "type": "string",
+          "displayName": "Last Name",
+          "required": false
+        },
+        "department": {
+          "type": "string",
+          "displayName": "Department",
+          "required": false
+        },
+        "password": {
+          "type": "string",
+          "displayName": "Password",
+          "required": false,
+          "credential": true
+        }
+      }
+
