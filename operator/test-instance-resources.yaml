@@ -6,5 +6,5 @@ metadata:
 spec:
   image: ghcr.io/thunder-id/thunderid:latest
   replicas: 1
-  domain: thunderid.local
+  domain: localhost:8090
   resourcesConfigMap: thunderid-resources

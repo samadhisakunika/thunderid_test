@@ -1,0 +1,10 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Theme
+metadata:
+  name: my-custom-theme
+  namespace: default
+spec:
+  instanceRef: test-resources
+  displayName: My Custom Theme 1
+  description: A test theme applied via the Theme CRD
+  theme: '{"defaultColorScheme":"dark","colorSchemes":{"dark":{"palette":{"primary":{"main":"#5567d5"}}}}}'
