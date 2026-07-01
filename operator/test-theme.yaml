@@ -5,6 +5,6 @@ metadata:
   namespace: default
 spec:
   instanceRef: test-resources
-  displayName: My Custom Theme 1
+  displayName: My Custom Theme 3
   description: A test theme applied via the Theme CRD
   theme: '{"defaultColorScheme":"dark","colorSchemes":{"dark":{"palette":{"primary":{"main":"#5567d5"}}}}}'
