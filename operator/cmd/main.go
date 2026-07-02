@@ -201,6 +201,13 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "flow")
 		os.Exit(1)
 	}
+	if err := (&controller.ApplicationReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "application")
+		os.Exit(1)
+	}
 
 	// +kubebuilder:scaffold:builder
 

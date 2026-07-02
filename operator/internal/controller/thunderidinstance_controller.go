@@ -73,7 +73,10 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Hash includes themes-version and flows-version annotations so pod rolls when either changes.
 	configHash := func() string {
 		h := sha256.New()
-		h.Write([]byte(publicURL + instance.Spec.ResourcesYAML + instance.Spec.ResourcesConfigMap + instance.Annotations["thunderid.io/themes-version"] + instance.Annotations["thunderid.io/flows-version"]))
+		h.Write([]byte(publicURL + instance.Spec.ResourcesYAML + instance.Spec.ResourcesConfigMap +
+			instance.Annotations["thunderid.io/themes-version"] +
+			instance.Annotations["thunderid.io/flows-version"] +
+			instance.Annotations["thunderid.io/applications-version"]))
 		return hex.EncodeToString(h.Sum(nil))[:16]
 	}()
 
@@ -157,6 +160,19 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	}, flowsCM); err == nil {
 		if flowsYAML := flowsCM.Data["flows.yaml"]; flowsYAML != "" {
 			resourcesContent += "\n" + flowsYAML
+		}
+	} else if !errors.IsNotFound(err) {
+		return "", err
+	}
+
+	// Append application documents if the applications ConfigMap exists.
+	appsCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      instance.Name + "-applications",
+		Namespace: instance.Namespace,
+	}, appsCM); err == nil {
+		if appsYAML := appsCM.Data["applications.yaml"]; appsYAML != "" {
+			resourcesContent += "\n" + appsYAML
 		}
 	} else if !errors.IsNotFound(err) {
 		return "", err

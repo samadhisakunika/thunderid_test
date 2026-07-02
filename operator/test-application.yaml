@@ -1,0 +1,13 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: my-web-app
+  namespace: default
+spec:
+  instanceRef: test-resources
+  name: My Web App4
+  description: Test application
+  url: https://myapp.example.com
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0e5d-77bb-8557-bedefd01961d"
