@@ -4,6 +4,8 @@
 resources:
 - bases/apps.thunderid.io_thunderidinstances.yaml
 - bases/apps.thunderid.io_themes.yaml
+- bases/apps.thunderid.io_flows.yaml
+- bases/apps.thunderid.io_applications.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

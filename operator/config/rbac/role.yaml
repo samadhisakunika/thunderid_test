@@ -32,6 +32,8 @@ rules:
 - apiGroups:
   - apps.thunderid.io
   resources:
+  - applications
+  - flows
   - themes
   - thunderidinstances
   verbs:
@@ -45,6 +47,8 @@ rules:
 - apiGroups:
   - apps.thunderid.io
   resources:
+  - applications/status
+  - flows/status
   - themes/status
   - thunderidinstances/status
   verbs:

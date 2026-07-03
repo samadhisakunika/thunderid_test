@@ -70,10 +70,13 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		log.Error(err, "failed to reconcile ConfigMap")
 		return ctrl.Result{}, err
 	}
-	// Hash includes themes-version annotation so pod rolls when themes change.
+	// Hash includes themes-version and flows-version annotations so pod rolls when either changes.
 	configHash := func() string {
 		h := sha256.New()
-		h.Write([]byte(publicURL + instance.Spec.ResourcesYAML + instance.Spec.ResourcesConfigMap + instance.Annotations["thunderid.io/themes-version"]))
+		h.Write([]byte(publicURL + instance.Spec.ResourcesYAML + instance.Spec.ResourcesConfigMap +
+			instance.Annotations["thunderid.io/themes-version"] +
+			instance.Annotations["thunderid.io/flows-version"] +
+			instance.Annotations["thunderid.io/applications-version"]))
 		return hex.EncodeToString(h.Sum(nil))[:16]
 	}()
 
@@ -144,6 +147,32 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	}, themesCM); err == nil {
 		if themesYAML := themesCM.Data["themes.yaml"]; themesYAML != "" {
 			resourcesContent += "\n" + themesYAML
+		}
+	} else if !errors.IsNotFound(err) {
+		return "", err
+	}
+
+	// Append flow documents if the flows ConfigMap exists.
+	flowsCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      instance.Name + "-flows",
+		Namespace: instance.Namespace,
+	}, flowsCM); err == nil {
+		if flowsYAML := flowsCM.Data["flows.yaml"]; flowsYAML != "" {
+			resourcesContent += "\n" + flowsYAML
+		}
+	} else if !errors.IsNotFound(err) {
+		return "", err
+	}
+
+	// Append application documents if the applications ConfigMap exists.
+	appsCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      instance.Name + "-applications",
+		Namespace: instance.Namespace,
+	}, appsCM); err == nil {
+		if appsYAML := appsCM.Data["applications.yaml"]; appsYAML != "" {
+			resourcesContent += "\n" + appsYAML
 		}
 	} else if !errors.IsNotFound(err) {
 		return "", err
