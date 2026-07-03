@@ -5,29 +5,44 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+type AssertionSpec struct {
+	ValidityPeriod int64 `json:"validityPeriod,omitempty"`
+}
+
+type LoginConsentSpec struct {
+	ValidityPeriod int64 `json:"validityPeriod,omitempty"`
+}
+
 type ApplicationSpec struct {
-	InstanceRef            string `json:"instanceRef"`
-	Name                   string `json:"name"`
-	Description            string `json:"description,omitempty"`
-	URL                    string `json:"url,omitempty"`
-	OUHandle               string `json:"ouHandle,omitempty"`
-	OUID                   string `json:"ouId,omitempty"`
-	AuthFlowRef            string `json:"authFlowRef,omitempty"`
-	AuthFlowHandle         string `json:"authFlowHandle,omitempty"`
-	AuthFlowID             string `json:"authFlowId,omitempty"`
-	RegistrationFlowRef    string `json:"registrationFlowRef,omitempty"`
-	RegistrationFlowHandle string `json:"registrationFlowHandle,omitempty"`
-	RecoveryFlowRef        string `json:"recoveryFlowRef,omitempty"`
-	RecoveryFlowHandle     string `json:"recoveryFlowHandle,omitempty"`
-	ThemeRef               string `json:"themeRef,omitempty"`
-	ThemeID                string `json:"themeId,omitempty"`
-	InboundAuthConfig      string `json:"inboundAuthConfig,omitempty"`
+	InstanceRef               string            `json:"instanceRef"`
+	Name                      string            `json:"name"`
+	Description               string            `json:"description,omitempty"`
+	URL                       string            `json:"url,omitempty"`
+	LogoURL                   string            `json:"logoUrl,omitempty"`
+	OUHandle                  string            `json:"ouHandle,omitempty"`
+	OUID                      string            `json:"ouId,omitempty"`
+	AuthFlowRef               string            `json:"authFlowRef,omitempty"`
+	AuthFlowHandle            string            `json:"authFlowHandle,omitempty"`
+	AuthFlowID                string            `json:"authFlowId,omitempty"`
+	RegistrationFlowRef       string            `json:"registrationFlowRef,omitempty"`
+	RegistrationFlowHandle    string            `json:"registrationFlowHandle,omitempty"`
+	IsRegistrationFlowEnabled bool              `json:"isRegistrationFlowEnabled,omitempty"`
+	RecoveryFlowRef           string            `json:"recoveryFlowRef,omitempty"`
+	RecoveryFlowHandle        string            `json:"recoveryFlowHandle,omitempty"`
+	IsRecoveryFlowEnabled     bool              `json:"isRecoveryFlowEnabled,omitempty"`
+	Assertion                 *AssertionSpec    `json:"assertion,omitempty"`
+	LoginConsent              *LoginConsentSpec `json:"loginConsent,omitempty"`
+	AllowedUserTypes          []string          `json:"allowedUserTypes,omitempty"`
+	ThemeRef                  string            `json:"themeRef,omitempty"`
+	ThemeID                   string            `json:"themeId,omitempty"`
+	InboundAuthConfig         string            `json:"inboundAuthConfig,omitempty"`
 }
 
 type ApplicationStatus struct {
-	Phase      string             `json:"phase,omitempty"`
-	Synced     bool               `json:"synced,omitempty"`
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Phase        string             `json:"phase,omitempty"`
+	Synced       bool               `json:"synced,omitempty"`
+	LastSyncTime *metav1.Time       `json:"lastSyncTime,omitempty"`
+	Conditions   []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

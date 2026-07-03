@@ -37,6 +37,16 @@ spec:
             type: object
           spec:
             properties:
+              allowedUserTypes:
+                items:
+                  type: string
+                type: array
+              assertion:
+                properties:
+                  validityPeriod:
+                    format: int64
+                    type: integer
+                type: object
               authFlowHandle:
                 type: string
               authFlowId:
@@ -48,6 +58,18 @@ spec:
               inboundAuthConfig:
                 type: string
               instanceRef:
+                type: string
+              isRecoveryFlowEnabled:
+                type: boolean
+              isRegistrationFlowEnabled:
+                type: boolean
+              loginConsent:
+                properties:
+                  validityPeriod:
+                    format: int64
+                    type: integer
+                type: object
+              logoUrl:
                 type: string
               name:
                 type: string
@@ -131,6 +153,9 @@ spec:
                   - type
                   type: object
                 type: array
+              lastSyncTime:
+                format: date-time
+                type: string
               phase:
                 type: string
               synced:

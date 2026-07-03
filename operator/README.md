@@ -1,135 +1,161 @@
-# operator
-// TODO(user): Add simple overview of use/purpose
+# ThunderID Operator
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A Kubernetes operator that manages ThunderID identity server instances and declarative resources (Themes, Flows, Applications) via CRDs.
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- Go 1.21+
+- `kubectl` connected to a running cluster
+- `make`
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+## Setup
+
+### 1. Install CRDs
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/operator:tag
+make manifests
+kubectl apply -f config/crd/bases/
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
-
-**Install the CRDs into the cluster:**
+### 2. Run the operator
 
 ```sh
-make install
+make run
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+---
+
+## Deploy a ThunderID Instance
+
+Apply the instance with a base resources ConfigMap:
 
 ```sh
-make deploy IMG=<some-registry>/operator:tag
+kubectl apply -f test-instance-resources.yaml
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
-
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+Or with inline resources YAML:
 
 ```sh
-kubectl apply -k config/samples/
+kubectl apply -f test-inline.yaml
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+Check the instance status:
 
 ```sh
-kubectl delete -k config/samples/
+kubectl get thunderidinstances
+kubectl describe thunderidinstance test-resources
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
+---
+
+## Port-forward to ThunderID
+
+Port-forward to the Service so the connection survives pod restarts:
 
 ```sh
-make uninstall
+kubectl port-forward service/test-resources 8090:8090
 ```
 
-**UnDeploy the controller from the cluster:**
+To auto-restart on disconnect (recommended during development):
 
 ```sh
-make undeploy
+while true; do kubectl port-forward service/test-resources 8090:8090; sleep 2; done
 ```
 
-## Project Distribution
+ThunderID console: https://localhost:8090
 
-Following the options to release and provide this solution to the users.
+---
 
-### By providing a bundle with all YAML files
+## Declarative Resources via CRDs
 
-1. Build the installer for the image built and published in the registry:
+Resources are synced to ThunderID by applying CRs. The operator watches for changes, rebuilds the resources ConfigMap, and triggers a rolling restart of the ThunderID pod.
+
+> **Order matters:** Apply Themes and Flows before Applications that reference them via `themeRef` / `authFlowRef`.
+
+### Themes
 
 ```sh
-make build-installer IMG=<some-registry>/operator:tag
+kubectl apply -f test-theme.yaml
+kubectl get themes
 ```
 
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
+To remove a theme from ThunderID:
 
 ```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/operator/<tag or branch>/dist/install.yaml
+kubectl delete theme my-custom-theme
 ```
 
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
+### Flows
 
 ```sh
-kubebuilder edit --plugins=helm/v2-alpha
+kubectl apply -f test-flow.yaml
+kubectl get flows
 ```
 
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
+### Applications
 
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
+```sh
+kubectl apply -f test-application.yaml
+kubectl get applications
+```
 
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+---
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
+## Application CR Reference
 
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: my-web-app
+  namespace: default
+spec:
+  instanceRef: test-resources
+  name: My Web App
+  description: Test application
+  url: https://myapp.example.com
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"  # Organisation unit ID (required)
 
-## License
+  # Auth flow — pick one:
+  authFlowRef: my-custom-login       # Reference a Flow CRD by name
+  # authFlowHandle: some-handle      # Use an existing ThunderID flow handle directly
+  # authFlowId: <uuid>               # Use an existing ThunderID flow ID directly
 
-Copyright 2026.
+  # Theme — pick one:
+  themeRef: my-custom-theme          # Reference a Theme CRD by name
+  # themeId: "019ef85a-0e5d-..."     # Use an existing ThunderID theme ID directly
+```
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+---
 
-    http://www.apache.org/licenses/LICENSE-2.0
+## After Adding New Fields to a CRD Type
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Regenerate and re-apply the CRD manifest:
 
+```sh
+make manifests
+kubectl apply -f config/crd/bases/apps.thunderid.io_<resource>.yaml
+```
+
+---
+
+## Useful Commands
+
+```sh
+# Watch all ThunderID-related resources
+kubectl get thunderidinstances,themes,flows,applications
+
+# Check operator logs
+kubectl logs -n <operator-namespace> deployment/<operator-name> --follow
+
+# Check ThunderID pod logs
+kubectl logs -l app=test-resources --follow
+
+# Check the merged resources.yaml sent to ThunderID
+kubectl get configmap test-resources-config -o jsonpath='{.data.resources\.yaml}'
+
+# Check individual resource ConfigMaps
+kubectl get configmap test-resources-themes -o jsonpath='{.data.themes\.yaml}'
+kubectl get configmap test-resources-flows -o jsonpath='{.data.flows\.yaml}'
+kubectl get configmap test-resources-applications -o jsonpath='{.data.applications\.yaml}'
+```

@@ -271,6 +271,30 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 								Command:      []string{"/bin/bash", "-c", startCmd},
 								Ports:        []corev1.ContainerPort{{ContainerPort: 8090, Protocol: corev1.ProtocolTCP}},
 								VolumeMounts: volumeMounts,
+								LivenessProbe: &corev1.Probe{
+									ProbeHandler: corev1.ProbeHandler{
+										HTTPGet: &corev1.HTTPGetAction{
+											Path:   "/health/liveness",
+											Port:   intstr.FromInt(8090),
+											Scheme: corev1.URISchemeHTTPS,
+										},
+									},
+									InitialDelaySeconds: 15,
+									PeriodSeconds:       10,
+									FailureThreshold:    3,
+								},
+								ReadinessProbe: &corev1.Probe{
+									ProbeHandler: corev1.ProbeHandler{
+										HTTPGet: &corev1.HTTPGetAction{
+											Path:   "/health/readiness",
+											Port:   intstr.FromInt(8090),
+											Scheme: corev1.URISchemeHTTPS,
+										},
+									},
+									InitialDelaySeconds: 10,
+									PeriodSeconds:       5,
+									FailureThreshold:    6,
+								},
 							},
 						},
 						Volumes: volumes,
@@ -288,6 +312,30 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	dep.Spec.Template.Spec.Containers[0].Image = instance.Spec.Image
 	dep.Spec.Template.Spec.Containers[0].Command = []string{"/bin/bash", "-c", startCmd}
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
+	dep.Spec.Template.Spec.Containers[0].LivenessProbe = &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path:   "/health/liveness",
+				Port:   intstr.FromInt(8090),
+				Scheme: corev1.URISchemeHTTPS,
+			},
+		},
+		InitialDelaySeconds: 15,
+		PeriodSeconds:       10,
+		FailureThreshold:    3,
+	}
+	dep.Spec.Template.Spec.Containers[0].ReadinessProbe = &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path:   "/health/readiness",
+				Port:   intstr.FromInt(8090),
+				Scheme: corev1.URISchemeHTTPS,
+			},
+		},
+		InitialDelaySeconds: 10,
+		PeriodSeconds:       5,
+		FailureThreshold:    6,
+	}
 	dep.Spec.Template.Spec.Volumes = volumes
 	if dep.Spec.Template.Annotations == nil {
 		dep.Spec.Template.Annotations = map[string]string{}
