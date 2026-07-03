@@ -32,6 +32,7 @@ rules:
 - apiGroups:
   - apps.thunderid.io
   resources:
+  - themes
   - thunderidinstances
   verbs:
   - create
@@ -44,16 +45,17 @@ rules:
 - apiGroups:
   - apps.thunderid.io
   resources:
-  - thunderidinstances/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - apps.thunderid.io
-  resources:
+  - themes/status
   - thunderidinstances/status
   verbs:
   - get
   - patch
+  - update
+- apiGroups:
+  - apps.thunderid.io
+  resources:
+  - thunderidinstances/finalizers
+  verbs:
   - update
 - apiGroups:
   - networking.k8s.io

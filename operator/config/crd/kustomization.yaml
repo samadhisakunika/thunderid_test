@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/apps.thunderid.io_thunderidinstances.yaml
+- bases/apps.thunderid.io_themes.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

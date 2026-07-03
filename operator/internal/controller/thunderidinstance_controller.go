@@ -18,7 +18,7 @@ package controller
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/sha256" //compute the config checksum
 	_ "embed"
 	"encoding/hex"
 	"fmt"
@@ -47,6 +47,7 @@ type ThunderIDInstanceReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+// RBAC annotations for the controller
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances/finalizers,verbs=update
@@ -56,7 +57,7 @@ type ThunderIDInstanceReconciler struct {
 
 func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-
+	// Fetch the ThunderIDInstance from kubernetes
 	instance := &appsv1alpha1.ThunderIDInstance{}
 	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -64,18 +65,19 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	publicURL := "https://" + instance.Spec.Domain
 
-	if err := r.reconcileConfigMap(ctx, instance, publicURL); err != nil {
+	resourcesContent, err := r.reconcileConfigMap(ctx, instance, publicURL)
+	if err != nil {
 		log.Error(err, "failed to reconcile ConfigMap")
 		return ctrl.Result{}, err
 	}
-
+	// Hash includes themes-version annotation so pod rolls when themes change.
 	configHash := func() string {
 		h := sha256.New()
-		h.Write([]byte(publicURL + instance.Spec.ResourcesYAML + instance.Spec.ResourcesConfigMap))
+		h.Write([]byte(publicURL + instance.Spec.ResourcesYAML + instance.Spec.ResourcesConfigMap + instance.Annotations["thunderid.io/themes-version"]))
 		return hex.EncodeToString(h.Sum(nil))[:16]
 	}()
 
-	if err := r.reconcileDeployment(ctx, instance, configHash); err != nil {
+	if err := r.reconcileDeployment(ctx, instance, configHash, resourcesContent != ""); err != nil {
 		log.Error(err, "failed to reconcile Deployment")
 		return ctrl.Result{}, err
 	}
@@ -90,9 +92,15 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	instance.Status.URL = publicURL
-	instance.Status.Phase = "Running"
-	if err := r.Status().Update(ctx, instance); err != nil {
+	// Re-fetch before status update — annotations may have been patched by the
+	// ThemeReconciler between our initial Get and here, making our copy stale.
+	latest := &appsv1alpha1.ThunderIDInstance{}
+	if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+		return ctrl.Result{}, err
+	}
+	latest.Status.URL = publicURL
+	latest.Status.Phase = "Running"
+	if err := r.Status().Update(ctx, latest); err != nil {
 		log.Error(err, "failed to update status")
 		return ctrl.Result{}, err
 	}
@@ -109,15 +117,43 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
-	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, publicURL string) error {
+	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, publicURL string) (string, error) {
 
 	configContent := fmt.Sprintf(deploymentConfigTemplate, publicURL, publicURL, publicURL)
+
+	// Build base resources content from inline YAML or external ConfigMap.
+	var resourcesContent string
+	if instance.Spec.ResourcesYAML != "" {
+		resourcesContent = instance.Spec.ResourcesYAML
+	} else if instance.Spec.ResourcesConfigMap != "" {
+		externalCM := &corev1.ConfigMap{}
+		if err := r.Get(ctx, types.NamespacedName{
+			Name:      instance.Spec.ResourcesConfigMap,
+			Namespace: instance.Namespace,
+		}, externalCM); err != nil {
+			return "", err
+		}
+		resourcesContent = externalCM.Data["resources.yaml"]
+	}
+
+	// Append theme documents if the themes ConfigMap exists.
+	themesCM := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      instance.Name + "-themes",
+		Namespace: instance.Namespace,
+	}, themesCM); err == nil {
+		if themesYAML := themesCM.Data["themes.yaml"]; themesYAML != "" {
+			resourcesContent += "\n" + themesYAML
+		}
+	} else if !errors.IsNotFound(err) {
+		return "", err
+	}
 
 	data := map[string]string{
 		"deployment.yaml": configContent,
 	}
-	if instance.Spec.ResourcesYAML != "" {
-		data["resources.yaml"] = instance.Spec.ResourcesYAML
+	if resourcesContent != "" {
+		data["resources.yaml"] = resourcesContent
 	}
 
 	cm := &corev1.ConfigMap{}
@@ -131,19 +167,54 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 			Data: data,
 		}
 		_ = ctrl.SetControllerReference(instance, cm, r.Scheme)
-		return r.Create(ctx, cm)
+		return resourcesContent, r.Create(ctx, cm)
 	}
 	if err != nil {
-		return err
+		return "", err
+	}
+	// Skip update if content is unchanged to avoid triggering unnecessary reconciles.
+	if cm.Data["deployment.yaml"] == data["deployment.yaml"] && cm.Data["resources.yaml"] == data["resources.yaml"] {
+		return resourcesContent, nil
 	}
 	cm.Data = data
-	return r.Update(ctx, cm)
+	return resourcesContent, r.Update(ctx, cm)
 }
 
 func (r *ThunderIDInstanceReconciler) reconcileDeployment(
-	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, configHash string) error {
+	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, configHash string, hasResources bool) error {
 	replicas := instance.Spec.Replicas
 	configMapName := instance.Name + "-config"
+
+	startCmd := "cd /opt/thunderid && ./setup.sh && ./start.sh"
+	if hasResources {
+		startCmd = "cd /opt/thunderid && ./setup.sh && ./start.sh /opt/thunderid/resources.yaml"
+	}
+
+	volumeMounts := []corev1.VolumeMount{
+		{
+			Name:      "config",
+			MountPath: "/opt/thunderid/repository/conf/deployment.yaml",
+			SubPath:   "deployment.yaml",
+		},
+	}
+	if hasResources {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "config",
+			MountPath: "/opt/thunderid/resources.yaml",
+			SubPath:   "resources.yaml",
+		})
+	}
+
+	volumes := []corev1.Volume{
+		{
+			Name: "config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
+				},
+			},
+		},
+	}
 
 	dep := &appsv1.Deployment{}
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, dep)
@@ -156,9 +227,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			Spec: appsv1.DeploymentSpec{
 				Replicas: &replicas,
 				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"app": instance.Name,
-					},
+					MatchLabels: map[string]string{"app": instance.Name},
 				},
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
@@ -168,70 +237,14 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{
 							{
-								Name:  "thunderid",
-								Image: instance.Spec.Image,
-								Command: []string{"/bin/bash", "-c", func() string {
-									if instance.Spec.ResourcesYAML != "" || instance.Spec.ResourcesConfigMap != "" {
-										return "cd /opt/thunderid && ./setup.sh && ./start.sh /opt/thunderid/resources.yaml"
-									}
-									return "cd /opt/thunderid && ./setup.sh && ./start.sh"
-								}()},
-
-								Ports: []corev1.ContainerPort{
-									{ContainerPort: 8090, Protocol: corev1.ProtocolTCP},
-								},
-								VolumeMounts: func() []corev1.VolumeMount {
-									mounts := []corev1.VolumeMount{
-										{
-											Name:      "config",
-											MountPath: "/opt/thunderid/repository/conf/deployment.yaml",
-											SubPath:   "deployment.yaml",
-										},
-									}
-									if instance.Spec.ResourcesYAML != "" {
-										mounts = append(mounts, corev1.VolumeMount{
-											Name:      "config",
-											MountPath: "/opt/thunderid/resources.yaml",
-											SubPath:   "resources.yaml",
-										})
-									} else if instance.Spec.ResourcesConfigMap != "" {
-										mounts = append(mounts, corev1.VolumeMount{
-											Name:      "resources",
-											MountPath: "/opt/thunderid/resources.yaml",
-											SubPath:   "resources.yaml",
-										})
-									}
-									return mounts
-								}(),
+								Name:         "thunderid",
+								Image:        instance.Spec.Image,
+								Command:      []string{"/bin/bash", "-c", startCmd},
+								Ports:        []corev1.ContainerPort{{ContainerPort: 8090, Protocol: corev1.ProtocolTCP}},
+								VolumeMounts: volumeMounts,
 							},
 						},
-						Volumes: func() []corev1.Volume {
-							vols := []corev1.Volume{
-								{
-									Name: "config",
-									VolumeSource: corev1.VolumeSource{
-										ConfigMap: &corev1.ConfigMapVolumeSource{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: configMapName,
-											},
-										},
-									},
-								},
-							}
-							if instance.Spec.ResourcesConfigMap != "" {
-								vols = append(vols, corev1.Volume{
-									Name: "resources",
-									VolumeSource: corev1.VolumeSource{
-										ConfigMap: &corev1.ConfigMapVolumeSource{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: instance.Spec.ResourcesConfigMap,
-											},
-										},
-									},
-								})
-							}
-							return vols
-						}(),
+						Volumes: volumes,
 					},
 				},
 			},
@@ -244,12 +257,14 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	}
 	dep.Spec.Replicas = &replicas
 	dep.Spec.Template.Spec.Containers[0].Image = instance.Spec.Image
+	dep.Spec.Template.Spec.Containers[0].Command = []string{"/bin/bash", "-c", startCmd}
+	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
+	dep.Spec.Template.Spec.Volumes = volumes
 	if dep.Spec.Template.Annotations == nil {
 		dep.Spec.Template.Annotations = map[string]string{}
 	}
 	dep.Spec.Template.Annotations["thunderid.io/config-hash"] = configHash
 	return r.Update(ctx, dep)
-
 }
 
 func (r *ThunderIDInstanceReconciler) reconcileService(
