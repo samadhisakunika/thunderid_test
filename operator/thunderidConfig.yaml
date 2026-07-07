@@ -1,0 +1,21 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ThunderIDConfig
+metadata:
+  name: thunderid-prod
+  namespace: default
+spec:
+  image: ghcr.io/thunder-id/thunderid:latest
+  domain: id.example.com
+  resourcesConfigMap: thunderid-resources
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "64Mi"
+    limits:
+      cpu: "500m"
+      memory: "128Mi"
+  autoScaling:
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80

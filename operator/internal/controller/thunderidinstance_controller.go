@@ -73,7 +73,7 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Hash includes themes-version and flows-version annotations so pod rolls when either changes.
 	configHash := func() string {
 		h := sha256.New()
-		h.Write([]byte(publicURL + instance.Spec.ResourcesYAML + instance.Spec.ResourcesConfigMap +
+		h.Write([]byte(publicURL + instance.Spec.ResourcesConfigMap +
 			instance.Annotations["thunderid.io/themes-version"] +
 			instance.Annotations["thunderid.io/flows-version"] +
 			instance.Annotations["thunderid.io/applications-version"]))
@@ -124,11 +124,9 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 
 	configContent := fmt.Sprintf(deploymentConfigTemplate, publicURL, publicURL, publicURL)
 
-	// Build base resources content from inline YAML or external ConfigMap.
+	// Load base resources from external ConfigMap.
 	var resourcesContent string
-	if instance.Spec.ResourcesYAML != "" {
-		resourcesContent = instance.Spec.ResourcesYAML
-	} else if instance.Spec.ResourcesConfigMap != "" {
+	if instance.Spec.ResourcesConfigMap != "" {
 		externalCM := &corev1.ConfigMap{}
 		if err := r.Get(ctx, types.NamespacedName{
 			Name:      instance.Spec.ResourcesConfigMap,
@@ -248,6 +246,9 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	dep := &appsv1.Deployment{}
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, dep)
 	if errors.IsNotFound(err) {
+		if replicas == 0 {
+			replicas = 1 // default to 1 if not specified
+		}
 		dep = &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      instance.Name,
@@ -271,6 +272,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 								Command:      []string{"/bin/bash", "-c", startCmd},
 								Ports:        []corev1.ContainerPort{{ContainerPort: 8090, Protocol: corev1.ProtocolTCP}},
 								VolumeMounts: volumeMounts,
+								Resources:    instance.Spec.Resources,
 								LivenessProbe: &corev1.Probe{
 									ProbeHandler: corev1.ProbeHandler{
 										HTTPGet: &corev1.HTTPGetAction{
@@ -308,10 +310,14 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	if err != nil {
 		return err
 	}
-	dep.Spec.Replicas = &replicas
+	if instance.Spec.Replicas > 0 {
+		r := instance.Spec.Replicas
+		dep.Spec.Replicas = &r
+	}
 	dep.Spec.Template.Spec.Containers[0].Image = instance.Spec.Image
 	dep.Spec.Template.Spec.Containers[0].Command = []string{"/bin/bash", "-c", startCmd}
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
+	dep.Spec.Template.Spec.Containers[0].Resources = instance.Spec.Resources
 	dep.Spec.Template.Spec.Containers[0].LivenessProbe = &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
@@ -342,6 +348,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	}
 	dep.Spec.Template.Annotations["thunderid.io/config-hash"] = configHash
 	return r.Update(ctx, dep)
+
 }
 
 func (r *ThunderIDInstanceReconciler) reconcileService(

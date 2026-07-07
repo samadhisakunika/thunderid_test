@@ -56,6 +56,10 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: app.Spec.InstanceRef}, instance); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", app.Spec.InstanceRef)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", app.Spec.InstanceRef)
 		return ctrl.Result{}, err
 	}
@@ -141,17 +145,23 @@ func (r *ApplicationReconciler) checkThunderIDHealth(ctx context.Context, app *a
 			if cs.Name != "thunderid" {
 				continue
 			}
-			crashed := (cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff") ||
+			inCrashLoop := cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff"
+			crashed := inCrashLoop ||
 				(cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.ExitCode != 0)
 			if crashed {
 				log.Info("ThunderID pod has crashed", "pod", pod.Name)
 				if app.Status.Phase != "Error" {
-					// Only emit events and update status on the first detection to avoid spam.
-					r.fetchAndEmitPodErrors(ctx, app, instance.Namespace, pod.Name)
 					app.Status.Phase = "Error"
 					app.Status.Synced = false
 					_ = r.Status().Update(ctx, app)
 				}
+				if !inCrashLoop {
+					// Container logs not yet flushed by containerd on first crash.
+					// Requeue in 10s when the pod reaches stable CrashLoopBackOff.
+					return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+				}
+				// Pod is in stable CrashLoopBackOff — logs are reliably available now.
+				r.fetchAndEmitPodErrors(ctx, app, instance.Namespace, pod.Name)
 				return ctrl.Result{}, nil
 			}
 		}
@@ -177,6 +187,13 @@ func (r *ApplicationReconciler) fetchAndEmitPodErrors(ctx context.Context, app *
 		Container: "thunderid",
 	})
 	rc, err := req.Stream(ctx) // opens streaming connection to thunderid pod logs
+	if err != nil {
+		// Previous container logs unavailable (fast crash / containerd GC); try current container.
+		req = r.KubeClient.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
+			Container: "thunderid",
+		})
+		rc, err = req.Stream(ctx)
+	}
 	if err != nil {
 		r.Recorder.Event(app, corev1.EventTypeWarning, "ThunderIDCrashed",
 			fmt.Sprintf("pod %s is in CrashLoopBackOff (could not fetch logs: %v)", podName, err))
@@ -247,6 +264,17 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 	}
 	appsContent := buf.String()
 
+	h := sha256.New()
+	h.Write([]byte(appsContent))
+	appsVersion := hex.EncodeToString(h.Sum(nil))[:16]
+
+	// Idempotency guard: if the annotation already reflects the current hash the
+	// ConfigMap is up-to-date (avoids a false "changed" on the informer-cache
+	// reconcile that fires immediately after we patch the annotation below).
+	if instance.Annotations["thunderid.io/applications-version"] == appsVersion {
+		return false, nil
+	}
+
 	cmName := instance.Name + "-applications"
 	cm := &corev1.ConfigMap{}
 	err := r.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: cmName}, cm)
@@ -265,9 +293,6 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 	} else if err != nil {
 		return false, err
 	} else {
-		if cm.Data["applications.yaml"] == appsContent {
-			return false, nil
-		}
 		if cm.Data == nil {
 			cm.Data = map[string]string{}
 		}
@@ -276,10 +301,6 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 			return false, fmt.Errorf("failed to update applications ConfigMap: %w", err)
 		}
 	}
-
-	h := sha256.New()
-	h.Write([]byte(appsContent))
-	appsVersion := hex.EncodeToString(h.Sum(nil))[:16]
 
 	patch := client.MergeFrom(instance.DeepCopy())
 	if instance.Annotations == nil {
@@ -306,7 +327,7 @@ func (r *ApplicationReconciler) buildApplicationYAML(ctx context.Context, a apps
 		fmt.Fprintf(&buf, "url: %q\n", a.Spec.URL)
 	}
 	if a.Spec.LogoURL != "" {
-		fmt.Fprintf(&buf, "logoUrl: %q\n", a.Spec.LogoURL)
+		fmt.Fprintf(&buf, "logoUrl: '%s'\n", strings.ReplaceAll(a.Spec.LogoURL, "'", "''"))
 	}
 
 	if a.Spec.AuthFlowID != "" {
@@ -382,6 +403,7 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1alpha1.Application{}).
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.appsForDeployment)).
+		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.appsForInstance)).
 		Named("application").
 		Complete(r)
 }
@@ -408,12 +430,28 @@ func (r *ApplicationReconciler) appsForDeployment(ctx context.Context, obj clien
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: app.Name, Namespace: app.Namespace},
 			})
-		case "Ready":
+		case "Ready", "Pending":
 			if dep.Status.UnavailableReplicas > 0 {
 				reqs = append(reqs, reconcile.Request{
 					NamespacedName: types.NamespacedName{Name: app.Name, Namespace: app.Namespace},
 				})
 			}
+		}
+	}
+	return reqs
+}
+
+func (r *ApplicationReconciler) appsForInstance(ctx context.Context, obj client.Object) []reconcile.Request {
+	appList := &appsv1alpha1.ApplicationList{}
+	if err := r.List(ctx, appList, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for _, app := range appList.Items {
+		if app.Spec.InstanceRef == obj.GetName() {
+			reqs = append(reqs, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: app.Name, Namespace: app.Namespace},
+			})
 		}
 	}
 	return reqs

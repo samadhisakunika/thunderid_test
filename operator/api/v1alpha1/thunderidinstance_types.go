@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -27,8 +28,6 @@ type ThunderIDInstanceSpec struct {
 	// +kubebuilder:validation:Required
 	Image string `json:"image"`
 
-	// +kubebuilder:default=1
-	// +kubebuilder:validation:Minimum=1
 	Replicas int32 `json:"replicas,omitempty"`
 
 	// +kubebuilder:validation:Required
@@ -40,8 +39,7 @@ type ThunderIDInstanceSpec struct {
 	// +optional
 	ResourcesConfigMap string `json:"resourcesConfigMap,omitempty"`
 
-	// +optional
-	ResourcesYAML string `json:"resourcesYAML,omitempty"`
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // ThunderIDInstanceStatus defines the observed state of ThunderIDInstance.

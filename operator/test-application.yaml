@@ -4,11 +4,11 @@ metadata:
   name: my-console-app
   namespace: default
 spec:
-  instanceRef: thunderid-sample
+  instanceRef: thunderid-prod
   name: Test Web Application
   ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
   authFlowHandle: console-app-flow
-  themeId: "019ef85a-0e5d-77bb-8557-bedefd01961d"
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
   logoUrl: "emoji:👨‍💻"
   isRegistrationFlowEnabled: true
   isRecoveryFlowEnabled: false
@@ -27,11 +27,13 @@ spec:
         grantTypes:
           - authorization_code
           - refresh_token
+          - client_credentials
+        
         responseTypes:
           - code
-        tokenEndpointAuthMethod: none
+        tokenEndpointAuthMethod: client_secret_basic
         pkceRequired: false
-        publicClient: true
+        publicClient: false
         requirePushedAuthorizationRequests: false
         dpopBoundAccessTokens: false
         includeActClaim: false
