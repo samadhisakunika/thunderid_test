@@ -1,5 +1,5 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: ThunderIDConfig
+kind: ThunderIDInstance
 metadata:
   name: thunderid-prod
   namespace: default

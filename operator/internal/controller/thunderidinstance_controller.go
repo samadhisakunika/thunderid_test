@@ -24,13 +24,16 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -54,6 +57,7 @@ type ThunderIDInstanceReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps;services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -68,6 +72,11 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	resourcesContent, err := r.reconcileConfigMap(ctx, instance, publicURL)
 	if err != nil {
 		log.Error(err, "failed to reconcile ConfigMap")
+		return ctrl.Result{}, err
+	}
+
+	if err := r.reconcileHPA(ctx, instance); err != nil {
+		log.Error(err, "failed to reconcile HPA")
 		return ctrl.Result{}, err
 	}
 	// Hash includes themes-version and flows-version annotations so pod rolls when either changes.
@@ -97,15 +106,18 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Re-fetch before status update — annotations may have been patched by the
 	// ThemeReconciler between our initial Get and here, making our copy stale.
-	latest := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
-		return ctrl.Result{}, err
-	}
-	latest.Status.URL = publicURL
-	latest.Status.Phase = "Running"
-	if err := r.Status().Update(ctx, latest); err != nil {
-		log.Error(err, "failed to update status")
-		return ctrl.Result{}, err
+	statusErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		latest := &appsv1alpha1.ThunderIDInstance{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return err
+		}
+		latest.Status.URL = publicURL
+		latest.Status.Phase = "Running"
+		return r.Status().Update(ctx, latest)
+	})
+	if statusErr != nil {
+		log.Error(statusErr, "failed to update status")
+		return ctrl.Result{}, statusErr
 	}
 
 	log.Info("reconciled ThunderIDInstance", "url", publicURL)
@@ -116,6 +128,11 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1alpha1.ThunderIDInstance{}).
+		Owns(&appsv1.Deployment{}).
+		Owns(&corev1.Service{}).
+		Owns(&networkingv1.Ingress{}).
+		Owns(&autoscalingv2.HorizontalPodAutoscaler{}).
+		Owns(&corev1.ConfigMap{}).
 		Named("thunderidinstance").
 		Complete(r)
 }
@@ -247,7 +264,10 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, dep)
 	if errors.IsNotFound(err) {
 		if replicas == 0 {
-			replicas = 1 // default to 1 if not specified
+			// Always start at 1, even with autoscaling on — creating with 0 replicas
+			// makes the HPA treat the Deployment as intentionally paused and it will
+			// never scale it up. The HPA takes over cleanly from 1 replica onward.
+			replicas = 1
 		}
 		dep = &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
@@ -310,10 +330,14 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	if err != nil {
 		return err
 	}
-	if instance.Spec.Replicas > 0 {
+
+	original := dep.DeepCopy() // <-- new: snapshot before mutating
+
+	if instance.Spec.AutoScaling == nil && instance.Spec.Replicas > 0 {
 		r := instance.Spec.Replicas
 		dep.Spec.Replicas = &r
 	}
+
 	dep.Spec.Template.Spec.Containers[0].Image = instance.Spec.Image
 	dep.Spec.Template.Spec.Containers[0].Command = []string{"/bin/bash", "-c", startCmd}
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
@@ -347,6 +371,9 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		dep.Spec.Template.Annotations = map[string]string{}
 	}
 	dep.Spec.Template.Annotations["thunderid.io/config-hash"] = configHash
+	if equality.Semantic.DeepEqual(original.Spec, dep.Spec) {
+		return nil
+	}
 	return r.Update(ctx, dep)
 
 }
@@ -431,4 +458,100 @@ func (r *ThunderIDInstanceReconciler) reconcileIngress(
 		return r.Create(ctx, ing)
 	}
 	return err
+}
+
+func (r *ThunderIDInstanceReconciler) reconcileHPA(ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) error {
+	hpaKey := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
+
+	if instance.Spec.AutoScaling == nil {
+		// No autoscaling desired — delete HPA if it exists.
+		existing := &autoscalingv2.HorizontalPodAutoscaler{}
+		if err := r.Get(ctx, hpaKey, existing); err == nil {
+			return r.Delete(ctx, existing)
+		}
+		return nil
+	}
+
+	as := instance.Spec.AutoScaling
+	metrics := buildMetrics(as)
+
+	desired := &autoscalingv2.HorizontalPodAutoscaler{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name,
+			Namespace: instance.Namespace,
+		},
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       instance.Name,
+			},
+			MinReplicas: &as.MinReplicas,
+			MaxReplicas: as.MaxReplicas,
+			Metrics:     metrics,
+		},
+	}
+	_ = ctrl.SetControllerReference(instance, desired, r.Scheme)
+
+	existing := &autoscalingv2.HorizontalPodAutoscaler{}
+	err := r.Get(ctx, hpaKey, existing)
+	if errors.IsNotFound(err) {
+		return r.Create(ctx, desired)
+	}
+	if err != nil {
+		return err
+	}
+
+	patch := client.MergeFrom(existing.DeepCopy())
+	existing.Spec = desired.Spec
+	return r.Patch(ctx, existing, patch)
+}
+
+func buildMetrics(as *appsv1alpha1.AutoScalingSpec) []autoscalingv2.MetricSpec {
+	var metrics []autoscalingv2.MetricSpec
+
+	if as.TargetCPUUtilizationPercentage > 0 {
+		pct := as.TargetCPUUtilizationPercentage
+		metrics = append(metrics, autoscalingv2.MetricSpec{
+			Type: autoscalingv2.ResourceMetricSourceType,
+			Resource: &autoscalingv2.ResourceMetricSource{
+				Name: corev1.ResourceCPU,
+				Target: autoscalingv2.MetricTarget{
+					Type:               autoscalingv2.UtilizationMetricType,
+					AverageUtilization: &pct,
+				},
+			},
+		})
+	}
+
+	if as.TargetMemoryUtilizationPercentage > 0 {
+		pct := as.TargetMemoryUtilizationPercentage
+		metrics = append(metrics, autoscalingv2.MetricSpec{
+			Type: autoscalingv2.ResourceMetricSourceType,
+			Resource: &autoscalingv2.ResourceMetricSource{
+				Name: corev1.ResourceMemory,
+				Target: autoscalingv2.MetricTarget{
+					Type:               autoscalingv2.UtilizationMetricType,
+					AverageUtilization: &pct,
+				},
+			},
+		})
+	}
+
+	// Default to 80% CPU if no metrics were specified.
+	if len(metrics) == 0 {
+		cpu := int32(80)
+		metrics = append(metrics, autoscalingv2.MetricSpec{
+			Type: autoscalingv2.ResourceMetricSourceType,
+			Resource: &autoscalingv2.ResourceMetricSource{
+				Name: corev1.ResourceCPU,
+				Target: autoscalingv2.MetricTarget{
+					Type:               autoscalingv2.UtilizationMetricType,
+					AverageUtilization: &cpu,
+				},
+			},
+		})
+	}
+
+	return metrics
 }

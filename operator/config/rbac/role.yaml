@@ -49,7 +49,6 @@ rules:
   - applications
   - flows
   - themes
-  - thunderidconfigs
   - thunderidinstances
   verbs:
   - create
@@ -65,7 +64,6 @@ rules:
   - applications/status
   - flows/status
   - themes/status
-  - thunderidconfigs/status
   - thunderidinstances/status
   verbs:
   - get

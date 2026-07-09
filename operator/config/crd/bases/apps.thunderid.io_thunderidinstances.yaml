@@ -39,6 +39,24 @@ spec:
           spec:
             description: spec defines the desired state of ThunderIDInstance
             properties:
+              autoScaling:
+                properties:
+                  maxReplicas:
+                    format: int32
+                    type: integer
+                  minReplicas:
+                    format: int32
+                    type: integer
+                  targetCPUUtilizationPercentage:
+                    format: int32
+                    type: integer
+                  targetMemoryUtilizationPercentage:
+                    format: int32
+                    type: integer
+                required:
+                - maxReplicas
+                - minReplicas
+                type: object
               domain:
                 type: string
               image:

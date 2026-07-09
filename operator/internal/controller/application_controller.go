@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,10 +19,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
@@ -243,6 +247,11 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 	if err := r.List(ctx, appList, client.InNamespace(instance.Namespace)); err != nil {
 		return false, err
 	}
+	// List() order is not guaranteed stable across calls; sort so the built
+	// content (and its hash) doesn't change unless an application actually did.
+	sort.Slice(appList.Items, func(i, j int) bool {
+		return appList.Items[i].Name < appList.Items[j].Name
+	})
 
 	var buf bytes.Buffer
 	for _, a := range appList.Items {
@@ -293,12 +302,19 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 	} else if err != nil {
 		return false, err
 	} else {
-		if cm.Data == nil {
-			cm.Data = map[string]string{}
-		}
-		cm.Data["applications.yaml"] = appsContent
-		if err := r.Update(ctx, cm); err != nil {
-			return false, fmt.Errorf("failed to update applications ConfigMap: %w", err)
+		updateErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			latest := &corev1.ConfigMap{}
+			if err := r.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: cmName}, latest); err != nil {
+				return err
+			}
+			if latest.Data == nil {
+				latest.Data = map[string]string{}
+			}
+			latest.Data["applications.yaml"] = appsContent
+			return r.Update(ctx, latest)
+		})
+		if updateErr != nil {
+			return false, fmt.Errorf("failed to update applications ConfigMap: %w", updateErr)
 		}
 	}
 
@@ -403,7 +419,8 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1alpha1.Application{}).
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.appsForDeployment)).
-		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.appsForInstance)).
+		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.appsForInstance),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Named("application").
 		Complete(r)
 }

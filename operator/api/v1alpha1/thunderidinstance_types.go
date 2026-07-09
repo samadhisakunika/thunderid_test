@@ -22,6 +22,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+type AutoScalingSpec struct {
+	MinReplicas                       int32 `json:"minReplicas"`
+	MaxReplicas                       int32 `json:"maxReplicas"`
+	TargetCPUUtilizationPercentage    int32 `json:"targetCPUUtilizationPercentage,omitempty"`
+	TargetMemoryUtilizationPercentage int32 `json:"targetMemoryUtilizationPercentage,omitempty"`
+}
+
 // ThunderIDInstanceSpec defines the desired state of ThunderIDInstance
 type ThunderIDInstanceSpec struct {
 
@@ -40,6 +47,8 @@ type ThunderIDInstanceSpec struct {
 	ResourcesConfigMap string `json:"resourcesConfigMap,omitempty"`
 
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	// +optional
+	AutoScaling *AutoScalingSpec `json:"autoScaling,omitempty"`
 }
 
 // ThunderIDInstanceStatus defines the observed state of ThunderIDInstance.
