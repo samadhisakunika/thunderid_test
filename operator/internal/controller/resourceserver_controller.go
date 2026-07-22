@@ -318,7 +318,7 @@ func (r *ResourceServerReconciler) rebuildResourceServersConfigMap(ctx context.C
 // in the format ThunderID's declarative resource loader expects.
 func (r *ResourceServerReconciler) buildResourceServerYAML(ctx context.Context, s appsv1alpha1.ResourceServer) (string, error) {
 	var buf bytes.Buffer
-	buf.WriteString("# resource_type: resource_server\n")
+	buf.WriteString("resource_type: resource_server\n")
 	fmt.Fprintf(&buf, "id: %q\n", string(s.UID))
 	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(s.Spec.Name))
 	if s.Spec.Description != "" {

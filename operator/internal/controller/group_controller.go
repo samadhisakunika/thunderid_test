@@ -318,7 +318,7 @@ func (r *GroupReconciler) rebuildGroupsConfigMap(ctx context.Context, instance *
 // ThunderID's declarative resource loader expects.
 func (r *GroupReconciler) buildGroupYAML(ctx context.Context, g appsv1alpha1.Group) (string, error) {
 	var buf bytes.Buffer
-	buf.WriteString("# resource_type: group\n")
+	buf.WriteString("resource_type: group\n")
 	fmt.Fprintf(&buf, "id: %q\n", string(g.UID))
 	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(g.Spec.Name))
 	if g.Spec.Description != "" {

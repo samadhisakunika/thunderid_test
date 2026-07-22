@@ -308,7 +308,7 @@ func (r *TranslationReconciler) rebuildTranslationsConfigMap(ctx context.Context
 func buildTranslationYAML(t appsv1alpha1.Translation) string {
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "# File: %s.yaml\n", t.Spec.Language)
-	buf.WriteString("# resource_type: translation\n")
+	buf.WriteString("resource_type: translation\n")
 	fmt.Fprintf(&buf, "language: %s\n", yamlSingleQuote(t.Spec.Language))
 	buf.WriteString("translations:\n")
 

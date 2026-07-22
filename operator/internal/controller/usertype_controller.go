@@ -321,7 +321,7 @@ func (r *UserTypeReconciler) rebuildUserTypesConfigMap(ctx context.Context, inst
 // ThunderID's declarative resource loader expects.
 func (r *UserTypeReconciler) buildUserTypeYAML(ctx context.Context, u appsv1alpha1.UserType) (string, error) {
 	var buf bytes.Buffer
-	buf.WriteString("# resource_type: user_type\n")
+	buf.WriteString("resource_type: user_type\n")
 	fmt.Fprintf(&buf, "id: %q\n", string(u.UID))
 	fmt.Fprintf(&buf, "category: %s\n", yamlSingleQuote(u.Spec.Category))
 	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(u.Spec.Name))

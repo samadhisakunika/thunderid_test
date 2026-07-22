@@ -329,7 +329,7 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 
 func (r *ApplicationReconciler) buildApplicationYAML(a appsv1alpha1.Application) (string, error) {
 	var buf bytes.Buffer
-	buf.WriteString("# resource_type: application\n")
+	buf.WriteString("resource_type: application\n")
 	fmt.Fprintf(&buf, "id: %q\n", string(a.UID))
 	fmt.Fprintf(&buf, "name: %q\n", a.Spec.Name)
 	if a.Spec.Description != "" {

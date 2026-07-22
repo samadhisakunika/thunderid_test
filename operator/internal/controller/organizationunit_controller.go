@@ -317,7 +317,7 @@ func (r *OrganizationUnitReconciler) rebuildOrganizationUnitsConfigMap(ctx conte
 // the format ThunderID's declarative resource loader expects.
 func (r *OrganizationUnitReconciler) buildOrganizationUnitYAML(ctx context.Context, o appsv1alpha1.OrganizationUnit) (string, error) {
 	var buf bytes.Buffer
-	buf.WriteString("# resource_type: organization_unit\n")
+	buf.WriteString("resource_type: organization_unit\n")
 	fmt.Fprintf(&buf, "id: %q\n", string(o.UID))
 	fmt.Fprintf(&buf, "handle: %s\n", yamlSingleQuote(o.Spec.Handle))
 	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(o.Spec.Name))

@@ -311,7 +311,7 @@ func (r *ServerConfigReconciler) rebuildServerConfigsConfigMap(ctx context.Conte
 
 func buildServerConfigYAML(s appsv1alpha1.ServerConfig) (string, error) {
 	var buf bytes.Buffer
-	buf.WriteString("# resource_type: server_config\n")
+	buf.WriteString("resource_type: server_config\n")
 	fmt.Fprintf(&buf, "name: %s\n", s.Spec.Name)
 	buf.WriteString("value:\n")
 

@@ -318,7 +318,7 @@ func (r *RoleReconciler) rebuildRolesConfigMap(ctx context.Context, instance *ap
 // ThunderID's declarative resource loader expects.
 func (r *RoleReconciler) buildRoleYAML(ctx context.Context, ro appsv1alpha1.Role) (string, error) {
 	var buf bytes.Buffer
-	buf.WriteString("# resource_type: role\n")
+	buf.WriteString("resource_type: role\n")
 	fmt.Fprintf(&buf, "id: %q\n", string(ro.UID))
 	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(ro.Spec.Name))
 	if ro.Spec.Description != "" {
