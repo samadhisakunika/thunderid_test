@@ -37,6 +37,10 @@ spec:
             type: object
           spec:
             properties:
+              allowedUserTypeIds:
+                items:
+                  type: string
+                type: array
               allowedUserTypes:
                 items:
                   type: string
@@ -82,6 +86,8 @@ spec:
               registrationFlowHandle:
                 type: string
               registrationFlowId:
+                type: string
+              template:
                 type: string
               themeHandle:
                 type: string

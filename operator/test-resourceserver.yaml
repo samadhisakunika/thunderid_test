@@ -5,12 +5,10 @@ metadata:
   namespace: default
 spec:
   instanceRef: thunderid-prod
-  name: Test System 2
-  type: SYSTEM
-  description: A simple test resource server for verifying the ResourceServer controller.
+  name: System
+  description: System resource server
   identifier: https://localhost:8090/mcp
   ouHandle: test-ou
-  delimiter: ":"
   resources:
     - name: System
       handle: system
@@ -23,3 +21,27 @@ spec:
         - name: View
           handle: view
           description: Read-only access to organization units
+    - name: User
+      handle: user
+      description: User resource
+      parent: system
+      actions:
+        - name: View
+          handle: view
+          description: Read-only access to users
+    - name: Group
+      handle: group
+      description: Group resource
+      parent: system
+      actions:
+        - name: View
+          handle: view
+          description: Read-only access to groups
+    - name: User Type
+      handle: usertype
+      description: User type resource
+      parent: system
+      actions:
+        - name: View
+          handle: view
+          description: Read-only access to user types

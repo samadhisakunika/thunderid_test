@@ -22,6 +22,9 @@ type UserTypeSpec struct {
 	OUHandle string `json:"ouHandle,omitempty"`
 
 	// +optional
+	AllowSelfRegistration bool `json:"allowSelfRegistration,omitempty"`
+
+	// +optional
 	SystemAttributes map[string]string `json:"systemAttributes,omitempty"`
 
 	// +optional

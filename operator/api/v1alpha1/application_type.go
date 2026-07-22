@@ -17,6 +17,7 @@ type ApplicationSpec struct {
 	InstanceRef               string            `json:"instanceRef"`
 	Name                      string            `json:"name"`
 	Description               string            `json:"description,omitempty"`
+	Template                  string            `json:"template,omitempty"`
 	URL                       string            `json:"url,omitempty"`
 	LogoURL                   string            `json:"logoUrl,omitempty"`
 	OUHandle                  string            `json:"ouHandle,omitempty"`
@@ -32,6 +33,7 @@ type ApplicationSpec struct {
 	Assertion                 *AssertionSpec    `json:"assertion,omitempty"`
 	LoginConsent              *LoginConsentSpec `json:"loginConsent,omitempty"`
 	AllowedUserTypes          []string          `json:"allowedUserTypes,omitempty"`
+	AllowedUserTypeIDs        []string          `json:"allowedUserTypeIds,omitempty"`
 	ThemeHandle               string            `json:"themeHandle,omitempty"`
 	ThemeID                   string            `json:"themeId,omitempty"`
 	InboundAuthConfig         string            `json:"inboundAuthConfig,omitempty"`

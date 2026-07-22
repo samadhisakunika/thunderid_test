@@ -20,7 +20,7 @@ type FlowSpec struct {
 	FlowType string `json:"flowType"`
 
 	// +optional
-	Nodes string `json:"nodes,omitempty"`
+	Nodes []runtime.RawExtension `json:"nodes,omitempty"`
 
 	// +optional
 	IsReadOnly bool `json:"isReadOnly,omitempty"`

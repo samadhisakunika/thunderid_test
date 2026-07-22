@@ -344,6 +344,18 @@ func (r *UserReconciler) buildUserYAML(ctx context.Context, u appsv1alpha1.User)
 		}
 	}
 
+	if len(u.Spec.Credentials) > 0 {
+		buf.WriteString("credentials:\n")
+		keys := make([]string, 0, len(u.Spec.Credentials))
+		for k := range u.Spec.Credentials {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlSingleQuote(u.Spec.Credentials[k]))
+		}
+	}
+
 	return buf.String(), nil
 }
 

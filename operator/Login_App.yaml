@@ -1,0 +1,71 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: login-app
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: Login App
+  description: Sample login application
+  logoUrl: emoji:✈️
+  ouHandle: default
+  authFlowHandle: cloud-login-flow
+  isRegistrationFlowEnabled: false
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+  allowedUserTypes:
+    - Person
+  themeHandle: pale-indigo
+  template: browser
+  inboundAuthConfig: |
+    - type: oauth2
+      config:
+        clientId: SAMPLE_CLIENT_ID
+        redirectUris:
+          - "https://localhost:3000"
+        grantTypes:
+          - authorization_code
+          - refresh_token
+        responseTypes:
+          - code
+        tokenEndpointAuthMethod: none
+        pkceRequired: true
+        publicClient: true
+        token:
+          accessToken:
+            userConfig:
+              validityPeriod: 3600
+              attributes:
+                - family_name
+                - email
+                - groups
+          idToken:
+            validityPeriod: 3600
+            userAttributes:
+              - given_name
+              - family_name
+              - email
+              - groups
+            responseType: JWT
+          userInfo:
+            responseType: JSON
+            userAttributes:
+              - given_name
+              - family_name
+              - email
+              - groups
+        scopeClaims:
+          email:
+            - email
+            - email_verified
+          group:
+            - groups
+          profile:
+            - given_name
+            - family_name
+        scopes:
+          - openid
+          - profile
+          - email

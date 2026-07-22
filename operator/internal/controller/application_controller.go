@@ -46,6 +46,7 @@ type ApplicationReconciler struct {
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=flows,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=themes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps.thunderid.io,resources=usertypes,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;create;update;patch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
@@ -265,7 +266,7 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 		if !a.DeletionTimestamp.IsZero() {
 			continue
 		}
-		yamlDoc, err := r.buildApplicationYAML(a)
+		yamlDoc, err := r.buildApplicationYAML(ctx, a)
 		if err != nil {
 			return false, fmt.Errorf("failed to build YAML for application %s: %w", a.Name, err)
 		}
@@ -327,13 +328,16 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 	return true, r.Patch(ctx, instance, patch)
 }
 
-func (r *ApplicationReconciler) buildApplicationYAML(a appsv1alpha1.Application) (string, error) {
+func (r *ApplicationReconciler) buildApplicationYAML(ctx context.Context, a appsv1alpha1.Application) (string, error) {
 	var buf bytes.Buffer
 	buf.WriteString("resource_type: application\n")
 	fmt.Fprintf(&buf, "id: %q\n", string(a.UID))
 	fmt.Fprintf(&buf, "name: %q\n", a.Spec.Name)
 	if a.Spec.Description != "" {
 		fmt.Fprintf(&buf, "description: %q\n", a.Spec.Description)
+	}
+	if a.Spec.Template != "" {
+		fmt.Fprintf(&buf, "template: %s\n", a.Spec.Template)
 	}
 	if a.Spec.OUID != "" {
 		fmt.Fprintf(&buf, "ouId: %q\n", a.Spec.OUID)
@@ -365,9 +369,27 @@ func (r *ApplicationReconciler) buildApplicationYAML(a appsv1alpha1.Application)
 	fmt.Fprintf(&buf, "isRecoveryFlowEnabled: %v\n", a.Spec.IsRecoveryFlowEnabled)
 	fmt.Fprintf(&buf, "isSignOutFlowEnabled: %v\n", a.Spec.IsSignOutFlowEnabled)
 
-	if len(a.Spec.AllowedUserTypes) > 0 {
+	allowedUserTypes := append([]string{}, a.Spec.AllowedUserTypes...)
+	if len(a.Spec.AllowedUserTypeIDs) > 0 {
+		userTypeList := &appsv1alpha1.UserTypeList{}
+		if err := r.List(ctx, userTypeList, client.InNamespace(a.Namespace)); err != nil {
+			return "", err
+		}
+		names := make(map[string]string, len(userTypeList.Items))
+		for _, ut := range userTypeList.Items {
+			names[string(ut.UID)] = ut.Spec.Name
+		}
+		for _, id := range a.Spec.AllowedUserTypeIDs {
+			name, ok := names[id]
+			if !ok {
+				return "", fmt.Errorf("allowedUserTypeIds: no UserType with id %q found", id)
+			}
+			allowedUserTypes = append(allowedUserTypes, name)
+		}
+	}
+	if len(allowedUserTypes) > 0 {
 		buf.WriteString("allowedUserTypes:\n")
-		for _, t := range a.Spec.AllowedUserTypes {
+		for _, t := range allowedUserTypes {
 			fmt.Fprintf(&buf, "  - %s\n", t)
 		}
 	}

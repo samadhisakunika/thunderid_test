@@ -329,7 +329,15 @@ func (r *UserTypeReconciler) buildUserTypeYAML(ctx context.Context, u appsv1alph
 	if u.Spec.OUID != "" {
 		fmt.Fprintf(&buf, "ouId: %q\n", u.Spec.OUID)
 	} else if u.Spec.OUHandle != "" {
-		fmt.Fprintf(&buf, "ouHandle: %s\n", yamlSingleQuote(u.Spec.OUHandle))
+		if uid := resolveOUHandle(ctx, r.Client, u.Namespace, u.Spec.OUHandle); uid != "" {
+			fmt.Fprintf(&buf, "ouId: %q\n", uid)
+		} else {
+			fmt.Fprintf(&buf, "ouHandle: %s\n", yamlSingleQuote(u.Spec.OUHandle))
+		}
+	}
+
+	if u.Spec.AllowSelfRegistration {
+		fmt.Fprintf(&buf, "allowSelfRegistration: %v\n", u.Spec.AllowSelfRegistration)
 	}
 
 	if len(u.Spec.SystemAttributes) > 0 {

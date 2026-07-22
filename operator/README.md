@@ -281,6 +281,8 @@ Registers an OAuth2/OIDC application in ThunderID. The operator writes all appli
 | `spec.authFlowHandle` / `spec.authFlowId` / `spec.authFlowRef` | Auth flow reference |
 | `spec.themeId` / `spec.themeRef` | UI theme reference |
 | `spec.logoUrl` | Logo (`emoji:👨‍💻` or a URL) |
+| `spec.template` | ThunderID UI template for the app (e.g. `react`, `browser`) |
+| `spec.allowedUserTypes` / `spec.allowedUserTypeIds` | User types allowed to log in — by name (must match an existing `UserType`'s `spec.name`) or by the `UserType` CR's UID |
 | `spec.inboundAuthConfig` | Raw YAML block defining OAuth2 client configuration |
 | `spec.isRegistrationFlowEnabled` | Enable user self-registration |
 | `spec.isRecoveryFlowEnabled` | Enable password recovery |

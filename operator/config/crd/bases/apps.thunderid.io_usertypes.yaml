@@ -53,6 +53,8 @@ spec:
             type: object
           spec:
             properties:
+              allowSelfRegistration:
+                type: boolean
               category:
                 type: string
               instanceRef:

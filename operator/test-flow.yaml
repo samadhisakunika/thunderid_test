@@ -9,7 +9,7 @@ spec:
   name: Test Basic Authentication Flow
   flowType: AUTHENTICATION
   isReadOnly: false
-  nodes: |
+  nodes:
     - id: start
       type: START
       onSuccess: prompt_credentials

@@ -20,6 +20,9 @@ type UserSpec struct {
 
 	// +optional
 	Attributes map[string]string `json:"attributes,omitempty"`
+
+	// +optional
+	Credentials map[string]string `json:"credentials,omitempty"`
 }
 
 type UserStatus struct {

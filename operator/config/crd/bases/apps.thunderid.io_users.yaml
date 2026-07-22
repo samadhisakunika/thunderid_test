@@ -57,6 +57,10 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
+              credentials:
+                additionalProperties:
+                  type: string
+                type: object
               instanceRef:
                 type: string
               ouHandle:

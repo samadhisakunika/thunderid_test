@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -29,11 +30,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
+	"gopkg.in/yaml.v3"
 )
 
 const flowFinalizer = "thunderid.io/flow-cleanup"
 
-// the worker
+// FlowReconciler reconciles a Flow object
 type FlowReconciler struct {
 	client.Client                      // let it read/write kubernetes objects
 	Scheme        *runtime.Scheme      // how to convert between go type and kubrnetes api types
@@ -248,6 +250,8 @@ func (r *FlowReconciler) fetchAndEmitPodErrors(ctx context.Context, flow *appsv1
 // reconciler detects the change and triggers a rolling restart.
 // excludeUID skips a specific flow (used when that flow is being deleted).
 func (r *FlowReconciler) rebuildFlowsConfigMap(ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, excludeUID string) (bool, error) {
+	log := log.FromContext(ctx)
+
 	flowList := &appsv1alpha1.FlowList{}
 	if err := r.List(ctx, flowList, client.InNamespace(instance.Namespace)); err != nil {
 		return false, err
@@ -268,11 +272,19 @@ func (r *FlowReconciler) rebuildFlowsConfigMap(ctx context.Context, instance *ap
 		if !f.DeletionTimestamp.IsZero() {
 			continue
 		}
-		if f.Spec.Nodes == "" {
-			continue // ThunderID requires a node graph; skip incomplete flows
+		if len(f.Spec.Nodes) == 0 {
+			continue // Skip incomplete flows without nodes
 		}
+
+		flowYAML, err := buildFlowYAML(f)
+		if err != nil {
+			log.Error(err, "failed to generate flow YAML", "flow", f.Name)
+			r.Recorder.Event(&f, corev1.EventTypeWarning, "YAMLBuildFailed", err.Error())
+			return false, err
+		}
+
 		buf.WriteString("---\n")
-		buf.WriteString(buildFlowYAML(f))
+		buf.WriteString(flowYAML)
 	}
 	flowsContent := buf.String()
 
@@ -329,19 +341,42 @@ func (r *FlowReconciler) rebuildFlowsConfigMap(ctx context.Context, instance *ap
 	return true, r.Patch(ctx, instance, patch)
 }
 
-// buildFlowYAML generates a YAML document for a single flow in bootstrap
-// format (resource_type: as a YAML key). ThunderID's bootstrap loader reads
-// all files in /opt/thunderid/bootstrap/ on startup; the comment format used
-// by the -resources flag does not insert new resources into the database.
-func buildFlowYAML(f appsv1alpha1.Flow) string {
-	var buf bytes.Buffer
-	buf.WriteString("resource_type: flow\n")
-	fmt.Fprintf(&buf, "id: %s\n", deterministicUUIDv7(f.ObjectMeta))
-	fmt.Fprintf(&buf, "handle: %s\n", yamlSingleQuote(f.Spec.Handle))
-	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(f.Spec.Name))
-	fmt.Fprintf(&buf, "flowType: %s\n", f.Spec.FlowType)
-	writeYAMLBlock(&buf, "nodes", f.Spec.Nodes)
-	return buf.String()
+// Struct to represent the bootstrap JSON/YAML payload for ThunderID
+type thunderIDFlowPayload struct {
+	ResourceType string        `yaml:"resource_type"`
+	ID           string        `yaml:"id"`
+	Handle       string        `yaml:"handle"`
+	Name         string        `yaml:"name"`
+	FlowType     string        `yaml:"flowType"`
+	Nodes        []interface{} `yaml:"nodes,omitempty"`
+}
+
+// buildFlowYAML generates a YAML document for a single flow in bootstrap format
+func buildFlowYAML(f appsv1alpha1.Flow) (string, error) {
+	var parsedNodes []interface{}
+	for _, rawNode := range f.Spec.Nodes {
+		var nodeObj interface{}
+		if err := json.Unmarshal(rawNode.Raw, &nodeObj); err != nil {
+			return "", fmt.Errorf("failed to parse node raw JSON for flow %s: %w", f.Name, err)
+		}
+		parsedNodes = append(parsedNodes, nodeObj)
+	}
+
+	payload := thunderIDFlowPayload{
+		ResourceType: "flow",
+		ID:           deterministicUUIDv7(f.ObjectMeta),
+		Handle:       f.Spec.Handle,
+		Name:         f.Spec.Name,
+		FlowType:     f.Spec.FlowType,
+		Nodes:        parsedNodes,
+	}
+
+	out, err := yaml.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal flow payload to yaml: %w", err)
+	}
+
+	return string(out), nil
 }
 
 func (r *FlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
