@@ -35,8 +35,10 @@ import (
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
 )
@@ -79,13 +81,21 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		log.Error(err, "failed to reconcile HPA")
 		return ctrl.Result{}, err
 	}
-	// Hash includes themes-version and flows-version annotations so pod rolls when either changes.
+	// Hash includes every resource-kind's version annotation so pod rolls when any of them changes.
 	configHash := func() string {
 		h := sha256.New()
 		h.Write([]byte(publicURL + instance.Spec.ResourcesConfigMap +
+			instance.Annotations["thunderid.io/serverconfigs-version"] +
+			instance.Annotations["thunderid.io/organizationunits-version"] +
+			instance.Annotations["thunderid.io/resourceservers-version"] +
 			instance.Annotations["thunderid.io/themes-version"] +
 			instance.Annotations["thunderid.io/flows-version"] +
-			instance.Annotations["thunderid.io/applications-version"]))
+			instance.Annotations["thunderid.io/usertypes-version"] +
+			instance.Annotations["thunderid.io/users-version"] +
+			instance.Annotations["thunderid.io/groups-version"] +
+			instance.Annotations["thunderid.io/roles-version"] +
+			instance.Annotations["thunderid.io/applications-version"] +
+			instance.Annotations["thunderid.io/translations-version"]))
 		return hex.EncodeToString(h.Sum(nil))[:16]
 	}()
 
@@ -104,12 +114,15 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	// Re-fetch before status update — annotations may have been patched by the
-	// ThemeReconciler between our initial Get and here, making our copy stale.
+	// Re-fetch before status update — annotations may have been patched by sub-controllers.
+	// Skip the write if status is already correct to avoid triggering a reconcile loop.
 	statusErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		latest := &appsv1alpha1.ThunderIDInstance{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
+		}
+		if latest.Status.URL == publicURL && latest.Status.Phase == "Running" {
+			return nil
 		}
 		latest.Status.URL = publicURL
 		latest.Status.Phase = "Running"
@@ -127,12 +140,20 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 // SetupWithManager sets up the controller with the Manager.
 func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&appsv1alpha1.ThunderIDInstance{}).
-		Owns(&appsv1.Deployment{}).
-		Owns(&corev1.Service{}).
-		Owns(&networkingv1.Ingress{}).
-		Owns(&autoscalingv2.HorizontalPodAutoscaler{}).
-		Owns(&corev1.ConfigMap{}).
+		For(&appsv1alpha1.ThunderIDInstance{}, builder.WithPredicates(predicate.Or(
+			predicate.GenerationChangedPredicate{},
+			predicate.AnnotationChangedPredicate{},
+		))).
+		Owns(&appsv1.Deployment{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Owns(&corev1.Service{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Owns(&networkingv1.Ingress{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Owns(&autoscalingv2.HorizontalPodAutoscaler{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		//Owns(&corev1.ConfigMap{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		// Only react to the instance's own config ConfigMap, not sub-controller CMs.
+		// Sub-controller CM changes are signalled via ThunderIDInstance annotation patches,
+		// which AnnotationChangedPredicate on For() already catches.
+		//	return strings.HasSuffix(obj.GetName(), "-config")
+		//}))).
 		Named("thunderidinstance").
 		Complete(r)
 }
@@ -154,43 +175,26 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 		resourcesContent = externalCM.Data["resources.yaml"]
 	}
 
-	// Append theme documents if the themes ConfigMap exists.
-	themesCM := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Name:      instance.Name + "-themes",
-		Namespace: instance.Namespace,
-	}, themesCM); err == nil {
-		if themesYAML := themesCM.Data["themes.yaml"]; themesYAML != "" {
-			resourcesContent += "\n" + themesYAML
+	// Append custom resources from each sub-controller's ConfigMap into the same
+	// resources.yaml so ThunderID loads them in a single pass on startup.
+	for _, res := range []struct{ suffix, key string }{
+		{"-organizationunits", "organizationunits.yaml"},
+		{"-usertypes", "usertypes.yaml"},
+		{"-resourceservers", "resourceservers.yaml"},
+		{"-roles", "roles.yaml"},
+		{"-groups", "groups.yaml"},
+		{"-users", "users.yaml"},
+		{"-flows", "flows.yaml"},
+		{"-applications", "applications.yaml"},
+		{"-themes", "themes.yaml"},
+		{"-translations", "translations.yaml"},
+		{"-serverconfigs", "server_configs.yaml"},
+	} {
+		appended, err := r.appendResourceConfigMap(ctx, instance, res.suffix, res.key)
+		if err != nil {
+			return "", err
 		}
-	} else if !errors.IsNotFound(err) {
-		return "", err
-	}
-
-	// Append flow documents if the flows ConfigMap exists.
-	flowsCM := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Name:      instance.Name + "-flows",
-		Namespace: instance.Namespace,
-	}, flowsCM); err == nil {
-		if flowsYAML := flowsCM.Data["flows.yaml"]; flowsYAML != "" {
-			resourcesContent += "\n" + flowsYAML
-		}
-	} else if !errors.IsNotFound(err) {
-		return "", err
-	}
-
-	// Append application documents if the applications ConfigMap exists.
-	appsCM := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Name:      instance.Name + "-applications",
-		Namespace: instance.Namespace,
-	}, appsCM); err == nil {
-		if appsYAML := appsCM.Data["applications.yaml"]; appsYAML != "" {
-			resourcesContent += "\n" + appsYAML
-		}
-	} else if !errors.IsNotFound(err) {
-		return "", err
+		resourcesContent += appended
 	}
 
 	data := map[string]string{
@@ -224,14 +228,32 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	return resourcesContent, r.Update(ctx, cm)
 }
 
+func (r *ThunderIDInstanceReconciler) appendResourceConfigMap(
+	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, suffix, key string) (string, error) {
+	cm := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      instance.Name + suffix,
+		Namespace: instance.Namespace,
+	}, cm); err != nil {
+		if errors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if content := cm.Data[key]; content != "" {
+		return "\n" + content, nil
+	}
+	return "", nil
+}
+
 func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, configHash string, hasResources bool) error {
 	replicas := instance.Spec.Replicas
 	configMapName := instance.Name + "-config"
 
-	startCmd := "cd /opt/thunderid && ./setup.sh && ./start.sh"
+	startCmd := "cd /opt/thunderid && ./setup.sh && exec ./start.sh"
 	if hasResources {
-		startCmd = "cd /opt/thunderid && ./setup.sh && ./start.sh /opt/thunderid/resources.yaml"
+		startCmd = "cd /opt/thunderid && ./setup.sh && exec ./start.sh /opt/thunderid/resources.yaml"
 	}
 
 	volumeMounts := []corev1.VolumeMount{
@@ -249,12 +271,14 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		})
 	}
 
+	defaultMode := int32(0644)
 	volumes := []corev1.Volume{
 		{
 			Name: "config",
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
+					DefaultMode:          &defaultMode,
 				},
 			},
 		},
@@ -287,9 +311,13 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{
 							{
-								Name:         "thunderid",
-								Image:        instance.Spec.Image,
-								Command:      []string{"/bin/bash", "-c", startCmd},
+								Name:    "thunderid",
+								Image:   instance.Spec.Image,
+								Command: []string{"/bin/bash", "-c", startCmd},
+								Env: []corev1.EnvVar{
+									{Name: "ADMIN_USERNAME", Value: "admin"},
+									{Name: "ADMIN_PASSWORD", Value: "admin"},
+								},
 								Ports:        []corev1.ContainerPort{{ContainerPort: 8090, Protocol: corev1.ProtocolTCP}},
 								VolumeMounts: volumeMounts,
 								Resources:    instance.Spec.Resources,
@@ -304,6 +332,8 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 									InitialDelaySeconds: 15,
 									PeriodSeconds:       10,
 									FailureThreshold:    3,
+									SuccessThreshold:    1,
+									TimeoutSeconds:      1,
 								},
 								ReadinessProbe: &corev1.Probe{
 									ProbeHandler: corev1.ProbeHandler{
@@ -316,6 +346,8 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 									InitialDelaySeconds: 10,
 									PeriodSeconds:       5,
 									FailureThreshold:    6,
+									SuccessThreshold:    1,
+									TimeoutSeconds:      1,
 								},
 							},
 						},
@@ -331,7 +363,24 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		return err
 	}
 
-	original := dep.DeepCopy() // <-- new: snapshot before mutating
+	// Snapshot before mutating — used for targeted diff below.
+	originalHash := dep.Spec.Template.Annotations["thunderid.io/config-hash"]
+	originalImage := dep.Spec.Template.Spec.Containers[0].Image
+	originalCmd := ""
+	if len(dep.Spec.Template.Spec.Containers[0].Command) == 3 {
+		originalCmd = dep.Spec.Template.Spec.Containers[0].Command[2]
+	}
+	originalResources := dep.Spec.Template.Spec.Containers[0].Resources.DeepCopy()
+	originalReplicas := dep.Spec.Replicas
+
+	// Check for stale bootstrap volume that the old code left behind.
+	hasBootstrapVolume := false
+	for _, v := range dep.Spec.Template.Spec.Volumes {
+		if v.Name == "bootstrap" {
+			hasBootstrapVolume = true
+			break
+		}
+	}
 
 	if instance.Spec.AutoScaling == nil && instance.Spec.Replicas > 0 {
 		r := instance.Spec.Replicas
@@ -340,6 +389,10 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 
 	dep.Spec.Template.Spec.Containers[0].Image = instance.Spec.Image
 	dep.Spec.Template.Spec.Containers[0].Command = []string{"/bin/bash", "-c", startCmd}
+	dep.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{
+		{Name: "ADMIN_USERNAME", Value: "admin"},
+		{Name: "ADMIN_PASSWORD", Value: "admin"},
+	}
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
 	dep.Spec.Template.Spec.Containers[0].Resources = instance.Spec.Resources
 	dep.Spec.Template.Spec.Containers[0].LivenessProbe = &corev1.Probe{
@@ -353,6 +406,8 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		InitialDelaySeconds: 15,
 		PeriodSeconds:       10,
 		FailureThreshold:    3,
+		SuccessThreshold:    1,
+		TimeoutSeconds:      1,
 	}
 	dep.Spec.Template.Spec.Containers[0].ReadinessProbe = &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
@@ -365,16 +420,35 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		InitialDelaySeconds: 10,
 		PeriodSeconds:       5,
 		FailureThreshold:    6,
+		SuccessThreshold:    1,
+		TimeoutSeconds:      1,
 	}
 	dep.Spec.Template.Spec.Volumes = volumes
 	if dep.Spec.Template.Annotations == nil {
 		dep.Spec.Template.Annotations = map[string]string{}
 	}
 	dep.Spec.Template.Annotations["thunderid.io/config-hash"] = configHash
-	if equality.Semantic.DeepEqual(original.Spec, dep.Spec) {
+
+	// Compare only the fields we actively manage — avoids false diffs from
+	// Kubernetes-defaulted fields (DefaultMode, MountPropagation, etc.).
+	replicasMatch := instance.Spec.AutoScaling != nil || instance.Spec.Replicas == 0 ||
+		(originalReplicas != nil && *originalReplicas == instance.Spec.Replicas)
+	if !hasBootstrapVolume &&
+		originalHash == configHash &&
+		originalImage == instance.Spec.Image &&
+		originalCmd == startCmd &&
+		equality.Semantic.DeepEqual(originalResources, &instance.Spec.Resources) &&
+		replicasMatch {
 		return nil
 	}
-	return r.Update(ctx, dep)
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		latest := &appsv1.Deployment{}
+		if err := r.Get(ctx, types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace}, latest); err != nil {
+			return err
+		}
+		latest.Spec = dep.Spec
+		return r.Update(ctx, latest)
+	})
 
 }
 
@@ -502,6 +576,9 @@ func (r *ThunderIDInstanceReconciler) reconcileHPA(ctx context.Context, instance
 		return err
 	}
 
+	if equality.Semantic.DeepEqual(existing.Spec, desired.Spec) {
+		return nil
+	}
 	patch := client.MergeFrom(existing.DeepCopy())
 	existing.Spec = desired.Spec
 	return r.Patch(ctx, existing, patch)

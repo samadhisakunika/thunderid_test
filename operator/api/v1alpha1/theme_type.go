@@ -13,10 +13,16 @@ type ThemeSpec struct {
 	DisplayName string `json:"displayName"`
 
 	// +optional
+	Handle string `json:"handle,omitempty"`
+
+	// +optional
 	Description string `json:"description,omitempty"`
 
 	// +optional
 	Theme string `json:"theme,omitempty"`
+
+	// +optional
+	IsReadOnly bool `json:"isReadOnly,omitempty"`
 }
 
 type ThemeStatus struct {
@@ -28,6 +34,9 @@ type ThemeStatus struct {
 
 	// +optional
 	Synced bool `json:"synced,omitempty"`
+
+	// +optional
+	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
 
 	// +listType=map
 	// +listMapKey=type

@@ -21,6 +21,9 @@ type FlowSpec struct {
 
 	// +optional
 	Nodes string `json:"nodes,omitempty"`
+
+	// +optional
+	IsReadOnly bool `json:"isReadOnly,omitempty"`
 }
 
 type FlowStatus struct {
@@ -32,6 +35,9 @@ type FlowStatus struct {
 
 	// +optional
 	Synced bool `json:"synced,omitempty"`
+
+	// +optional
+	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
 
 	// +listType=map
 	// +listMapKey=type

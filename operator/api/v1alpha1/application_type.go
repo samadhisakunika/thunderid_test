@@ -21,19 +21,18 @@ type ApplicationSpec struct {
 	LogoURL                   string            `json:"logoUrl,omitempty"`
 	OUHandle                  string            `json:"ouHandle,omitempty"`
 	OUID                      string            `json:"ouId,omitempty"`
-	AuthFlowRef               string            `json:"authFlowRef,omitempty"`
 	AuthFlowHandle            string            `json:"authFlowHandle,omitempty"`
 	AuthFlowID                string            `json:"authFlowId,omitempty"`
-	RegistrationFlowRef       string            `json:"registrationFlowRef,omitempty"`
 	RegistrationFlowHandle    string            `json:"registrationFlowHandle,omitempty"`
+	RegistrationFlowID        string            `json:"registrationFlowId,omitempty"`
 	IsRegistrationFlowEnabled bool              `json:"isRegistrationFlowEnabled,omitempty"`
-	RecoveryFlowRef           string            `json:"recoveryFlowRef,omitempty"`
 	RecoveryFlowHandle        string            `json:"recoveryFlowHandle,omitempty"`
 	IsRecoveryFlowEnabled     bool              `json:"isRecoveryFlowEnabled,omitempty"`
+	IsSignOutFlowEnabled      bool              `json:"isSignOutFlowEnabled,omitempty"`
 	Assertion                 *AssertionSpec    `json:"assertion,omitempty"`
 	LoginConsent              *LoginConsentSpec `json:"loginConsent,omitempty"`
 	AllowedUserTypes          []string          `json:"allowedUserTypes,omitempty"`
-	ThemeRef                  string            `json:"themeRef,omitempty"`
+	ThemeHandle               string            `json:"themeHandle,omitempty"`
 	ThemeID                   string            `json:"themeId,omitempty"`
 	InboundAuthConfig         string            `json:"inboundAuthConfig,omitempty"`
 }

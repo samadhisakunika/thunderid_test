@@ -6,12 +6,13 @@ metadata:
 spec:
   instanceRef: thunderid-prod
   name: Test Web Application
-  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  ouHandle: default
   authFlowHandle: console-app-flow
-  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8d"
   logoUrl: "emoji:👨‍💻"
   isRegistrationFlowEnabled: true
   isRecoveryFlowEnabled: false
+  isSignOutFlowEnabled: false
   allowedUserTypes:
     - Person
   assertion:
@@ -27,8 +28,7 @@ spec:
         grantTypes:
           - authorization_code
           - refresh_token
-        
-        
+       
         responseTypes:
           - code
         tokenEndpointAuthMethod: client_secret_basic

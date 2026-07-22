@@ -1,0 +1,17 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Role
+metadata:
+  name: test-role
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: Test Role
+  description: A simple test role for verifying the Role controller.
+  ouHandle: default  # resolves to the OrganizationUnit CR named "test-ou" above
+  permissions:
+    - resourceServerId: "019f215e-1a55-72db-9743-ac25d839c72a"
+      permissions:
+        - system
+  assignments:
+    - id: "019f215e-1bc0-773b-a202-04fbcee09eeb"
+      type: group

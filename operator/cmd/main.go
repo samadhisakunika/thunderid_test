@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -180,6 +181,10 @@ func main() {
 		setupLog.Error(err, "Failed to start manager")
 		os.Exit(1)
 	}
+	if err := controller.SetupReferenceIndexes(context.Background(), mgr); err != nil {
+		setupLog.Error(err, "Failed to set up reference indexes")
+		os.Exit(1)
+	}
 
 	if err := (&controller.ThunderIDInstanceReconciler{
 		Client: mgr.GetClient(),
@@ -189,26 +194,32 @@ func main() {
 		os.Exit(1)
 	}
 
+	kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "Failed to create Kubernetes client")
+		os.Exit(1)
+	}
+
 	if err := (&controller.ThemeReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("theme-controller"),
+		KubeClient: kubeClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "theme")
 		os.Exit(1)
 	}
 
 	if err := (&controller.FlowReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("flow-controller"),
+		KubeClient: kubeClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "flow")
 		os.Exit(1)
 	}
-	kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
-	if err != nil {
-		setupLog.Error(err, "Failed to create Kubernetes client")
-		os.Exit(1)
-	}
+
 	if err := (&controller.ApplicationReconciler{
 		Client:     mgr.GetClient(),
 		Scheme:     mgr.GetScheme(),
@@ -216,6 +227,86 @@ func main() {
 		KubeClient: kubeClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "application")
+		os.Exit(1)
+	}
+
+	if err := (&controller.OrganizationUnitReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("organizationunit-controller"),
+		KubeClient: kubeClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "organizationunit")
+		os.Exit(1)
+	}
+
+	if err := (&controller.RoleReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("role-controller"),
+		KubeClient: kubeClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "role")
+		os.Exit(1)
+	}
+
+	if err := (&controller.UserTypeReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("usertype-controller"),
+		KubeClient: kubeClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "usertype")
+		os.Exit(1)
+	}
+
+	if err := (&controller.UserReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("user-controller"),
+		KubeClient: kubeClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "user")
+		os.Exit(1)
+	}
+
+	if err := (&controller.ResourceServerReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("resourceserver-controller"),
+		KubeClient: kubeClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "resourceserver")
+		os.Exit(1)
+	}
+
+	if err := (&controller.GroupReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("group-controller"),
+		KubeClient: kubeClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "group")
+		os.Exit(1)
+	}
+
+	if err := (&controller.ServerConfigReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("serverconfig-controller"),
+		KubeClient: kubeClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "serverconfig")
+		os.Exit(1)
+	}
+
+	if err := (&controller.TranslationReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("translation-controller"),
+		KubeClient: kubeClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "translation")
 		os.Exit(1)
 	}
 

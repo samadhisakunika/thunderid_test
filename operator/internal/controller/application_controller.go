@@ -43,6 +43,7 @@ type ApplicationReconciler struct {
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=applications/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances,verbs=get;patch
+// +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=flows,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=themes,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;create;update;patch
@@ -93,12 +94,12 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		log.Error(err, "failed to sync application ConfigMap")
 		r.Recorder.Event(app, corev1.EventTypeWarning, "SyncFailed", err.Error())
+		r.Recorder.Event(instance, corev1.EventTypeWarning, "ApplicationSyncFailed", fmt.Sprintf("Application %s: %v", app.Name, err))
 		app.Status.Phase = "Error"
 		app.Status.Synced = false
 		_ = r.Status().Update(ctx, app)
 		return ctrl.Result{}, err
 	}
-
 	// Phase=="Pending" means we already synced and are waiting to check pod health.
 	// Use LastSyncTime to ignore the immediate reconcile triggered by our own status update.
 	if app.Status.Phase == "Pending" && !changed {
@@ -264,7 +265,7 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 		if !a.DeletionTimestamp.IsZero() {
 			continue
 		}
-		yamlDoc, err := r.buildApplicationYAML(ctx, a)
+		yamlDoc, err := r.buildApplicationYAML(a)
 		if err != nil {
 			return false, fmt.Errorf("failed to build YAML for application %s: %w", a.Name, err)
 		}
@@ -326,7 +327,7 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 	return true, r.Patch(ctx, instance, patch)
 }
 
-func (r *ApplicationReconciler) buildApplicationYAML(ctx context.Context, a appsv1alpha1.Application) (string, error) {
+func (r *ApplicationReconciler) buildApplicationYAML(a appsv1alpha1.Application) (string, error) {
 	var buf bytes.Buffer
 	buf.WriteString("# resource_type: application\n")
 	fmt.Fprintf(&buf, "id: %q\n", string(a.UID))
@@ -343,41 +344,26 @@ func (r *ApplicationReconciler) buildApplicationYAML(ctx context.Context, a apps
 		fmt.Fprintf(&buf, "url: %q\n", a.Spec.URL)
 	}
 	if a.Spec.LogoURL != "" {
-		fmt.Fprintf(&buf, "logoUrl: '%s'\n", strings.ReplaceAll(a.Spec.LogoURL, "'", "''"))
+		fmt.Fprintf(&buf, "logoUrl: %s\n", yamlSingleQuote(a.Spec.LogoURL))
 	}
 
 	if a.Spec.AuthFlowID != "" {
 		fmt.Fprintf(&buf, "authFlowId: %q\n", a.Spec.AuthFlowID)
 	} else if a.Spec.AuthFlowHandle != "" {
 		fmt.Fprintf(&buf, "authFlowHandle: %q\n", a.Spec.AuthFlowHandle)
-	} else if a.Spec.AuthFlowRef != "" {
-		flow := &appsv1alpha1.Flow{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: a.Namespace, Name: a.Spec.AuthFlowRef}, flow); err != nil {
-			return "", fmt.Errorf("authFlowRef %q not found: %w", a.Spec.AuthFlowRef, err)
-		}
-		fmt.Fprintf(&buf, "authFlowHandle: %q\n", flow.Spec.Handle)
 	}
-	if a.Spec.RegistrationFlowHandle != "" {
+	if a.Spec.RegistrationFlowID != "" {
+		fmt.Fprintf(&buf, "registrationFlowId: %q\n", a.Spec.RegistrationFlowID)
+	} else if a.Spec.RegistrationFlowHandle != "" {
 		fmt.Fprintf(&buf, "registrationFlowHandle: %q\n", a.Spec.RegistrationFlowHandle)
-	} else if a.Spec.RegistrationFlowRef != "" {
-		flow := &appsv1alpha1.Flow{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: a.Namespace, Name: a.Spec.RegistrationFlowRef}, flow); err != nil {
-			return "", fmt.Errorf("registrationFlowRef %q not found: %w", a.Spec.RegistrationFlowRef, err)
-		}
-		fmt.Fprintf(&buf, "registrationFlowHandle: %q\n", flow.Spec.Handle)
 	}
 	fmt.Fprintf(&buf, "isRegistrationFlowEnabled: %v\n", a.Spec.IsRegistrationFlowEnabled)
 
 	if a.Spec.RecoveryFlowHandle != "" {
 		fmt.Fprintf(&buf, "recoveryFlowHandle: %q\n", a.Spec.RecoveryFlowHandle)
-	} else if a.Spec.RecoveryFlowRef != "" {
-		flow := &appsv1alpha1.Flow{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: a.Namespace, Name: a.Spec.RecoveryFlowRef}, flow); err != nil {
-			return "", fmt.Errorf("recoveryFlowRef %q not found: %w", a.Spec.RecoveryFlowRef, err)
-		}
-		fmt.Fprintf(&buf, "recoveryFlowHandle: %q\n", flow.Spec.Handle)
 	}
 	fmt.Fprintf(&buf, "isRecoveryFlowEnabled: %v\n", a.Spec.IsRecoveryFlowEnabled)
+	fmt.Fprintf(&buf, "isSignOutFlowEnabled: %v\n", a.Spec.IsSignOutFlowEnabled)
 
 	if len(a.Spec.AllowedUserTypes) > 0 {
 		buf.WriteString("allowedUserTypes:\n")
@@ -395,22 +381,13 @@ func (r *ApplicationReconciler) buildApplicationYAML(ctx context.Context, a apps
 		fmt.Fprintf(&buf, "loginConsent:\n  validityPeriod: %d\n", a.Spec.LoginConsent.ValidityPeriod)
 	}
 
-	if a.Spec.ThemeID != "" {
+	if a.Spec.ThemeHandle != "" {
+		fmt.Fprintf(&buf, "themeHandle: %q\n", a.Spec.ThemeHandle)
+	} else if a.Spec.ThemeID != "" {
 		fmt.Fprintf(&buf, "themeId: %q\n", a.Spec.ThemeID)
-	} else if a.Spec.ThemeRef != "" {
-		theme := &appsv1alpha1.Theme{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: a.Namespace, Name: a.Spec.ThemeRef}, theme); err != nil {
-			return "", fmt.Errorf("themeRef %q not found: %w", a.Spec.ThemeRef, err)
-		}
-		fmt.Fprintf(&buf, "themeId: %q\n", string(theme.UID))
 	}
 
-	if a.Spec.InboundAuthConfig != "" {
-		buf.WriteString("inboundAuthConfig:\n")
-		for _, line := range strings.Split(a.Spec.InboundAuthConfig, "\n") {
-			fmt.Fprintf(&buf, "  %s\n", line)
-		}
-	}
+	writeYAMLBlock(&buf, "inboundAuthConfig", a.Spec.InboundAuthConfig)
 
 	return buf.String(), nil
 }
@@ -418,9 +395,24 @@ func (r *ApplicationReconciler) buildApplicationYAML(ctx context.Context, a apps
 func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1alpha1.Application{}).
-		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.appsForDeployment)).
+		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.appsForDeployment), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.appsForInstance),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(&appsv1alpha1.Flow{}, handler.EnqueueRequestsFromMapFunc(
+			enqueueReferencing(mgr.GetClient(), indexApplicationAuthFlowHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
+				func(o client.Object) string { return o.(*appsv1alpha1.Flow).Spec.Handle }))).
+		Watches(&appsv1alpha1.Flow{}, handler.EnqueueRequestsFromMapFunc(
+			enqueueReferencing(mgr.GetClient(), indexApplicationRegistrationFlowHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
+				func(o client.Object) string { return o.(*appsv1alpha1.Flow).Spec.Handle }))).
+		Watches(&appsv1alpha1.Flow{}, handler.EnqueueRequestsFromMapFunc(
+			enqueueReferencing(mgr.GetClient(), indexApplicationRecoveryFlowHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
+				func(o client.Object) string { return o.(*appsv1alpha1.Flow).Spec.Handle }))).
+		Watches(&appsv1alpha1.Theme{}, handler.EnqueueRequestsFromMapFunc(
+			enqueueReferencing(mgr.GetClient(), indexApplicationThemeHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
+				func(o client.Object) string { return o.GetName() }))).
+		Watches(&appsv1alpha1.OrganizationUnit{}, handler.EnqueueRequestsFromMapFunc(
+			enqueueReferencing(mgr.GetClient(), indexApplicationOUHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
+				func(o client.Object) string { return o.(*appsv1alpha1.OrganizationUnit).Spec.Handle }))).
 		Named("application").
 		Complete(r)
 }

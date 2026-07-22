@@ -1,0 +1,25 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ResourceServer
+metadata:
+  name: test-resourceserver
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: Test System 2
+  type: SYSTEM
+  description: A simple test resource server for verifying the ResourceServer controller.
+  identifier: https://localhost:8090/mcp
+  ouHandle: test-ou
+  delimiter: ":"
+  resources:
+    - name: System
+      handle: system
+      description: System resource
+    - name: Organization Unit
+      handle: ou
+      description: Organization unit resource
+      parent: system
+      actions:
+        - name: View
+          handle: view
+          description: Read-only access to organization units

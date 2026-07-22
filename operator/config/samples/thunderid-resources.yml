@@ -1606,59 +1606,48 @@ name: Person
 ouId: 019ef85a-0aa4-7736-9357-d25edba4db95
 systemAttributes:
   display: username
-schema: {
-    "username": {
-      "type": "string",
-      "displayName": "Username",
-      "required": true,
-      "unique": true
-    },
-    "email": {
-      "type": "string",
-      "displayName": "Email",
-      "required": true,
-      "unique": true,
-      "regex": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
-    },
-    "given_name": {
-      "type": "string",
-      "displayName": "First Name",
-      "required": false
-    },
-    "family_name": {
-      "type": "string",
-      "displayName": "Last Name",
-      "required": false
-    },
-    "mobileNumber": {
-      "type": "string",
-      "displayName": "Mobile Number",
-      "required": false
-    },
-    "phone_number": {
-      "type": "string",
-      "displayName": "Phone Number",
-      "required": false
-    },
-    "sub": {
-      "type": "string",
-      "displayName": "Subject",
-      "required": false
-    },
-    "name": {
-      "type": "string",
-      "displayName": "Full Name",
-      "required": false
-    },
-    "picture": {
-      "type": "string",
-      "displayName": "Picture",
-      "required": false
-    },
-    "password": {
-      "type": "string",
-      "displayName": "Password",
-      "required": false,
-      "credential": true
-    }
-  }
+schema:
+  username:
+    type: string
+    displayName: Username
+    required: true
+    unique: true
+  email:
+    type: string
+    displayName: Email
+    required: true
+    unique: true
+    regex: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+  given_name:
+    type: string
+    displayName: First Name
+    required: false
+  family_name:
+    type: string
+    displayName: Last Name
+    required: false
+  mobileNumber:
+    type: string
+    displayName: Mobile Number
+    required: false
+  phone_number:
+    type: string
+    displayName: Phone Number
+    required: false
+  sub:
+    type: string
+    displayName: Subject
+    required: false
+  name:
+    type: string
+    displayName: Full Name
+    required: false
+  picture:
+    type: string
+    displayName: Picture
+    required: false
+  password:
+    type: string
+    displayName: Password
+    required: false
+    credential: true

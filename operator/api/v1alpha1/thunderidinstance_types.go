@@ -68,6 +68,8 @@ type ThunderIDInstanceStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // ThunderIDInstance is the Schema for the thunderidinstances API
 type ThunderIDInstance struct {

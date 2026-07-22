@@ -6,6 +6,14 @@ resources:
 - bases/apps.thunderid.io_themes.yaml
 - bases/apps.thunderid.io_flows.yaml
 - bases/apps.thunderid.io_applications.yaml
+- bases/apps.thunderid.io_organizationunits.yaml
+- bases/apps.thunderid.io_roles.yaml
+- bases/apps.thunderid.io_usertypes.yaml
+- bases/apps.thunderid.io_users.yaml
+- bases/apps.thunderid.io_resourceservers.yaml
+- bases/apps.thunderid.io_groups.yaml
+- bases/apps.thunderid.io_serverconfigs.yaml
+- bases/apps.thunderid.io_translations.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

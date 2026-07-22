@@ -62,6 +62,8 @@ spec:
                 type: string
               instanceRef:
                 type: string
+              isReadOnly:
+                type: boolean
               name:
                 type: string
               nodes:
@@ -134,6 +136,9 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               flowID:
+                type: string
+              lastSyncTime:
+                format: date-time
                 type: string
               phase:
                 type: string

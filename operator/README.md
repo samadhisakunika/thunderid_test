@@ -20,6 +20,12 @@ A Kubernetes operator that manages [ThunderID](https://github.com/thunder-id/thu
   - [Application](#application)
   - [Flow](#flow)
   - [Theme](#theme)
+  - [OrganizationUnit](#organizationunit)
+  - [ResourceServer](#resourceserver)
+  - [Role](#role)
+  - [UserType](#usertype)
+  - [User](#user)
+  - [Group](#group)
 - [Checking Status](#checking-status)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
@@ -45,17 +51,22 @@ ThunderIDConfig  ──creates──►  ThunderIDInstance  ──creates──�
       └──creates──► HPA               └── reads ── thunderid-resources ConfigMap
                                                (base OU, flows, themes)
 
-Application CRD  ──writes──►  <instance>-applications ConfigMap
-                               └── mounted into ThunderID pod at startup
-
-Flow CRD         ──calls──►  ThunderID API  (live, no restart needed)
-Theme CRD        ──calls──►  ThunderID API  (live, no restart needed)
+OrganizationUnit CRD  ──writes──►  <instance>-organizationunits ConfigMap
+ResourceServer CRD    ──writes──►  <instance>-resourceservers ConfigMap
+Theme CRD             ──writes──►  <instance>-themes ConfigMap
+Flow CRD              ──writes──►  <instance>-flows ConfigMap
+UserType CRD          ──writes──►  <instance>-usertypes ConfigMap
+User CRD              ──writes──►  <instance>-users ConfigMap
+Group CRD             ──writes──►  <instance>-groups ConfigMap
+Role CRD              ──writes──►  <instance>-roles ConfigMap
+Application CRD       ──writes──►  <instance>-applications ConfigMap
+                                    └── all mounted into ThunderID pod at startup
 ```
 
 **Key facts:**
 - By default each ThunderID pod uses an **ephemeral SQLite database**. On every pod restart the database is wiped and rebuilt from the resources ConfigMap. To use a persistent PostgreSQL database instead, set `spec.databaseSecret` — see the ThunderIDConfig reference below.
 - `spec.resourcesConfigMap` must point to a ConfigMap that seeds the base OU, flows, and themes **before** any Application resources are loaded. Without this, Application loading will fail with `APP-1018`.
-- Applications are loaded at **pod startup** via a mounted ConfigMap. A config change triggers a rolling restart; it is not applied live.
+- All ten resource kinds are loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each CRD's controller reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified, the same way Application does.
 
 ---
 
@@ -78,9 +89,15 @@ Expected output:
 ```
 applications.apps.thunderid.io
 flows.apps.thunderid.io
+groups.apps.thunderid.io
+organizationunits.apps.thunderid.io
+resourceservers.apps.thunderid.io
+roles.apps.thunderid.io
 themes.apps.thunderid.io
 thunderidconfigs.apps.thunderid.io
 thunderidinstances.apps.thunderid.io
+users.apps.thunderid.io
+usertypes.apps.thunderid.io
 ```
 
 ---
@@ -277,7 +294,7 @@ Registers an OAuth2/OIDC application in ThunderID. The operator writes all appli
 
 ### Flow
 
-Registers a custom authentication or registration flow via the ThunderID live API (no pod restart required).
+Registers a custom authentication or registration flow. Loaded via the `<instance>-flows` ConfigMap at pod startup, like Application.
 
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
@@ -290,14 +307,21 @@ spec:
   handle: my-login-flow
   name: My Login Flow
   flowType: AUTHENTICATION   # or REGISTRATION
-  nodes: '[...]'             # ThunderID flow node JSON
+  nodes: |
+    - id: start
+      type: START
+      onSuccess: end
+    - id: end
+      type: END
 ```
+
+`spec.nodes` is the flow's node graph as raw YAML (the same shape ThunderID exports/imports natively), pasted verbatim — not a JSON string.
 
 ---
 
 ### Theme
 
-Registers a custom UI theme via the ThunderID live API (no pod restart required).
+Registers a custom UI theme. Loaded via the `<instance>-themes` ConfigMap at pod startup, like Application.
 
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
@@ -311,6 +335,201 @@ spec:
   description: Dark purple theme
   theme: '{"defaultColorScheme":"dark","colorSchemes":{"dark":{"palette":{"primary":{"main":"#5567d5"}}}}}'
 ```
+
+---
+
+### OrganizationUnit
+
+Registers an organization unit (a container for users, roles, and applications). Loaded via the `<instance>-organizationunits` ConfigMap — first, before any other resource kind, since everything else can reference `ouId`.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: OrganizationUnit
+metadata:
+  name: default-ou
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  handle: default
+  name: Default
+  description: Default organization unit
+  logoUrl: "https://example.com/logo.png"
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.handle` / `spec.name` | Required. Handle is the machine-readable slug, name is the display name |
+| `spec.parentId` / `spec.parentHandle` / `spec.parentRef` | Optional parent organization unit — literal ID, literal handle, or a reference to another `OrganizationUnit` CR by Kubernetes object name (priority: ID > handle > ref) |
+| `spec.logoUrl` | Optional. Free text — quoted safely for values that may contain emoji |
+
+---
+
+### ResourceServer
+
+Registers a resource server and the resources/actions it exposes, for use in Role permission grants. Loaded via the `<instance>-resourceservers` ConfigMap.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ResourceServer
+metadata:
+  name: system
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: System
+  description: System resource server
+  identifier: https://localhost:8090/mcp
+  ouRef: default-ou
+  delimiter: ":"
+  resources:
+    - name: System
+      handle: system
+      description: System resource
+    - name: Organization Unit
+      handle: ou
+      description: Organization unit resource
+      parent: system
+      actions:
+        - name: View
+          handle: view
+          description: Read-only access to organization units
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.name` | Required |
+| `spec.handle` / `spec.identifier` / `spec.delimiter` | Optional. `delimiter` joins a resource and action handle into a permission string (e.g. `ou:view`) |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType |
+| `spec.resources[].name` / `.handle` / `.description` | Required name/handle per resource, optional description |
+| `spec.resources[].parent` | Optional — the `handle` of another entry in the same `resources` list (not a Kubernetes reference) |
+| `spec.resources[].actions[]` | Optional list of `{name, handle, description}` actions available on that resource |
+
+---
+
+### Role
+
+Registers a role and its permission/assignment grants. Loaded via the `<instance>-roles` ConfigMap.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Role
+metadata:
+  name: administrator
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: Administrator
+  description: System administrator role with full permissions
+  ouRef: default-ou   # or ouId / ouHandle for a literal reference
+  permissions:
+    - resourceServerId: "019f215e-1a55-72db-9743-ac25d839c72a"
+      permissions:
+        - system
+  assignments:
+    - id: "019f215e-1bc0-773b-a202-04fbcee09eeb"
+      type: group
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.name` | Required |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit — literal ID, literal handle, or a reference to an `OrganizationUnit` CR by name |
+| `spec.permissions[].resourceServerId` / `.permissions` | The resource server this grant applies to, and which permission names are granted on it |
+| `spec.assignments[].id` / `.type` | Who the role is assigned to (e.g. a group ID) and the assignment type |
+
+---
+
+### UserType
+
+Registers a user type and its attribute schema. Loaded via the `<instance>-usertypes` ConfigMap.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: UserType
+metadata:
+  name: person
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  category: user
+  name: Person
+  ouRef: default-ou
+  systemAttributes:
+    display: username
+  schema: |
+    {
+      "username": {"type": "string", "displayName": "Username", "required": true, "unique": true},
+      "email": {"type": "string", "displayName": "Email", "required": true, "unique": true},
+      "password": {"type": "string", "displayName": "Password", "required": false, "credential": true}
+    }
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.category` / `spec.name` | Required. Category is a free-form string (e.g. `user`) |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role |
+| `spec.systemAttributes` | Small key/value map, e.g. which attribute is used as the display name |
+| `spec.schema` | Required. The attribute schema as raw JSON — pasted verbatim, single or multi-line |
+
+---
+
+### User
+
+Registers a user. Loaded via the `<instance>-users` ConfigMap.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: User
+metadata:
+  name: admin
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  type: Person
+  ouRef: default-ou
+  attributes:
+    username: admin
+    email: admin@example.com
+    given_name: Admin
+    family_name: User
+    name: Administrator
+    phone_number: "+12345678920"
+    picture: "https://example.com/avatar.jpg"
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.type` | Required. The **name** of a `UserType` (e.g. `Person`) — a literal string, not a Kubernetes reference, same convention as `Application.allowedUserTypes` |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType/ResourceServer |
+| `spec.attributes` | Free-form key/value map — the keys should match the attributes defined in the referenced `UserType`'s `schema`. No credential/password field yet; a user created this way needs a password set some other way before it can log in |
+
+---
+
+### Group
+
+Registers a group and its member list. Loaded via the `<instance>-groups` ConfigMap.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Group
+metadata:
+  name: administrators
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: Administrators
+  description: System administrators group
+  ouRef: default-ou
+  members:
+    - id: "<user-or-group-id>"
+      type: user
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.name` | Required |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType/User |
+| `spec.members[].id` / `.type` | Literal member ID (a `User` or `Group`'s ID) and type (e.g. `user`, `group`) — literal, not a Kubernetes reference, same convention as `Role.assignments` |
 
 ---
 
@@ -356,6 +575,8 @@ Look at the **Events** section. Event types:
 | `ThunderIDCrashed` | Pod is in CrashLoopBackOff; no structured error found in logs |
 
 > **Tip:** `ThunderIDError` only appears after the pod reaches stable `CrashLoopBackOff`. Wait until `kubectl get pod` shows `CrashLoopBackOff` before running `kubectl describe applications`.
+
+`kubectl get flows|themes|organizationunits|resourceservers|roles|usertypes|users|groups` and `kubectl describe <kind> <name>` report the same `Pending`/`Ready`/`Error` phases and `Synced`/`Ready`/`ThunderIDError`/`ThunderIDCrashed` events as Application, since every resource kind is reconciled the same way. `kubectl get thunderidinstance` additionally shows a `DEGRADED` count summarizing how many dependent resources (of any kind) currently have a sync failure, without needing to check each one individually.
 
 ---
 

@@ -51,8 +51,6 @@ spec:
                 type: string
               authFlowId:
                 type: string
-              authFlowRef:
-                type: string
               description:
                 type: string
               inboundAuthConfig:
@@ -62,6 +60,8 @@ spec:
               isRecoveryFlowEnabled:
                 type: boolean
               isRegistrationFlowEnabled:
+                type: boolean
+              isSignOutFlowEnabled:
                 type: boolean
               loginConsent:
                 properties:
@@ -79,15 +79,13 @@ spec:
                 type: string
               recoveryFlowHandle:
                 type: string
-              recoveryFlowRef:
-                type: string
               registrationFlowHandle:
                 type: string
-              registrationFlowRef:
+              registrationFlowId:
+                type: string
+              themeHandle:
                 type: string
               themeId:
-                type: string
-              themeRef:
                 type: string
               url:
                 type: string
