@@ -43,6 +43,13 @@ type ThunderIDInstanceSpec struct {
 	// +optional
 	TLSSecret string `json:"tlsSecret,omitempty"`
 
+	// SecuritySecret names a pre-existing Secret holding ThunderID's TLS/JWT-signing/encryption
+	// key material (server.cert, server.key, signing.cert, signing.key, ecdsa-signing.cert,
+	// ecdsa-signing.key, crypto.key, direct_auth_secret). When unset, the operator generates and
+	// manages this Secret itself as "<name>-security".
+	// +optional
+	SecuritySecret string `json:"securitySecret,omitempty"`
+
 	// +optional
 	ResourcesConfigMap string `json:"resourcesConfigMap,omitempty"`
 

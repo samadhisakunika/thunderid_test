@@ -5,10 +5,10 @@ metadata:
   namespace: default
 spec:
   instanceRef: thunderid-prod
-  name: Test Web Application
+  name: Test Web Application3
   ouHandle: default
   authFlowHandle: console-app-flow
-  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8d"
+  themeId: "019f83c6-e188-747e-95f1-b7c3a119abed"
   logoUrl: "emoji:👨‍💻"
   isRegistrationFlowEnabled: true
   isRecoveryFlowEnabled: false
@@ -28,6 +28,7 @@ spec:
         grantTypes:
           - authorization_code
           - refresh_token
+          - client_credentials
        
         responseTypes:
           - code

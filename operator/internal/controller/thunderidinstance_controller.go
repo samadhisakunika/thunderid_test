@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -49,7 +50,8 @@ var deploymentConfigTemplate string
 // ThunderIDInstanceReconciler reconciles a ThunderIDInstance object
 type ThunderIDInstanceReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // RBAC annotations for the controller
@@ -57,7 +59,8 @@ type ThunderIDInstanceReconciler struct {
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=configmaps;services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps;services;secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 
@@ -99,7 +102,14 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return hex.EncodeToString(h.Sum(nil))[:16]
 	}()
 
-	if err := r.reconcileDeployment(ctx, instance, configHash, resourcesContent != ""); err != nil {
+	securitySecretName, err := r.reconcileSecuritySecret(ctx, instance)
+	if err != nil {
+		log.Error(err, "failed to reconcile security Secret")
+		r.Recorder.Event(instance, corev1.EventTypeWarning, "SecuritySecretError", err.Error())
+		return ctrl.Result{}, err
+	}
+
+	if err := r.reconcileDeployment(ctx, instance, configHash, resourcesContent != "", securitySecretName); err != nil {
 		log.Error(err, "failed to reconcile Deployment")
 		return ctrl.Result{}, err
 	}
@@ -247,7 +257,8 @@ func (r *ThunderIDInstanceReconciler) appendResourceConfigMap(
 }
 
 func (r *ThunderIDInstanceReconciler) reconcileDeployment(
-	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, configHash string, hasResources bool) error {
+	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, configHash string, hasResources bool,
+	securitySecretName string) error {
 	replicas := instance.Spec.Replicas
 	configMapName := instance.Name + "-config"
 
@@ -271,6 +282,29 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		})
 	}
 
+	// Mounted individually (not as a whole directory) onto /opt/thunderid/config/{certs,secrets}
+	// so we don't clobber the image's other baked-in files under /opt/thunderid/config (e.g.
+	// default.json, resources/templates/*). setup.sh only (re)generates a cert/key pair when it
+	// finds the file missing, so pre-supplying all of them here — stable across reconciles, see
+	// reconcileSecuritySecret — keeps the JWT signing key (and TLS/encryption keys) identical
+	// across pod restarts and across replicas.
+	for _, f := range securityCertMountKeys {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "security",
+			MountPath: "/opt/thunderid/config/certs/" + f,
+			SubPath:   f,
+		})
+	}
+	// direct_auth_secret is handled separately from the cert/key files above: setup.sh
+	// unconditionally chmod's it (600) even when reusing an existing value, and Secret-backed
+	// volumes are always mounted read-only, so a direct subPath mount here would crash setup.sh
+	// with "Read-only file system". Instead it's seeded into a writable emptyDir by an init
+	// container, which is where the chmod actually happens.
+	volumeMounts = append(volumeMounts, corev1.VolumeMount{
+		Name:      "direct-auth-secret",
+		MountPath: "/opt/thunderid/config/secrets",
+	})
+
 	defaultMode := int32(0644)
 	volumes := []corev1.Volume{
 		{
@@ -280,6 +314,33 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 					LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
 					DefaultMode:          &defaultMode,
 				},
+			},
+		},
+		{
+			Name: "security",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  securitySecretName,
+					DefaultMode: &defaultMode,
+				},
+			},
+		},
+		{
+			Name:         "direct-auth-secret",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		},
+	}
+
+	initContainers := []corev1.Container{
+		{
+			Name:  "seed-direct-auth-secret",
+			Image: instance.Spec.Image,
+			Command: []string{"/bin/sh", "-c", fmt.Sprintf(
+				"cp /run/security-seed/%[1]s /opt/thunderid/config/secrets/%[1]s && chmod 600 /opt/thunderid/config/secrets/%[1]s",
+				securityKeyDirectAuth)},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "security", MountPath: "/run/security-seed", ReadOnly: true},
+				{Name: "direct-auth-secret", MountPath: "/opt/thunderid/config/secrets"},
 			},
 		},
 	}
@@ -309,6 +370,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 						Annotations: map[string]string{"thunderid.io/config-hash": configHash},
 					},
 					Spec: corev1.PodSpec{
+						InitContainers: initContainers,
 						Containers: []corev1.Container{
 							{
 								Name:    "thunderid",
@@ -373,12 +435,18 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	originalResources := dep.Spec.Template.Spec.Containers[0].Resources.DeepCopy()
 	originalReplicas := dep.Spec.Replicas
 
-	// Check for stale bootstrap volume that the old code left behind.
+	// Check for stale bootstrap volume that the old code left behind, and whether the security
+	// Secret volume (added later) already points at the Secret we want — deployments created
+	// before it existed, or whose spec.securitySecret just changed, need an update to pick that
+	// up even if nothing else about them changed.
 	hasBootstrapVolume := false
+	securityVolumeCurrent := false
 	for _, v := range dep.Spec.Template.Spec.Volumes {
 		if v.Name == "bootstrap" {
 			hasBootstrapVolume = true
-			break
+		}
+		if v.Name == "security" && v.Secret != nil && v.Secret.SecretName == securitySecretName {
+			securityVolumeCurrent = true
 		}
 	}
 
@@ -424,6 +492,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		TimeoutSeconds:      1,
 	}
 	dep.Spec.Template.Spec.Volumes = volumes
+	dep.Spec.Template.Spec.InitContainers = initContainers
 	if dep.Spec.Template.Annotations == nil {
 		dep.Spec.Template.Annotations = map[string]string{}
 	}
@@ -434,6 +503,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	replicasMatch := instance.Spec.AutoScaling != nil || instance.Spec.Replicas == 0 ||
 		(originalReplicas != nil && *originalReplicas == instance.Spec.Replicas)
 	if !hasBootstrapVolume &&
+		securityVolumeCurrent &&
 		originalHash == configHash &&
 		originalImage == instance.Spec.Image &&
 		originalCmd == startCmd &&
