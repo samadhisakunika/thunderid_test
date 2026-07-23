@@ -1,0 +1,4400 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-001
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 001"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-002
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 002"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-003
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 003"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-004
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 004"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-005
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 005"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-006
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 006"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-007
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 007"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-008
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 008"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-009
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 009"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-010
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 010"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-011
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 011"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-012
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 012"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-013
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 013"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-014
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 014"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-015
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 015"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-016
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 016"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-017
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 017"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-018
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 018"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-019
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 019"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-020
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 020"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-021
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 021"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-022
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 022"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-023
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 023"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-024
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 024"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-025
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 025"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-026
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 026"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-027
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 027"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-028
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 028"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-029
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 029"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-030
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 030"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-031
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 031"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-032
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 032"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-033
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 033"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-034
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 034"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-035
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 035"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-036
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 036"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-037
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 037"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-038
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 038"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-039
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 039"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-040
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 040"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-041
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 041"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-042
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 042"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-043
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 043"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-044
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 044"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-045
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 045"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-046
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 046"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-047
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 047"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-048
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 048"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-049
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 049"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-050
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 050"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-051
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 051"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-052
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 052"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-053
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 053"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-054
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 054"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-055
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 055"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-056
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 056"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-057
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 057"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-058
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 058"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-059
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 059"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-060
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 060"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-061
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 061"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-062
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 062"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-063
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 063"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-064
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 064"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-065
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 065"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-066
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 066"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-067
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 067"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-068
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 068"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-069
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 069"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-070
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 070"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-071
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 071"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-072
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 072"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-073
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 073"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-074
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 074"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-075
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 075"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-076
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 076"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-077
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 077"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-078
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 078"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-079
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 079"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-080
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 080"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-081
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 081"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-082
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 082"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-083
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 083"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-084
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 084"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-085
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 085"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-086
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 086"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-087
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 087"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-088
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 088"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-089
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 089"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-090
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 090"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-091
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 091"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-092
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 092"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-093
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 093"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-094
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 094"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-095
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 095"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-096
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 096"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-097
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 097"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-098
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 098"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-099
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 099"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-100
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 100"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-101
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 101"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-102
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 102"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-103
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 103"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-104
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 104"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-105
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 105"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-106
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 106"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-107
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 107"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-108
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 108"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-109
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 109"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-110
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 110"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-111
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 111"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-112
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 112"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-113
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 113"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-114
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 114"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-115
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 115"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-116
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 116"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-117
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 117"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-118
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 118"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-119
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 119"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-120
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 120"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-121
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 121"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-122
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 122"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-123
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 123"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-124
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 124"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-125
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 125"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-126
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 126"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-127
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 127"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-128
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 128"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-129
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 129"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-130
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 130"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-131
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 131"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-132
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 132"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-133
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 133"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-134
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 134"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-135
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 135"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-136
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 136"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-137
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 137"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-138
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 138"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-139
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 139"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-140
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 140"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-141
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 141"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-142
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 142"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-143
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 143"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-144
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 144"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-145
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 145"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-146
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 146"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-147
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 147"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-148
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 148"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-149
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 149"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-150
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 150"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-151
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 151"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-152
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 152"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-153
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 153"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-154
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 154"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-155
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 155"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-156
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 156"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-157
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 157"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-158
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 158"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-159
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 159"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-160
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 160"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-161
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 161"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-162
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 162"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-163
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 163"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-164
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 164"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-165
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 165"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-166
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 166"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-167
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 167"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-168
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 168"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-169
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 169"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-170
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 170"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-171
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 171"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-172
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 172"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-173
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 173"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-174
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 174"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-175
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 175"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-176
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 176"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-177
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 177"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-178
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 178"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-179
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 179"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-180
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 180"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-181
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 181"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-182
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 182"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-183
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 183"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-184
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 184"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-185
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 185"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-186
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 186"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-187
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 187"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-188
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 188"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-189
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 189"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-190
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 190"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-191
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 191"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-192
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 192"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-193
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 193"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-194
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 194"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-195
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 195"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-196
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 196"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-197
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 197"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-198
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 198"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-199
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 199"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: loadtest-new-200
+  namespace: default
+  labels:
+    loadtest: "true"
+spec:
+  instanceRef: thunderid-prod
+  name: "Load Test App 200"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+---

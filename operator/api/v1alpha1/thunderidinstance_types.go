@@ -17,9 +17,17 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
+
+type AutoScalingSpec struct {
+	MinReplicas                       int32 `json:"minReplicas"`
+	MaxReplicas                       int32 `json:"maxReplicas"`
+	TargetCPUUtilizationPercentage    int32 `json:"targetCPUUtilizationPercentage,omitempty"`
+	TargetMemoryUtilizationPercentage int32 `json:"targetMemoryUtilizationPercentage,omitempty"`
+}
 
 // ThunderIDInstanceSpec defines the desired state of ThunderIDInstance
 type ThunderIDInstanceSpec struct {
@@ -27,8 +35,6 @@ type ThunderIDInstanceSpec struct {
 	// +kubebuilder:validation:Required
 	Image string `json:"image"`
 
-	// +kubebuilder:default=1
-	// +kubebuilder:validation:Minimum=1
 	Replicas int32 `json:"replicas,omitempty"`
 
 	// +kubebuilder:validation:Required
@@ -37,11 +43,19 @@ type ThunderIDInstanceSpec struct {
 	// +optional
 	TLSSecret string `json:"tlsSecret,omitempty"`
 
+	// SecuritySecret names a pre-existing Secret holding ThunderID's TLS/JWT-signing/encryption
+	// key material (server.cert, server.key, signing.cert, signing.key, ecdsa-signing.cert,
+	// ecdsa-signing.key, crypto.key, direct_auth_secret). When unset, the operator generates and
+	// manages this Secret itself as "<name>-security".
+	// +optional
+	SecuritySecret string `json:"securitySecret,omitempty"`
+
 	// +optional
 	ResourcesConfigMap string `json:"resourcesConfigMap,omitempty"`
 
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// +optional
-	ResourcesYAML string `json:"resourcesYAML,omitempty"`
+	AutoScaling *AutoScalingSpec `json:"autoScaling,omitempty"`
 }
 
 // ThunderIDInstanceStatus defines the observed state of ThunderIDInstance.
@@ -61,6 +75,8 @@ type ThunderIDInstanceStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // ThunderIDInstance is the Schema for the thunderidinstances API
 type ThunderIDInstance struct {

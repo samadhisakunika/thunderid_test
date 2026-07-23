@@ -1,13 +1,89 @@
 apiVersion: apps.thunderid.io/v1alpha1
 kind: Application
 metadata:
-  name: my-web-app
+  name: my-console-app
   namespace: default
 spec:
-  instanceRef: test-resources
-  name: My Web App4
-  description: Test application
-  url: https://myapp.example.com
-  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  instanceRef: thunderid-prod
+  name: Test Web Application3
+  ouHandle: default
   authFlowHandle: console-app-flow
-  themeId: "019ef85a-0e5d-77bb-8557-bedefd01961d"
+  themeId: "019f83c6-e188-747e-95f1-b7c3a119abed"
+  logoUrl: "emoji:👨‍💻"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  isSignOutFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+  inboundAuthConfig: |
+    - type: oauth2
+      config:
+        clientId: MY_CONSOLE_CLIENT
+        redirectUris:
+          - https://localhost:8090/console
+        grantTypes:
+          - authorization_code
+          - refresh_token
+          - client_credentials
+       
+        responseTypes:
+          - code
+        tokenEndpointAuthMethod: client_secret_basic
+        pkceRequired: false
+        publicClient: false
+        requirePushedAuthorizationRequests: false
+        dpopBoundAccessTokens: false
+        includeActClaim: false
+        token:
+          accessToken:
+            validityPeriod: 3600
+            userAttributes:
+              - given_name
+              - family_name
+              - email
+              - groups
+              - ouId
+              - phone_number
+            responseType: JWT
+          idToken:
+            validityPeriod: 3600
+            userAttributes:
+              - given_name
+              - family_name
+              - email
+              - groups
+              - name
+              - picture
+              - ouId
+            responseType: JWT
+          refreshToken:
+            validityPeriod: 86400
+        userInfo:
+          responseType: JSON
+          userAttributes:
+            - given_name
+            - family_name
+            - email
+            - groups
+            - name
+            - ouId
+        scopeClaims:
+          group:
+            - groups
+          ou:
+            - ouId
+          phone:
+            - phone_number
+            - phone_number_verified
+          profile:
+            - name
+            - given_name
+            - family_name
+            - picture
+          email:
+            - email
+            - email_verified

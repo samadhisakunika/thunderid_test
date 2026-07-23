@@ -54,7 +54,10 @@ var _ = Describe("ThunderIDInstance Controller", func() {
 						Name:      resourceName,
 						Namespace: resourceNamespace,
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: appsv1alpha1.ThunderIDInstanceSpec{
+						Domain: "test.example.com",
+						Image:  "thunderid:latest",
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

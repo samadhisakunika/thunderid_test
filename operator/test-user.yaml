@@ -1,0 +1,16 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: User
+metadata:
+  name: test-user
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  type: Test User  # must match spec.name (not metadata.name) of an existing UserType — test-usertype.yaml's spec.name is "Test User Type"
+  ouHandle: default
+  attributes:
+    username: testadmin
+    email: testadmin@example.com
+    given_name: Test
+    family_name: Admin
+    name: Test Administrator
+    phone_number: "+12345678920"

@@ -1,0 +1,403 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Flow
+metadata:
+  name: cloud-login-flow
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  handle: cloud-login-flow
+  name: Cloud Authentication Flow
+  flowType: AUTHENTICATION
+  isReadOnly: false
+  nodes:
+    - id: start
+      type: START
+      layout:
+        size:
+          width: 101
+          height: 34
+        position:
+          x: 50
+          y: 212
+      onSuccess: choose_auth
+
+    - id: choose_auth
+      type: PROMPT
+      layout:
+        size:
+          width: 350
+          height: 651
+        position:
+          x: 251
+          y: -104
+      meta: '{"components":[{"resourceType":"ELEMENT","category":"BLOCK","type":"STACK","items":1,"direction":"row","gap":2,"align":"center","justify":"center","id":"block_5k1c","components":[{"resourceType":"ELEMENT","category":"DISPLAY","type":"IMAGE","src":"{{meta(application.logoUrl)}}","alt":"App Logo","id":"display_7rqb"}]},{"resourceType":"ELEMENT","category":"DISPLAY","type":"TEXT","align":"center","id":"text_001","label":"Sign In To WSO2 Cloud","variant":"HEADING_1"},{"resourceType":"ELEMENT","category":"ACTION","type":"BLOCK","id":"block_jqan","eventType":"TRIGGER","components":[{"resourceType":"ELEMENT","category":"ACTION","type":"ACTION","id":"action_google","variant":"OUTLINED","eventType":"TRIGGER","label":"Continue with Google","image":"assets/images/icons/google.svg"}]},{"resourceType":"ELEMENT","category":"ACTION","type":"BLOCK","id":"block_2031","eventType":"TRIGGER","components":[{"resourceType":"ELEMENT","category":"ACTION","type":"ACTION","id":"action_github","variant":"OUTLINED","eventType":"TRIGGER","label":"Continue with GitHub","image":"assets/images/icons/github.svg"}]}]}'
+      prompts:
+        - action:
+            ref: action_google
+            nextNode: google_auth
+        - action:
+            ref: action_github
+            nextNode: github_auth
+
+    - id: google_auth
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 200
+          height: 113
+        position:
+          x: 778
+          y: 37
+      properties:
+        idpId: "019e15f3-3780-708c-9682-3d293ba9833b"
+        allowAuthenticationWithoutLocalUser: true
+      executor:
+        name: GoogleOIDCAuthExecutor
+        inputs:
+          - ref: input_rt9r
+            type: TEXT_INPUT
+            identifier: code
+            required: true
+      onSuccess: check_eligibility
+
+    - id: github_auth
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 200
+          height: 113
+        position:
+          x: 782
+          y: 513
+      properties:
+        idpId: "019e15f3-572f-7ab0-8d41-a7a11bd2e8a4"
+        allowAuthenticationWithoutLocalUser: true
+      executor:
+        name: GithubOAuthExecutor
+        inputs:
+          - ref: input_iwar
+            type: TEXT_INPUT
+            identifier: code
+            required: true
+      onSuccess: check_eligibility
+
+    - id: check_eligibility
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 200
+          height: 113
+        position:
+          x: 1169
+          y: 211
+      properties:
+        url: "http://localhost:4000/v1/check-eligibility"
+        method: "POST"
+        headers:
+          Content-Type: "application/json"
+        body:
+          event: "LOGIN_CHECK"
+          email: "{{ctx(email)}}"
+        timeout: 10
+        responseMapping:
+          loginApproveStatus: "response.data.status"
+      executor:
+        name: HTTPRequestExecutor
+      onSuccess: check_eligibility_gate
+
+    - id: check_eligibility_gate
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 200
+          height: 113
+        position:
+          x: 1533
+          y: 211
+      condition:
+        key: "{{ctx(loginApproveStatus)}}"
+        value: "approved"
+        onSkip: login_blocked
+      properties:
+        url: "http://localhost:4000/v1/track-login"
+        method: "GET"
+        timeout: 2
+        errorHandling:
+          failOnError: false
+      executor:
+        name: HTTPRequestExecutor
+      onSuccess: check_state
+
+    - id: login_blocked
+      type: PROMPT
+      layout:
+        size:
+          width: 350
+          height: 462
+        position:
+          x: 1459
+          y: 446
+      meta: '{"components":[{"resourceType":"ELEMENT","category":"DISPLAY","type":"TEXT","id":"display_z9tj","variant":"HEADING_1","label":"🚫","align":"center"},{"resourceType":"ELEMENT","category":"DISPLAY","type":"TEXT","align":"center","id":"login_blocked_heading","label":"Access Restricted","variant":"HEADING_1"},{"resourceType":"ELEMENT","category":"DISPLAY","type":"RICH_TEXT","align":"center","id":"login_blocked_message","label":"Access is currently limited to invited beta users. To request access, please <a href=\"https://wso2.com/contact/?ref=agent-manager-waitlist\" target=\"_blank\" rel=\"noopener noreferrer\">join the waitlist</a>."},{"resourceType":"ELEMENT","category":"ACTION","type":"ACTION","eventType":"TRIGGER","id":"action_ok","label":"OK","variant":"PRIMARY"}]}'
+      prompts:
+        - action:
+            ref: action_ok
+            nextNode: choose_auth
+
+    - id: check_state
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 200
+          height: 113
+        position:
+          x: 1921
+          y: 213
+      executor:
+        name: IdentifyingExecutor
+        mode: check_state
+        inputs:
+          - identifier: sub
+            type: TEXT_INPUT
+            required: true
+      onSuccess: disambiguate
+      condition:
+        key: "{{ctx(entityState)}}"
+        value: "not_exists"
+        onSkip: auth_assert
+
+    - id: disambiguate
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 200
+          height: 113
+        position:
+          x: 1921
+          y: 213
+      executor:
+        name: IdentifyingExecutor
+        mode: resolve
+        inputs:
+          - identifier: sub
+            type: TEXT_INPUT
+            required: true
+      onSuccess: org_registration_prompt
+      onIncomplete: prompt_disambiguate
+      condition:
+        key: "{{ctx(entityState)}}"
+        value: "ambiguous"
+        onSkip: org_registration_prompt
+
+    - id: prompt_disambiguate
+      type: PROMPT
+      layout:
+        size:
+          width: 350
+          height: 787
+        position:
+          x: 2494
+          y: -739
+      meta: '{"components":[{"resourceType":"ELEMENT","category":"BLOCK","type":"STACK","items":1,"direction":"row","gap":2,"align":"center","justify":"center","id":"block_24xe","components":[{"resourceType":"ELEMENT","category":"DISPLAY","type":"IMAGE","src":"{{meta(application.logoUrl)}}","alt":"App Logo","id":"display_6rg1"}]},{"resourceType":"ELEMENT","category":"DISPLAY","type":"TEXT","align":"center","id":"text_disambig_title","label":"Select Your Organization","variant":"HEADING_1"},{"resourceType":"ELEMENT","category":"DISPLAY","type":"TEXT","align":"center","id":"text_disambig_subtitle","label":"Your account exists in multiple organizations. Please select one to continue.","variant":"BODY_2"},{"resourceType":"ELEMENT","category":"BLOCK","type":"BLOCK","id":"block_disambig","components":[{"resourceType":"ELEMENT","category":"FIELD","type":"SELECT","hint":"","label":"Organization","required":true,"placeholder":"Select your organization","options":[],"id":"select_ou","ref":"ouHandle"},{"resourceType":"ELEMENT","category":"ACTION","type":"ACTION","eventType":"SUBMIT","id":"action_select_ou","label":"Continue","variant":"PRIMARY"}]}]}'
+      prompts:
+        - inputs:
+            - ref: select_ou
+              identifier: ouHandle
+              type: SELECT
+              required: true
+          action:
+            ref: action_select_ou
+            nextNode: resolve_federated_user
+
+    - id: resolve_federated_user
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 234
+          height: 113
+        position:
+          x: 3005
+          y: -158
+      executor:
+        name: FederatedAuthResolverExecutor
+        inputs:
+          - identifier: ouHandle
+            type: TEXT_INPUT
+            required: true
+      onSuccess: auth_assert
+      onIncomplete: prompt_disambiguate
+
+    - id: org_registration_prompt
+      type: PROMPT
+      layout:
+        size:
+          width: 350
+          height: 826
+        position:
+          x: 2368
+          y: 380
+      meta: '{"components":[{"resourceType":"ELEMENT","category":"BLOCK","type":"STACK","items":1,"direction":"row","gap":2,"align":"center","justify":"center","id":"block_1st6","components":[{"resourceType":"ELEMENT","category":"DISPLAY","type":"IMAGE","src":"{{meta(application.logoUrl)}}","alt":"App Logo","id":"display_dveb"}]},{"resourceType":"ELEMENT","category":"DISPLAY","type":"TEXT","align":"center","id":"text_org_title","label":"Create Your Organization","variant":"HEADING_1"},{"resourceType":"ELEMENT","category":"DISPLAY","type":"TEXT","align":"center","id":"text_org_subtitle","label":"Set up your organization to get started","variant":"BODY"},{"resourceType":"ELEMENT","category":"BLOCK","type":"BLOCK","id":"block_org","components":[{"resourceType":"ELEMENT","category":"FIELD","type":"TEXT_INPUT","inputType":"text","hint":"","label":"Organization Name","required":true,"placeholder":"Enter your organization name","id":"input_ou_name","ref":"ouName"},{"resourceType":"ELEMENT","category":"FIELD","type":"TEXT_INPUT","inputType":"text","hint":"","label":"Organization Handle","required":true,"placeholder":"Enter a unique handle (e.g., my-org)","id":"input_ou_handle","ref":"ouHandle"},{"resourceType":"ELEMENT","category":"ACTION","type":"ACTION","eventType":"SUBMIT","id":"action_create_org","label":"Create Organization","variant":"PRIMARY"}]}]}'
+      prompts:
+        - inputs:
+            - ref: input_ou_name
+              type: TEXT_INPUT
+              identifier: ouName
+              required: true
+            - ref: input_ou_handle
+              type: TEXT_INPUT
+              identifier: ouHandle
+              required: true
+          action:
+            ref: action_create_org
+            nextNode: ou_creation
+      condition:
+        key: "{{ctx(entityState)}}"
+        value: "not_exists"
+        onSkip: auth_assert
+
+    - id: ou_creation
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 200
+          height: 113
+        position:
+          x: 2974
+          y: 824
+      executor:
+        name: OUExecutor
+        inputs:
+          - ref: input_ou_name
+            type: TEXT_INPUT
+            identifier: ouName
+            required: true
+          - ref: input_ou_handle
+            type: TEXT_INPUT
+            identifier: ouHandle
+            required: true
+      onSuccess: notify_org_created
+
+    - id: notify_org_created
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 200
+          height: 113
+        position:
+          x: 3360
+          y: 825
+      properties:
+        url: "http://localhost:4000/v1/track-organization-creation"
+        method: "POST"
+        headers:
+          Content-Type: "application/json"
+        body:
+          action: "created"
+          data:
+            appId: "{{ctx(applicationId)}}"
+            clientId: "{{ctx(clientId)}}"
+            orgId: "{{ctx(ouId)}}"
+            orgHandle: "{{ctx(ouHandle)}}"
+            orgName: "{{ctx(ouName)}}"
+            description: "{{ctx(ouDescription)}}"
+            parentOrgId: "{{ctx(defaultOUID)}}"
+            createdBy: "{{ctx(sub)}}"
+            createdByEmail: "{{ctx(email)}}"
+        timeout: 5
+        errorHandling:
+          failOnError: false
+          retryCount: 3
+          retryDelay: 5
+      executor:
+        name: HTTPRequestExecutor
+      onSuccess: provisioning
+
+    - id: provisioning
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 200
+          height: 113
+        position:
+          x: 3671
+          y: 827
+      properties:
+        assignRole: "019e15d8-44a8-345d-a71d-2758c78bbf75"
+        allowCrossOUProvisioning: true
+      executor:
+        name: ProvisioningExecutor
+      onSuccess: notify_user_created
+      onIncomplete: prompt_user_details
+
+    - id: prompt_user_details
+      type: PROMPT
+      layout:
+        size:
+          width: 350
+          height: 702
+        position:
+          x: 3795
+          y: 3
+      meta: '{"components":[{"resourceType":"ELEMENT","category":"BLOCK","type":"STACK","items":1,"direction":"row","gap":2,"align":"center","justify":"center","id":"block_266c","components":[{"resourceType":"ELEMENT","category":"DISPLAY","type":"IMAGE","src":"{{meta(application.logoUrl)}}","alt":"App Logo","id":"display_euvx"}]},{"resourceType":"ELEMENT","category":"DISPLAY","type":"TEXT","align":"center","id":"text_header_user_details","label":"Complete Registration","variant":"HEADING_1"},{"resourceType":"ELEMENT","category":"DISPLAY","type":"TEXT","align":"center","id":"text_subtitle_user_details","label":"Please fill in the required details to complete your registration.","variant":"HEADING_6"},{"resourceType":"ELEMENT","category":"BLOCK","type":"BLOCK","id":"block_user_details","components":[{"id":"dynamic_inputs_user_details","type":"DYNAMIC_INPUT_PLACEHOLDER"},{"resourceType":"ELEMENT","category":"ACTION","type":"ACTION","eventType":"SUBMIT","id":"action_user_details","label":"Submit","variant":"PRIMARY"}]}]}'
+      prompts:
+        - inputs: []
+          action:
+            ref: action_user_details
+            nextNode: provisioning
+
+    - id: notify_user_created
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 200
+          height: 113
+        position:
+          x: 4192
+          y: 827
+      properties:
+        url: "http://localhost:4000/v1/track-user-creation"
+        method: "POST"
+        headers:
+          Content-Type: "application/json"
+        body:
+          action: "created"
+          data:
+            appId: "{{ctx(applicationId)}}"
+            clientId: "{{ctx(clientId)}}"
+            userId: "{{ctx(userId)}}"
+            username: "{{ctx(sub)}}"
+            email: "{{ctx(email)}}"
+            userType: "{{ctx(userType)}}"
+            orgHandle: "{{ctx(ouHandle)}}"
+            orgId: "{{ctx(ouId)}}"
+            createdBy: "{{ctx(sub)}}"
+        timeout: 5
+        errorHandling:
+          failOnError: false
+          retryCount: 3
+          retryDelay: 5
+      executor:
+        name: HTTPRequestExecutor
+      onSuccess: auth_assert
+
+    - id: auth_assert
+      type: TASK_EXECUTION
+      layout:
+        size:
+          width: 244
+          height: 113
+        position:
+          x: 4564
+          y: 396
+      executor:
+        name: AuthAssertExecutor
+      onSuccess: end
+
+    - id: end
+      type: END
+      layout:
+        size:
+          width: 85
+          height: 34
+        position:
+          x: 4908
+          y: 436

@@ -1,0 +1,76 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Translation
+metadata:
+  name: thunderid-es
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  language: es
+  translations:
+    signin:
+      forms.credentials.title: Iniciar Sesión
+      forms.credentials.fields.username.label: Nombre de usuario
+      forms.credentials.fields.username.placeholder: Ingresa tu nombre de usuario
+      forms.credentials.fields.password.label: Contraseña
+      forms.credentials.fields.password.placeholder: Ingresa tu contraseña
+      forms.credentials.actions.submit.label: Iniciar Sesión
+      forms.credentials.links.sign_up.prefix: ¿No tienes una cuenta?
+      forms.credentials.links.sign_up.label: Registrarse
+      forms.credentials.links.forgot_password.prefix: ¿Olvidaste tu contraseña?
+      forms.credentials.links.forgot_password.label: Restablecer
+      forms.passkey.title: Iniciar sesión con Passkey
+      forms.passkey.description: Usa tu passkey para iniciar sesión de forma segura sin contraseña.
+      forms.otp.title: Verifica tu identidad
+      forms.otp.fields.otp.label: Código de verificación
+      forms.otp.fields.otp.placeholder: Ingresa el código
+      forms.otp.actions.submit.label: Verificar
+    signup:
+      forms.credentials.title: Crear Cuenta
+      forms.credentials.description: Elige tu método de registro preferido
+      forms.credentials.fields.username.label: Nombre de usuario
+      forms.credentials.fields.username.placeholder: Ingresa tu nombre de usuario
+      forms.credentials.fields.email.label: Correo electrónico
+      forms.credentials.fields.email.placeholder: Ingresa tu correo
+      forms.credentials.fields.first_name.label: Nombre
+      forms.credentials.fields.first_name.placeholder: Ingresa tu nombre
+      forms.credentials.fields.last_name.label: Apellido
+      forms.credentials.fields.last_name.placeholder: Ingresa tu apellido
+      forms.credentials.fields.password.label: Contraseña
+      forms.credentials.fields.password.placeholder: Ingresa tu contraseña
+      forms.credentials.actions.submit.label: Registrarse
+      forms.email.title: Registro
+      forms.email.fields.email.label: Correo electrónico
+      forms.email.fields.email.placeholder: Ingresa tu correo
+      forms.email.actions.next.label: Siguiente
+      forms.email_sent.title: Revisa tu correo electrónico
+      forms.email_sent.message: Te hemos enviado un enlace de verificación. Por favor revisa tu bandeja de entrada.
+      forms.passkey.title: Registro
+      forms.passkey.description: Regístrate con una passkey para un acceso seguro sin contraseña.
+      forms.passkey.actions.submit.label: Registrarse con Passkey
+    recovery:
+      forms.username.title: Recuperar Contraseña
+      forms.username.subtitle: Ingresa tu nombre de usuario para comenzar la recuperación
+      forms.username.fields.username.label: Nombre de usuario
+      forms.username.fields.username.placeholder: Ingresa tu nombre de usuario
+      forms.username.actions.submit.label: Enviar
+      forms.username.links.sign_in.prefix: ¿Recuerdas tu contraseña?
+      forms.username.links.sign_in.label: Iniciar sesión
+      forms.email_sent.title: Revisa tu correo electrónico
+      forms.email_sent.message: Hemos enviado un enlace para restablecer tu contraseña.
+      forms.new_password.title: Restablecer Contraseña
+      forms.new_password.subtitle: Ingresa una nueva contraseña para tu cuenta
+      forms.new_password.fields.password.label: Nueva Contraseña
+      forms.new_password.fields.password.placeholder: Ingresa tu nueva contraseña
+      forms.new_password.actions.submit.label: Restablecer Contraseña
+      forms.complete.title: Contraseña Restablecida con Éxito
+      forms.complete.message: Tu contraseña ha sido actualizada. Ahora puedes iniciar sesión.
+    consent:
+      title: Autorizar Aplicación
+      scopeDescription: 'Esta aplicación está solicitando acceso a:'
+      approve: Permitir
+      deny: Denegar
+    errors:
+      generic: Algo salió mal. Por favor, inténtalo de nuevo.
+      invalidCredentials: Usuario o contraseña incorrectos.
+      sessionExpired: Tu sesión ha expirado. Por favor, inicia sesión nuevamente.
+      unauthorized: No estás autorizado para realizar esta acción.

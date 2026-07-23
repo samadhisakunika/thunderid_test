@@ -1,0 +1,18 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: UserType
+metadata:
+  name: test-usertype
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  category: user
+  name: Test User Type
+  ouHandle: test-ou
+  systemAttributes:
+    display: username
+  schema: |
+    {
+      "username": {"type": "string", "displayName": "Username", "required": true, "unique": true},
+      "email": {"type": "string", "displayName": "Email", "required": true, "unique": true},
+      "password": {"type": "string", "displayName": "Password", "required": false, "credential": true}
+    }

@@ -37,17 +37,43 @@ spec:
             type: object
           spec:
             properties:
+              allowedUserTypeIds:
+                items:
+                  type: string
+                type: array
+              allowedUserTypes:
+                items:
+                  type: string
+                type: array
+              assertion:
+                properties:
+                  validityPeriod:
+                    format: int64
+                    type: integer
+                type: object
               authFlowHandle:
                 type: string
               authFlowId:
-                type: string
-              authFlowRef:
                 type: string
               description:
                 type: string
               inboundAuthConfig:
                 type: string
               instanceRef:
+                type: string
+              isRecoveryFlowEnabled:
+                type: boolean
+              isRegistrationFlowEnabled:
+                type: boolean
+              isSignOutFlowEnabled:
+                type: boolean
+              loginConsent:
+                properties:
+                  validityPeriod:
+                    format: int64
+                    type: integer
+                type: object
+              logoUrl:
                 type: string
               name:
                 type: string
@@ -57,15 +83,15 @@ spec:
                 type: string
               recoveryFlowHandle:
                 type: string
-              recoveryFlowRef:
-                type: string
               registrationFlowHandle:
                 type: string
-              registrationFlowRef:
+              registrationFlowId:
+                type: string
+              template:
+                type: string
+              themeHandle:
                 type: string
               themeId:
-                type: string
-              themeRef:
                 type: string
               url:
                 type: string
@@ -131,6 +157,9 @@ spec:
                   - type
                   type: object
                 type: array
+              lastSyncTime:
+                format: date-time
+                type: string
               phase:
                 type: string
               synced:

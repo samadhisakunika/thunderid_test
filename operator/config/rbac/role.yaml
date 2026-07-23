@@ -8,6 +8,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - secrets
   - services
   verbs:
   - create
@@ -17,6 +18,27 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
 - apiGroups:
   - apps
   resources:
@@ -34,8 +56,16 @@ rules:
   resources:
   - applications
   - flows
+  - groups
+  - organizationunits
+  - resourceservers
+  - roles
+  - serverconfigs
   - themes
   - thunderidinstances
+  - translations
+  - users
+  - usertypes
   verbs:
   - create
   - delete
@@ -49,8 +79,16 @@ rules:
   resources:
   - applications/status
   - flows/status
+  - groups/status
+  - organizationunits/status
+  - resourceservers/status
+  - roles/status
+  - serverconfigs/status
   - themes/status
   - thunderidinstances/status
+  - translations/status
+  - users/status
+  - usertypes/status
   verbs:
   - get
   - patch
@@ -61,6 +99,18 @@ rules:
   - thunderidinstances/finalizers
   verbs:
   - update
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - networking.k8s.io
   resources:

@@ -1,135 +1,681 @@
-# operator
-// TODO(user): Add simple overview of use/purpose
+# ThunderID Operator
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A Kubernetes operator that manages [ThunderID](https://github.com/thunder-id/thunderid) identity provider deployments declaratively. It lets you spin up ThunderID instances, define auth flows and themes, and register OAuth2 applications — all as Kubernetes custom resources.
 
-## Getting Started
+---
 
-### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+## Table of Contents
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+- [Prerequisites](#prerequisites)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+  - [1. Install CRDs](#1-install-crds)
+  - [2. Apply base resources](#2-apply-base-resources)
+  - [3. Start ThunderID](#3-start-thunderid)
+  - [4. Run the operator](#4-run-the-operator)
+  - [5. Register an application](#5-register-an-application)
+- [Custom Resources](#custom-resources)
+  - [ThunderIDConfig](#thunderidconfig)
+  - [ThunderIDInstance](#thunderidinstance)
+  - [Application](#application)
+  - [Flow](#flow)
+  - [Theme](#theme)
+  - [OrganizationUnit](#organizationunit)
+  - [ResourceServer](#resourceserver)
+  - [Role](#role)
+  - [UserType](#usertype)
+  - [User](#user)
+  - [Group](#group)
+- [Checking Status](#checking-status)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
 
-```sh
-make docker-build docker-push IMG=<some-registry>/operator:tag
+---
+
+## Prerequisites
+
+| Tool | Notes |
+|------|-------|
+| Go 1.21+ | Only needed for local development |
+| kubectl | Configured to talk to your cluster |
+| Kubernetes 1.28+ | Local: [kind](https://kind.sigs.k8s.io/) or [minikube](https://minikube.sigs.k8s.io/) |
+| make | Needed for operator build/deploy targets |
+
+---
+
+## Architecture
+
+```
+ThunderIDConfig  ──creates──►  ThunderIDInstance  ──creates──►  Deployment / Pod
+      │                               │
+      └──creates──► HPA               └── reads ── thunderid-resources ConfigMap
+                                               (base OU, flows, themes)
+
+OrganizationUnit CRD  ──writes──►  <instance>-organizationunits ConfigMap
+ResourceServer CRD    ──writes──►  <instance>-resourceservers ConfigMap
+Theme CRD             ──writes──►  <instance>-themes ConfigMap
+Flow CRD              ──writes──►  <instance>-flows ConfigMap
+UserType CRD          ──writes──►  <instance>-usertypes ConfigMap
+User CRD              ──writes──►  <instance>-users ConfigMap
+Group CRD             ──writes──►  <instance>-groups ConfigMap
+Role CRD              ──writes──►  <instance>-roles ConfigMap
+Application CRD       ──writes──►  <instance>-applications ConfigMap
+                                    └── all mounted into ThunderID pod at startup
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+**Key facts:**
+- By default each ThunderID pod uses an **ephemeral SQLite database**. On every pod restart the database is wiped and rebuilt from the resources ConfigMap. To use a persistent PostgreSQL database instead, set `spec.databaseSecret` — see the ThunderIDConfig reference below.
+- `spec.resourcesConfigMap` must point to a ConfigMap that seeds the base OU, flows, and themes **before** any Application resources are loaded. Without this, Application loading will fail with `APP-1018`.
+- All ten resource kinds are loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each CRD's controller reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified, the same way Application does.
 
-**Install the CRDs into the cluster:**
+---
 
-```sh
+## Quick Start
+
+### 1. Install CRDs
+
+```bash
+cd operator
 make install
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+Verify:
 
-```sh
-make deploy IMG=<some-registry>/operator:tag
+```bash
+kubectl get crd | grep thunderid
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
-
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
+Expected output:
+```
+applications.apps.thunderid.io
+flows.apps.thunderid.io
+groups.apps.thunderid.io
+organizationunits.apps.thunderid.io
+resourceservers.apps.thunderid.io
+roles.apps.thunderid.io
+themes.apps.thunderid.io
+thunderidconfigs.apps.thunderid.io
+thunderidinstances.apps.thunderid.io
+users.apps.thunderid.io
+usertypes.apps.thunderid.io
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+---
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+### 2. Apply base resources
 
-```sh
-kubectl delete -k config/samples/
+ThunderID's database starts empty on every fresh pod start. The base resources ConfigMap seeds it with the default OU, auth flows, and themes that your applications reference.
+
+```bash
+kubectl apply -f operator/config/samples/thunderid-resources-configmap.yaml
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
+> **Important:** The IDs inside the live `thunderid-resources` ConfigMap in your cluster may differ from what the sample file shows. Before creating Application resources, look up the actual IDs from the running cluster:
+>
+> ```bash
+> kubectl get cm thunderid-resources -o yaml | grep -E '^\s+id:|handle:|displayName:'
+> ```
+>
+> Always use the IDs from the live ConfigMap — never hardcode IDs from the sample file.
 
-```sh
+---
+
+### 3. Start ThunderID
+
+Apply a `ThunderIDConfig` to create and manage a ThunderID deployment:
+
+```bash
+kubectl apply -f operator/thunderidConfig.yaml
+```
+
+The file at `operator/thunderidConfig.yaml` is a working example. Key field to keep:
+
+```yaml
+spec:
+  resourcesConfigMap: thunderid-resources   # must match the ConfigMap name from step 2
+```
+
+Wait for the pod to be ready:
+
+```bash
+kubectl get pod -w
+```
+
+You should see a pod reach `1/1 Running`.
+
+---
+
+### 4. Run the operator
+
+**Local (development):**
+
+```bash
+cd operator
+make run
+```
+
+This runs the operator binary against whatever cluster `kubectl` is currently pointing to. Keep this terminal open — it must stay running to reconcile resources.
+
+**In-cluster (production):**
+
+```bash
+cd operator
+make deploy IMG=<your-registry>/thunderid-operator:latest
+```
+
+---
+
+### 5. Register an application
+
+Create an `Application` resource. The `instanceRef` must match the name of your `ThunderIDConfig`.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Application
+metadata:
+  name: my-console-app
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: My Console App
+  ouId: "<ou-id-from-thunderid-resources>"        # look this up — see step 2
+  authFlowHandle: console-app-flow
+  themeId: "<theme-id-from-thunderid-resources>"   # look this up — see step 2
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+  inboundAuthConfig: |
+    - type: oauth2
+      config:
+        clientId: MY_APP_CLIENT
+        redirectUris:
+          - https://localhost:8090/callback
+        grantTypes:
+          - authorization_code
+          - refresh_token
+        responseTypes:
+          - code
+        tokenEndpointAuthMethod: none
+        pkceRequired: true
+        publicClient: true
+```
+
+```bash
+kubectl apply -f my-app.yaml
+```
+
+Check status:
+
+```bash
+kubectl get applications
+kubectl describe applications my-console-app
+```
+
+---
+
+## Custom Resources
+
+### ThunderIDConfig
+
+The top-level resource. Creates and manages a `ThunderIDInstance`, `Deployment`, and (optionally) an `HPA`.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `spec.image` | Yes | ThunderID container image |
+| `spec.domain` | Yes | Public domain for the ThunderID instance |
+| `spec.resourcesConfigMap` | Yes* | ConfigMap containing base resources YAML. **Must be set** — omitting it causes APP-1018 on Application load |
+| `spec.databaseSecret` | No | Kubernetes Secret name with PostgreSQL credentials. When set, `setup.sh` is skipped on pod restart and ThunderID connects to PostgreSQL instead of SQLite |
+| `spec.tlsSecret` | No | Kubernetes Secret name for TLS |
+| `spec.resources` | No | CPU/memory requests and limits |
+| `spec.autoScaling` | No | HPA settings (`minReplicas`, `maxReplicas`, `targetCPUUtilizationPercentage`, `targetMemoryUtilizationPercentage`) |
+
+**PostgreSQL Secret format** (when `spec.databaseSecret` is set):
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: thunderid-db
+  namespace: default
+stringData:
+  host: "postgres.example.com"
+  port: "5432"                    # optional, defaults to 5432
+  username: "thunderid"
+  password: "secret"
+  configDatabase: "thunderid_config"    # optional, default shown
+  runtimeDatabase: "thunderid_runtime"  # optional, default shown
+  userDatabase: "thunderid_users"       # optional, default shown
+```
+
+---
+
+### ThunderIDInstance
+
+Managed automatically by `ThunderIDConfig`. You can also create one directly if you do not need the config-level abstraction.
+
+| Field | Description |
+|-------|-------------|
+| `spec.image` | Container image |
+| `spec.domain` | Public domain |
+| `spec.resourcesConfigMap` | Base resources ConfigMap — **required for applications to load** |
+| `spec.databaseSecret` | PostgreSQL credentials Secret (see ThunderIDConfig above) |
+| `spec.replicas` | Replica count (set to 0 when using HPA, which manages replicas) |
+| `spec.resources` | Resource limits/requests |
+
+---
+
+### Application
+
+Registers an OAuth2/OIDC application in ThunderID. The operator writes all applications for an instance into a single ConfigMap (`<instance-name>-applications`) which is mounted into the ThunderID pod. Changes trigger a rolling restart.
+
+| Field | Description |
+|-------|-------------|
+| `spec.instanceRef` | Name of the `ThunderIDConfig` or `ThunderIDInstance` to register with |
+| `spec.name` | Display name of the application |
+| `spec.ouId` / `spec.ouHandle` | Organizational Unit — use IDs from the live `thunderid-resources` ConfigMap |
+| `spec.authFlowHandle` / `spec.authFlowId` / `spec.authFlowRef` | Auth flow reference |
+| `spec.themeId` / `spec.themeRef` | UI theme reference |
+| `spec.logoUrl` | Logo (`emoji:👨‍💻` or a URL) |
+| `spec.template` | ThunderID UI template for the app (e.g. `react`, `browser`) |
+| `spec.allowedUserTypes` / `spec.allowedUserTypeIds` | User types allowed to log in — by name (must match an existing `UserType`'s `spec.name`) or by the `UserType` CR's UID |
+| `spec.inboundAuthConfig` | Raw YAML block defining OAuth2 client configuration |
+| `spec.isRegistrationFlowEnabled` | Enable user self-registration |
+| `spec.isRecoveryFlowEnabled` | Enable password recovery |
+
+**OAuth2 configuration notes:**
+- Public client (browser app, SPA): use `publicClient: true`, `tokenEndpointAuthMethod: none`, `pkceRequired: true`
+- Confidential client (server-side): use `publicClient: false`, `tokenEndpointAuthMethod: client_secret_basic`
+- `client_credentials` grant type requires a confidential client (`publicClient: false`) with a real auth method — it cannot use `tokenEndpointAuthMethod: none`
+
+---
+
+### Flow
+
+Registers a custom authentication or registration flow. Loaded via the `<instance>-flows` ConfigMap at pod startup, like Application.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Flow
+metadata:
+  name: my-login-flow
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  handle: my-login-flow
+  name: My Login Flow
+  flowType: AUTHENTICATION   # or REGISTRATION
+  nodes: |
+    - id: start
+      type: START
+      onSuccess: end
+    - id: end
+      type: END
+```
+
+`spec.nodes` is the flow's node graph as raw YAML (the same shape ThunderID exports/imports natively), pasted verbatim — not a JSON string.
+
+---
+
+### Theme
+
+Registers a custom UI theme. Loaded via the `<instance>-themes` ConfigMap at pod startup, like Application.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Theme
+metadata:
+  name: my-theme
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  displayName: My Theme
+  description: Dark purple theme
+  theme: '{"defaultColorScheme":"dark","colorSchemes":{"dark":{"palette":{"primary":{"main":"#5567d5"}}}}}'
+```
+
+---
+
+### OrganizationUnit
+
+Registers an organization unit (a container for users, roles, and applications). Loaded via the `<instance>-organizationunits` ConfigMap — first, before any other resource kind, since everything else can reference `ouId`.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: OrganizationUnit
+metadata:
+  name: default-ou
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  handle: default
+  name: Default
+  description: Default organization unit
+  logoUrl: "https://example.com/logo.png"
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.handle` / `spec.name` | Required. Handle is the machine-readable slug, name is the display name |
+| `spec.parentId` / `spec.parentHandle` / `spec.parentRef` | Optional parent organization unit — literal ID, literal handle, or a reference to another `OrganizationUnit` CR by Kubernetes object name (priority: ID > handle > ref) |
+| `spec.logoUrl` | Optional. Free text — quoted safely for values that may contain emoji |
+
+---
+
+### ResourceServer
+
+Registers a resource server and the resources/actions it exposes, for use in Role permission grants. Loaded via the `<instance>-resourceservers` ConfigMap.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ResourceServer
+metadata:
+  name: system
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: System
+  description: System resource server
+  identifier: https://localhost:8090/mcp
+  ouRef: default-ou
+  delimiter: ":"
+  resources:
+    - name: System
+      handle: system
+      description: System resource
+    - name: Organization Unit
+      handle: ou
+      description: Organization unit resource
+      parent: system
+      actions:
+        - name: View
+          handle: view
+          description: Read-only access to organization units
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.name` | Required |
+| `spec.handle` / `spec.identifier` / `spec.delimiter` | Optional. `delimiter` joins a resource and action handle into a permission string (e.g. `ou:view`) |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType |
+| `spec.resources[].name` / `.handle` / `.description` | Required name/handle per resource, optional description |
+| `spec.resources[].parent` | Optional — the `handle` of another entry in the same `resources` list (not a Kubernetes reference) |
+| `spec.resources[].actions[]` | Optional list of `{name, handle, description}` actions available on that resource |
+
+---
+
+### Role
+
+Registers a role and its permission/assignment grants. Loaded via the `<instance>-roles` ConfigMap.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Role
+metadata:
+  name: administrator
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: Administrator
+  description: System administrator role with full permissions
+  ouRef: default-ou   # or ouId / ouHandle for a literal reference
+  permissions:
+    - resourceServerId: "019f215e-1a55-72db-9743-ac25d839c72a"
+      permissions:
+        - system
+  assignments:
+    - id: "019f215e-1bc0-773b-a202-04fbcee09eeb"
+      type: group
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.name` | Required |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit — literal ID, literal handle, or a reference to an `OrganizationUnit` CR by name |
+| `spec.permissions[].resourceServerId` / `.permissions` | The resource server this grant applies to, and which permission names are granted on it |
+| `spec.assignments[].id` / `.type` | Who the role is assigned to (e.g. a group ID) and the assignment type |
+
+---
+
+### UserType
+
+Registers a user type and its attribute schema. Loaded via the `<instance>-usertypes` ConfigMap.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: UserType
+metadata:
+  name: person
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  category: user
+  name: Person
+  ouRef: default-ou
+  systemAttributes:
+    display: username
+  schema: |
+    {
+      "username": {"type": "string", "displayName": "Username", "required": true, "unique": true},
+      "email": {"type": "string", "displayName": "Email", "required": true, "unique": true},
+      "password": {"type": "string", "displayName": "Password", "required": false, "credential": true}
+    }
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.category` / `spec.name` | Required. Category is a free-form string (e.g. `user`) |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role |
+| `spec.systemAttributes` | Small key/value map, e.g. which attribute is used as the display name |
+| `spec.schema` | Required. The attribute schema as raw JSON — pasted verbatim, single or multi-line |
+
+---
+
+### User
+
+Registers a user. Loaded via the `<instance>-users` ConfigMap.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: User
+metadata:
+  name: admin
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  type: Person
+  ouRef: default-ou
+  attributes:
+    username: admin
+    email: admin@example.com
+    given_name: Admin
+    family_name: User
+    name: Administrator
+    phone_number: "+12345678920"
+    picture: "https://example.com/avatar.jpg"
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.type` | Required. The **name** of a `UserType` (e.g. `Person`) — a literal string, not a Kubernetes reference, same convention as `Application.allowedUserTypes` |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType/ResourceServer |
+| `spec.attributes` | Free-form key/value map — the keys should match the attributes defined in the referenced `UserType`'s `schema`. No credential/password field yet; a user created this way needs a password set some other way before it can log in |
+
+---
+
+### Group
+
+Registers a group and its member list. Loaded via the `<instance>-groups` ConfigMap.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Group
+metadata:
+  name: administrators
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: Administrators
+  description: System administrators group
+  ouRef: default-ou
+  members:
+    - id: "<user-or-group-id>"
+      type: user
+```
+
+| Field | Description |
+|-------|--------------|
+| `spec.name` | Required |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType/User |
+| `spec.members[].id` / `.type` | Literal member ID (a `User` or `Group`'s ID) and type (e.g. `user`, `group`) — literal, not a Kubernetes reference, same convention as `Role.assignments` |
+
+---
+
+## Checking Status
+
+### Pod health
+
+```bash
+kubectl get pod
+```
+
+During a rolling update you will see the old pod (`Running`) and a new pod simultaneously. The new pod cycles through:
+
+```
+0/1 Error  →  0/1 Running  →  0/1 Error  →  0/1 CrashLoopBackOff
+```
+
+This is **normal Kubernetes CrashLoopBackOff behaviour**. Kubernetes introduces an exponential backoff between restarts. If the application config is valid the pod will eventually reach `1/1 Running`.
+
+### Application status
+
+```bash
+kubectl get applications
+```
+
+| Phase | Meaning |
+|-------|---------|
+| `Pending` | Config change detected; waiting for ThunderID pod to apply it |
+| `Ready` | Application loaded successfully |
+| `Error` | ThunderID rejected the config or the pod is crashing |
+
+```bash
+kubectl describe applications <name>
+```
+
+Look at the **Events** section. Event types:
+
+| Reason | Meaning |
+|--------|---------|
+| `Synced` | Config change detected; ThunderID pod is restarting |
+| `Ready` | Application loaded successfully |
+| `ThunderIDError` | ThunderID rejected the config — APP error code and message are shown |
+| `ThunderIDCrashed` | Pod is in CrashLoopBackOff; no structured error found in logs |
+
+> **Tip:** `ThunderIDError` only appears after the pod reaches stable `CrashLoopBackOff`. Wait until `kubectl get pod` shows `CrashLoopBackOff` before running `kubectl describe applications`.
+
+`kubectl get flows|themes|organizationunits|resourceservers|roles|usertypes|users|groups` and `kubectl describe <kind> <name>` report the same `Pending`/`Ready`/`Error` phases and `Synced`/`Ready`/`ThunderIDError`/`ThunderIDCrashed` events as Application, since every resource kind is reconciled the same way. `kubectl get thunderidinstance` additionally shows a `DEGRADED` count summarizing how many dependent resources (of any kind) currently have a sync failure, without needing to check each one individually.
+
+---
+
+## Troubleshooting
+
+### APP-1018 — Invalid request format
+
+**Cause:** The Application references an OU or auth flow that does not exist in the ThunderID database. With SQLite, the database starts empty on every pod restart and must be seeded first.
+
+**Fix:** Ensure `spec.resourcesConfigMap` is set on your `ThunderIDConfig` and points to a ConfigMap that contains the base OU and flows your applications reference.
+
+```bash
+# Check the ConfigMap is present
+kubectl get cm thunderid-resources
+
+# Verify the ThunderIDInstance has resourcesConfigMap set
+kubectl get thunderidinstance <name> -o jsonpath='{.spec.resourcesConfigMap}'
+```
+
+### APP-1024 — Invalid OAuth configuration
+
+**Cause:** Incompatible OAuth2 settings in `spec.inboundAuthConfig`. Common examples:
+
+- `client_credentials` grant type with `tokenEndpointAuthMethod: none`
+- `client_credentials` with `publicClient: true`
+
+**Fix:** Read the `ThunderIDError` event message — it states the exact constraint violated.
+
+### Phase: Error but no ThunderIDError event
+
+**Cause:** The pod has not yet reached stable `CrashLoopBackOff`. The operator fetches logs only after the pod enters `CrashLoopBackOff` (typically within 30–40 seconds of the first crash).
+
+**Fix:** Wait for `kubectl get pod` to show `CrashLoopBackOff`, then re-run `kubectl describe applications`.
+
+### Pod never reaches Ready after applying ThunderIDConfig
+
+**Cause:** The operator is not running, or it cannot reach the cluster.
+
+**Fix:** Check that `make run` is still active in your terminal, or check the operator pod logs if deployed in-cluster:
+
+```bash
+kubectl logs -n system deployment/controller-manager
+```
+
+### HPA stuck, pod never scales up from 0
+
+**Cause:** If a Deployment was created with `replicas: 0`, the HPA treats it as intentionally stopped and will not scale it up.
+
+**Fix:**
+
+```bash
+kubectl delete deployment <instance-name>
+# The operator recreates it correctly
+```
+
+### Pod restarts are slow (SQLite mode)
+
+**Cause:** `setup.sh` runs on every pod restart to reinitialise the SQLite database. For a faster restart cycle, switch to PostgreSQL.
+
+**Fix:** Create a database Secret and set `spec.databaseSecret` on your `ThunderIDConfig`. The operator will then run only `start.sh` on restart, skipping `setup.sh`.
+
+---
+
+## Development
+
+```bash
+cd operator
+
+# Run tests
+make test
+
+# Build the operator binary
+make build
+
+# Generate CRD manifests after changing API types in api/v1alpha1/
+make manifests
+
+# Regenerate DeepCopy methods after changing API types
+make generate
+
+# Install CRDs into the cluster
+make install
+
+# Run locally against the current kubeconfig
+make run
+
+# Build and push the container image
+make docker-build docker-push IMG=<registry>/thunderid-operator:<tag>
+
+# Deploy to cluster
+make deploy IMG=<registry>/thunderid-operator:<tag>
+
+# Remove CRDs from the cluster
 make uninstall
-```
 
-**UnDeploy the controller from the cluster:**
-
-```sh
+# Remove operator deployment
 make undeploy
 ```
 
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
-## License
-
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+After changing any type in `api/v1alpha1/`, always run `make manifests generate` before running or deploying.
