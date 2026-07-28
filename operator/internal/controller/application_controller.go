@@ -342,7 +342,11 @@ func (r *ApplicationReconciler) buildApplicationYAML(ctx context.Context, a apps
 	if a.Spec.OUID != "" {
 		fmt.Fprintf(&buf, "ouId: %q\n", a.Spec.OUID)
 	} else if a.Spec.OUHandle != "" {
-		fmt.Fprintf(&buf, "ouHandle: %q\n", a.Spec.OUHandle)
+		if uid := resolveOUHandle(ctx, r.Client, a.Namespace, a.Spec.OUHandle); uid != "" {
+			fmt.Fprintf(&buf, "ouId: %q\n", uid)
+		} else {
+			fmt.Fprintf(&buf, "ouHandle: %q\n", a.Spec.OUHandle)
+		}
 	}
 	if a.Spec.URL != "" {
 		fmt.Fprintf(&buf, "url: %q\n", a.Spec.URL)

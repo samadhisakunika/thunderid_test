@@ -46,8 +46,8 @@ type ResourceServerSpec struct {
 	// +optional
 	Handle string `json:"handle,omitempty"`
 
-	// +optional
-	Identifier string `json:"identifier,omitempty"`
+	// +kubebuilder:validation:Required
+	Identifier string `json:"identifier"`
 
 	// +optional
 	Type string `json:"type,omitempty"`

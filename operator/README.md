@@ -64,7 +64,7 @@ Application CRD       ──writes──►  <instance>-applications ConfigMap
 ```
 
 **Key facts:**
-- By default each ThunderID pod uses an **ephemeral SQLite database**. On every pod restart the database is wiped and rebuilt from the resources ConfigMap. To use a persistent PostgreSQL database instead, set `spec.databaseSecret` — see the ThunderIDConfig reference below.
+- By default each ThunderID pod uses an **ephemeral SQLite database**. On every pod restart `setup.sh` reruns and the database is wiped and rebuilt from the resources ConfigMap. Set `spec.dataVolumeSize` on `ThunderIDInstance` to persist `repository/database` on a PVC instead — `setup.sh` then only runs on the pod's first-ever start. (To use PostgreSQL instead of SQLite, set `spec.databaseSecret` — see the ThunderIDConfig reference below.)
 - `spec.resourcesConfigMap` must point to a ConfigMap that seeds the base OU, flows, and themes **before** any Application resources are loaded. Without this, Application loading will fail with `APP-1018`.
 - All ten resource kinds are loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each CRD's controller reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified, the same way Application does.
 
@@ -264,6 +264,7 @@ Managed automatically by `ThunderIDConfig`. You can also create one directly if 
 | `spec.domain` | Public domain |
 | `spec.resourcesConfigMap` | Base resources ConfigMap — **required for applications to load** |
 | `spec.databaseSecret` | PostgreSQL credentials Secret (see ThunderIDConfig above) |
+| `spec.dataVolumeSize` | e.g. `"1Gi"`. Provisions a ReadWriteOnce PVC for `repository/database` (the SQLite files) and makes `setup.sh` run only once — on every restart after the first, the entrypoint finds a marker file on that volume and skips straight to `start.sh`. Only meaningful with `replicas: 1` (the Deployment switches to a `Recreate` strategy since the PVC can't be mounted by two pods at once) |
 | `spec.replicas` | Replica count (set to 0 when using HPA, which manages replicas) |
 | `spec.resources` | Resource limits/requests |
 
@@ -399,9 +400,9 @@ spec:
 
 | Field | Description |
 |-------|--------------|
-| `spec.name` | Required |
-| `spec.handle` / `spec.identifier` / `spec.delimiter` | Optional. `delimiter` joins a resource and action handle into a permission string (e.g. `ou:view`) |
-| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType |
+| `spec.name` / `spec.identifier` | Required. ThunderID rejects a resource server with no identifier, crash-looping the whole pod on next restart — the CRD now enforces this too |
+| `spec.handle` / `spec.delimiter` | Optional. `delimiter` joins a resource and action handle into a permission string (e.g. `ou:view`) |
+| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType. One of `ouId`/`ouHandle` must resolve to a real org unit, or the operator skips syncing this resource server rather than writing an incomplete entry |
 | `spec.resources[].name` / `.handle` / `.description` | Required name/handle per resource, optional description |
 | `spec.resources[].parent` | Optional — the `handle` of another entry in the same `resources` list (not a Kubernetes reference) |
 | `spec.resources[].actions[]` | Optional list of `{name, handle, description}` actions available on that resource |
@@ -490,20 +491,60 @@ spec:
   type: Person
   ouRef: default-ou
   attributes:
-    username: admin
     email: admin@example.com
     given_name: Admin
     family_name: User
     name: Administrator
     phone_number: "+12345678920"
     picture: "https://example.com/avatar.jpg"
+  credentialsSecretRef: admin-credentials
 ```
 
 | Field | Description |
 |-------|--------------|
 | `spec.type` | Required. The **name** of a `UserType` (e.g. `Person`) — a literal string, not a Kubernetes reference, same convention as `Application.allowedUserTypes` |
 | `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType/ResourceServer |
-| `spec.attributes` | Free-form key/value map — the keys should match the attributes defined in the referenced `UserType`'s `schema`. No credential/password field yet; a user created this way needs a password set some other way before it can log in |
+| `spec.attributes` | Free-form key/value map — the keys should match the attributes defined in the referenced `UserType`'s `schema` |
+| `spec.credentialsSecretRef` | Name of a Secret (same namespace) holding this user's credentials — see below |
+
+#### Credentials (`spec.credentialsSecretRef`)
+
+A user's credentials (and, if present, `username`) come from a Kubernetes Secret rather than plaintext CR fields, so they never sit in the CR spec or etcd unencrypted.
+
+- **You supply the Secret** (`spec.credentialsSecretRef: admin-credentials`) — every key in the Secret's `data`/`stringData` is passed through as a credential type (e.g. `password`, or any other type name a UserType's `schema` marks `"credential": true`), **except** `username`, which is special-cased: it overrides `spec.attributes.username` instead, since ThunderID treats username as an identifying attribute, not a credential. If both are set, the Secret wins — you don't need `username` in `spec.attributes` at all once it's in the Secret.
+
+  ```yaml
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: admin-credentials
+    namespace: default
+  type: Opaque
+  stringData:
+    username: admin
+    password: change-me
+  ```
+
+- **You omit it** — the operator auto-generates a Secret named `<user-name>-credentials` on first reconcile, with a random `username` (`user-<8 hex chars>`) and `password` (8 hex chars), owned by the User (deleted automatically when the User is). Like the auto-generated security Secret, it's created once and never regenerated on later reconciles, so the password doesn't rotate out from under you — see `scripts/reset-credentials.sh` below if you need a new one.
+
+  To find and read the generated credentials:
+  ```
+  ./scripts/get-credentials.sh <name>
+  ```
+  which is shorthand for:
+  ```
+  kubectl get user <name> -o jsonpath='{.status.credentialsSecretRef}'
+  kubectl get secret <name>-credentials -o go-template='{{.data.username|base64decode}} / {{.data.password|base64decode}}'
+  ```
+  The operator also emits a one-time `CredentialsGenerated` Event on the User with this command pre-filled — `kubectl describe user <name>` shortly after creation. Events expire (~1h, cluster-dependent), so the `status.credentialsSecretRef` + Secret are the durable way to find them later.
+
+  To reset an auto-generated user's password (and username) to a fresh random pair:
+  ```
+  ./scripts/reset-credentials.sh <name>
+  ```
+  This only works when `spec.credentialsSecretRef` was left empty — it refuses to touch a Secret you supplied yourself, since the operator doesn't own it. For a user-supplied Secret, rotate it directly (`kubectl edit secret <your-secret-name>`); the operator picks up whatever's in it on its next reconcile. Either way, the ThunderID pod still needs to restart before a changed password actually works for login (see below).
+
+Either way, ThunderID's declarative loader only reads resources at pod **startup** — changing a User's credentials Secret after the fact still requires the ThunderID pod to restart (triggered automatically by the ConfigMap-version annotation bump) before the new values take effect.
 
 ---
 
@@ -636,9 +677,9 @@ kubectl delete deployment <instance-name>
 
 ### Pod restarts are slow (SQLite mode)
 
-**Cause:** `setup.sh` runs on every pod restart to reinitialise the SQLite database. For a faster restart cycle, switch to PostgreSQL.
+**Cause:** `setup.sh` runs on every pod restart to reinitialise the SQLite database.
 
-**Fix:** Create a database Secret and set `spec.databaseSecret` on your `ThunderIDConfig`. The operator will then run only `start.sh` on restart, skipping `setup.sh`.
+**Fix:** Set `spec.dataVolumeSize` (e.g. `"1Gi"`) on your `ThunderIDInstance`. This provisions a PVC for `repository/database` and gates `setup.sh` behind a marker file on it, so it only runs on the pod's first-ever start — every restart after that skips straight to `start.sh`. Only use this with `replicas: 1`.
 
 ---
 

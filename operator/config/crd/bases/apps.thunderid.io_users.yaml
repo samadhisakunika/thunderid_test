@@ -57,10 +57,8 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
-              credentials:
-                additionalProperties:
-                  type: string
-                type: object
+              credentialsSecretRef:
+                type: string
               instanceRef:
                 type: string
               ouHandle:
@@ -134,6 +132,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              credentialsSecretRef:
+                description: |-
+                  CredentialsSecretRef is the Secret currently backing this user's credentials —
+                  either spec.credentialsSecretRef, or an auto-generated "<name>-credentials"
+                  Secret when spec.credentialsSecretRef was left empty.
+                type: string
               lastSyncTime:
                 format: date-time
                 type: string

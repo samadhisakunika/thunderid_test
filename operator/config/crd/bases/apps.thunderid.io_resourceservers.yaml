@@ -102,6 +102,7 @@ spec:
               type:
                 type: string
             required:
+            - identifier
             - instanceRef
             - name
             type: object

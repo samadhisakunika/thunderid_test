@@ -6,15 +6,15 @@ metadata:
 spec:
   instanceRef: thunderid-prod
   name: Test Web Application3
-  ouHandle: default
-  authFlowHandle: console-app-flow
+  ouHandle: test-ou
+  authFlowHandle: test-basic-flow
   themeId: "019f83c6-e188-747e-95f1-b7c3a119abed"
   logoUrl: "emoji:👨‍💻"
   isRegistrationFlowEnabled: true
   isRecoveryFlowEnabled: false
   isSignOutFlowEnabled: false
   allowedUserTypes:
-    - Person
+    - "Cloud User"
   assertion:
     validityPeriod: 3600
   loginConsent:

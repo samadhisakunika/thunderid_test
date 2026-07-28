@@ -29,6 +29,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -59,7 +60,7 @@ type ThunderIDInstanceReconciler struct {
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=configmaps;services;secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps;services;secrets;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
@@ -106,6 +107,12 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err != nil {
 		log.Error(err, "failed to reconcile security Secret")
 		r.Recorder.Event(instance, corev1.EventTypeWarning, "SecuritySecretError", err.Error())
+		return ctrl.Result{}, err
+	}
+
+	if err := r.reconcileDataVolume(ctx, instance); err != nil {
+		log.Error(err, "failed to reconcile data PersistentVolumeClaim")
+		r.Recorder.Event(instance, corev1.EventTypeWarning, "DataVolumeError", err.Error())
 		return ctrl.Result{}, err
 	}
 
@@ -158,6 +165,7 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&networkingv1.Ingress{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&autoscalingv2.HorizontalPodAutoscaler{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Owns(&corev1.PersistentVolumeClaim{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		//Owns(&corev1.ConfigMap{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 		// Only react to the instance's own config ConfigMap, not sub-controller CMs.
 		// Sub-controller CM changes are signalled via ThunderIDInstance annotation patches,
@@ -195,8 +203,8 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 		{"-groups", "groups.yaml"},
 		{"-users", "users.yaml"},
 		{"-flows", "flows.yaml"},
-		{"-applications", "applications.yaml"},
 		{"-themes", "themes.yaml"},
+		{"-applications", "applications.yaml"},
 		{"-translations", "translations.yaml"},
 		{"-serverconfigs", "server_configs.yaml"},
 	} {
@@ -256,15 +264,72 @@ func (r *ThunderIDInstanceReconciler) appendResourceConfigMap(
 	return "", nil
 }
 
+// reconcileDataVolume ensures the PersistentVolumeClaim backing setup.sh's once-only marker
+// (see reconcileDeployment) exists when spec.dataVolumeSize is set. The claim's storage
+// request is not reconciled after creation — resizing an existing instance's volume is left
+// to the user (edit the PVC directly, subject to what the StorageClass allows).
+func (r *ThunderIDInstanceReconciler) reconcileDataVolume(
+	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) error {
+	if instance.Spec.DataVolumeSize == "" {
+		return nil
+	}
+	pvc := &corev1.PersistentVolumeClaim{}
+	err := r.Get(ctx, types.NamespacedName{Name: instance.Name + "-data", Namespace: instance.Namespace}, pvc)
+	if err == nil {
+		return nil
+	}
+	if !errors.IsNotFound(err) {
+		return err
+	}
+	qty, err := resource.ParseQuantity(instance.Spec.DataVolumeSize)
+	if err != nil {
+		return fmt.Errorf("invalid spec.dataVolumeSize %q: %w", instance.Spec.DataVolumeSize, err)
+	}
+	pvc = &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-data",
+			Namespace: instance.Namespace,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: qty},
+			},
+		},
+	}
+	_ = ctrl.SetControllerReference(instance, pvc, r.Scheme)
+	return r.Create(ctx, pvc)
+}
+
 func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, configHash string, hasResources bool,
 	securitySecretName string) error {
 	replicas := instance.Spec.Replicas
 	configMapName := instance.Name + "-config"
 
-	startCmd := "cd /opt/thunderid && ./setup.sh && exec ./start.sh"
+	hasDataVolume := instance.Spec.DataVolumeSize != ""
+
+	// The thunderid image runs as a non-root user (uid/gid 10001, see the image's Dockerfile).
+	// A freshly provisioned PVC is mounted root-owned, so without fsGroup the container can't
+	// write its "setup ran once" marker to it — setup.sh succeeds but the following touch fails
+	// with "Permission denied", and the container exits non-zero and crash-loops. ConfigMap/Secret/
+	// emptyDir volumes don't need this: kubelet mounts those world-writable by default.
+	var podSecurityContext *corev1.PodSecurityContext
+	if hasDataVolume {
+		thunderidGID := int64(10001)
+		podSecurityContext = &corev1.PodSecurityContext{FSGroup: &thunderidGID}
+	}
+
+	// setupCmd normally reruns setup.sh (and its SQLite reinitialization) on every container
+	// start. With a persistent data volume, repository/database survives restarts, so setup.sh
+	// only needs to run once: gate it behind a marker file written on that same volume.
+	setupCmd := "./setup.sh"
+	if hasDataVolume {
+		setupCmd = "[ -f repository/database/.setup-complete ] || { ./setup.sh && touch repository/database/.setup-complete; }"
+	}
+	startCmd := fmt.Sprintf("cd /opt/thunderid && %s && exec ./start.sh", setupCmd)
 	if hasResources {
-		startCmd = "cd /opt/thunderid && ./setup.sh && exec ./start.sh /opt/thunderid/resources.yaml"
+		startCmd = fmt.Sprintf("cd /opt/thunderid && %s && exec ./start.sh /opt/thunderid/resources.yaml", setupCmd)
 	}
 
 	volumeMounts := []corev1.VolumeMount{
@@ -304,6 +369,12 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		Name:      "direct-auth-secret",
 		MountPath: "/opt/thunderid/config/secrets",
 	})
+	if hasDataVolume {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "data",
+			MountPath: "/opt/thunderid/repository/database",
+		})
+	}
 
 	defaultMode := int32(0644)
 	volumes := []corev1.Volume{
@@ -330,6 +401,16 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		},
 	}
+	if hasDataVolume {
+		volumes = append(volumes, corev1.Volume{
+			Name: "data",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: instance.Name + "-data",
+				},
+			},
+		})
+	}
 
 	initContainers := []corev1.Container{
 		{
@@ -343,6 +424,30 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 				{Name: "direct-auth-secret", MountPath: "/opt/thunderid/config/secrets"},
 			},
 		},
+	}
+	if hasDataVolume {
+		// fsGroup (set below on the pod's SecurityContext) isn't honored by every volume
+		// backend — notably plain hostPath PVs, which is what minikube's default storage
+		// class provisions. Chown explicitly, as root, so the non-root "thunderid" container
+		// can write its setup-complete marker regardless of what's backing the PVC.
+		root := int64(0)
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "fix-data-volume-permissions",
+			Image:           instance.Spec.Image,
+			Command:         []string{"chown", "-R", "10001:10001", "/opt/thunderid/repository/database"},
+			SecurityContext: &corev1.SecurityContext{RunAsUser: &root},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "data", MountPath: "/opt/thunderid/repository/database"},
+			},
+		})
+	}
+
+	// The data PVC is ReadWriteOnce, so a surging RollingUpdate (the default) would strand the
+	// new pod Pending trying to mount a volume the old pod still holds. Recreate tears the old
+	// pod down first.
+	strategy := appsv1.DeploymentStrategy{}
+	if hasDataVolume {
+		strategy.Type = appsv1.RecreateDeploymentStrategyType
 	}
 
 	dep := &appsv1.Deployment{}
@@ -361,6 +466,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			},
 			Spec: appsv1.DeploymentSpec{
 				Replicas: &replicas,
+				Strategy: strategy,
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{"app": instance.Name},
 				},
@@ -370,7 +476,8 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 						Annotations: map[string]string{"thunderid.io/config-hash": configHash},
 					},
 					Spec: corev1.PodSpec{
-						InitContainers: initContainers,
+						SecurityContext: podSecurityContext,
+						InitContainers:  initContainers,
 						Containers: []corev1.Container{
 							{
 								Name:    "thunderid",
@@ -391,8 +498,8 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 											Scheme: corev1.URISchemeHTTPS,
 										},
 									},
-									InitialDelaySeconds: 15,
-									PeriodSeconds:       10,
+									InitialDelaySeconds: 1,
+									PeriodSeconds:       3,
 									FailureThreshold:    3,
 									SuccessThreshold:    1,
 									TimeoutSeconds:      1,
@@ -405,8 +512,8 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 											Scheme: corev1.URISchemeHTTPS,
 										},
 									},
-									InitialDelaySeconds: 10,
-									PeriodSeconds:       5,
+									InitialDelaySeconds: 1,
+									PeriodSeconds:       2,
 									FailureThreshold:    6,
 									SuccessThreshold:    1,
 									TimeoutSeconds:      1,
@@ -434,6 +541,10 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	}
 	originalResources := dep.Spec.Template.Spec.Containers[0].Resources.DeepCopy()
 	originalReplicas := dep.Spec.Replicas
+	originalLivenessProbe := dep.Spec.Template.Spec.Containers[0].LivenessProbe.DeepCopy()
+	originalReadinessProbe := dep.Spec.Template.Spec.Containers[0].ReadinessProbe.DeepCopy()
+	originalSecurityContext := dep.Spec.Template.Spec.SecurityContext.DeepCopy()
+	originalInitContainers := dep.Spec.Template.Spec.InitContainers
 
 	// Check for stale bootstrap volume that the old code left behind, and whether the security
 	// Secret volume (added later) already points at the Secret we want — deployments created
@@ -454,6 +565,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		r := instance.Spec.Replicas
 		dep.Spec.Replicas = &r
 	}
+	dep.Spec.Strategy = strategy
 
 	dep.Spec.Template.Spec.Containers[0].Image = instance.Spec.Image
 	dep.Spec.Template.Spec.Containers[0].Command = []string{"/bin/bash", "-c", startCmd}
@@ -471,8 +583,8 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 				Scheme: corev1.URISchemeHTTPS,
 			},
 		},
-		InitialDelaySeconds: 15,
-		PeriodSeconds:       10,
+		InitialDelaySeconds: 1,
+		PeriodSeconds:       3,
 		FailureThreshold:    3,
 		SuccessThreshold:    1,
 		TimeoutSeconds:      1,
@@ -485,14 +597,15 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 				Scheme: corev1.URISchemeHTTPS,
 			},
 		},
-		InitialDelaySeconds: 10,
-		PeriodSeconds:       5,
+		InitialDelaySeconds: 1,
+		PeriodSeconds:       2,
 		FailureThreshold:    6,
 		SuccessThreshold:    1,
 		TimeoutSeconds:      1,
 	}
 	dep.Spec.Template.Spec.Volumes = volumes
 	dep.Spec.Template.Spec.InitContainers = initContainers
+	dep.Spec.Template.Spec.SecurityContext = podSecurityContext
 	if dep.Spec.Template.Annotations == nil {
 		dep.Spec.Template.Annotations = map[string]string{}
 	}
@@ -508,6 +621,10 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		originalImage == instance.Spec.Image &&
 		originalCmd == startCmd &&
 		equality.Semantic.DeepEqual(originalResources, &instance.Spec.Resources) &&
+		equality.Semantic.DeepEqual(originalLivenessProbe, dep.Spec.Template.Spec.Containers[0].LivenessProbe) &&
+		equality.Semantic.DeepEqual(originalReadinessProbe, dep.Spec.Template.Spec.Containers[0].ReadinessProbe) &&
+		equality.Semantic.DeepEqual(originalSecurityContext, podSecurityContext) &&
+		equality.Semantic.DeepEqual(originalInitContainers, initContainers) &&
 		replicasMatch {
 		return nil
 	}

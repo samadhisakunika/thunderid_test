@@ -8,8 +8,8 @@ spec:
   name: Login App
   description: Sample login application
   logoUrl: emoji:✈️
-  ouHandle: default
-  authFlowHandle: cloud-login-flow
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95" # default OU
+  authFlowId: "019ef85a-0ddd-7ed0-af81-69bae4519c5d" # console-app-flow
   isRegistrationFlowEnabled: false
   assertion:
     validityPeriod: 3600

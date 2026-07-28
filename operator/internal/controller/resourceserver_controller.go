@@ -255,6 +255,9 @@ func (r *ResourceServerReconciler) rebuildResourceServersConfigMap(ctx context.C
 		if !s.DeletionTimestamp.IsZero() {
 			continue
 		}
+		if s.Spec.OUID == "" && s.Spec.OUHandle == "" {
+			continue // ThunderID requires ou_id or ou_handle; skip incomplete resource servers
+		}
 		yamlDoc, err := r.buildResourceServerYAML(ctx, s)
 		if err != nil {
 			return false, fmt.Errorf("failed to build YAML for resource server %s: %w", s.Name, err)
@@ -327,9 +330,7 @@ func (r *ResourceServerReconciler) buildResourceServerYAML(ctx context.Context, 
 	if s.Spec.Handle != "" {
 		fmt.Fprintf(&buf, "handle: %s\n", yamlSingleQuote(s.Spec.Handle))
 	}
-	if s.Spec.Identifier != "" {
-		fmt.Fprintf(&buf, "identifier: %s\n", yamlSingleQuote(s.Spec.Identifier))
-	}
+	fmt.Fprintf(&buf, "identifier: %s\n", yamlSingleQuote(s.Spec.Identifier))
 
 	if s.Spec.OUID != "" {
 		fmt.Fprintf(&buf, "ouId: %q\n", s.Spec.OUID)

@@ -22,7 +22,7 @@ type UserSpec struct {
 	Attributes map[string]string `json:"attributes,omitempty"`
 
 	// +optional
-	Credentials map[string]string `json:"credentials,omitempty"`
+	CredentialsSecretRef string `json:"credentialsSecretRef,omitempty"`
 }
 
 type UserStatus struct {
@@ -37,6 +37,12 @@ type UserStatus struct {
 
 	// +optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
+
+	// CredentialsSecretRef is the Secret currently backing this user's credentials —
+	// either spec.credentialsSecretRef, or an auto-generated "<name>-credentials"
+	// Secret when spec.credentialsSecretRef was left empty.
+	// +optional
+	CredentialsSecretRef string `json:"credentialsSecretRef,omitempty"`
 
 	// +listType=map
 	// +listMapKey=type

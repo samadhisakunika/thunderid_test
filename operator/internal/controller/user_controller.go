@@ -46,6 +46,7 @@ type UserReconciler struct {
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=organizationunits,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;create;update;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
@@ -87,6 +88,29 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
+	}
+
+	credSecretName, credCreated, err := r.ensureCredentialsSecret(ctx, *user)
+	if err != nil {
+		log.Error(err, "failed to resolve credentials secret")
+		r.Recorder.Event(user, corev1.EventTypeWarning, "CredentialsError", err.Error())
+		user.Status.Phase = "Error"
+		user.Status.Synced = false
+		_ = r.Status().Update(ctx, user)
+		return ctrl.Result{}, err
+	}
+	if credCreated {
+		r.Recorder.Eventf(user, corev1.EventTypeNormal, "CredentialsGenerated",
+			"spec.credentialsSecretRef was empty; generated Secret %q. Retrieve with: "+
+				"kubectl get secret %s -n %s -o go-template='{{.data.username|base64decode}} / {{.data.password|base64decode}}'",
+			credSecretName, credSecretName, user.Namespace)
+	}
+	if user.Status.CredentialsSecretRef != credSecretName {
+		user.Status.CredentialsSecretRef = credSecretName
+		if err := r.Status().Update(ctx, user); err != nil {
+			log.Error(err, "failed to update user status with credentials secret name")
+			return ctrl.Result{}, err
+		}
 	}
 
 	changed, err := r.rebuildUsersConfigMap(ctx, instance, "")
@@ -332,27 +356,51 @@ func (r *UserReconciler) buildUserYAML(ctx context.Context, u appsv1alpha1.User)
 		}
 	}
 
-	if len(u.Spec.Attributes) > 0 {
+	attributes := make(map[string]string, len(u.Spec.Attributes))
+	for k, v := range u.Spec.Attributes {
+		attributes[k] = v
+	}
+
+	credSecretName, _, err := r.ensureCredentialsSecret(ctx, u)
+	if err != nil {
+		return "", fmt.Errorf("resolving credentials for user %s: %w", u.Name, err)
+	}
+	credSecret := &corev1.Secret{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: u.Namespace, Name: credSecretName}, credSecret); err != nil {
+		return "", fmt.Errorf("credentials secret %q: %w", credSecretName, err)
+	}
+	credentials := make(map[string]string, len(credSecret.Data))
+	for k, v := range credSecret.Data {
+		// username identifies the user, not a credential — ThunderID expects it under
+		// attributes. The Secret's value wins over any inline spec.attributes.username.
+		if k == "username" {
+			attributes["username"] = string(v)
+			continue
+		}
+		credentials[k] = string(v)
+	}
+
+	if len(attributes) > 0 {
 		buf.WriteString("attributes:\n")
-		keys := make([]string, 0, len(u.Spec.Attributes))
-		for k := range u.Spec.Attributes {
+		keys := make([]string, 0, len(attributes))
+		for k := range attributes {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlSingleQuote(u.Spec.Attributes[k]))
+			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlSingleQuote(attributes[k]))
 		}
 	}
 
-	if len(u.Spec.Credentials) > 0 {
+	if len(credentials) > 0 {
 		buf.WriteString("credentials:\n")
-		keys := make([]string, 0, len(u.Spec.Credentials))
-		for k := range u.Spec.Credentials {
+		keys := make([]string, 0, len(credentials))
+		for k := range credentials {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlSingleQuote(u.Spec.Credentials[k]))
+			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlSingleQuote(credentials[k]))
 		}
 	}
 
@@ -368,6 +416,9 @@ func (r *UserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&appsv1alpha1.OrganizationUnit{}, handler.EnqueueRequestsFromMapFunc(
 			enqueueReferencing(mgr.GetClient(), indexUserOUHandle, func() client.ObjectList { return &appsv1alpha1.UserList{} },
 				func(o client.Object) string { return o.(*appsv1alpha1.OrganizationUnit).Spec.Handle }))).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(
+			enqueueReferencing(mgr.GetClient(), indexUserCredentialsSecretRef, func() client.ObjectList { return &appsv1alpha1.UserList{} },
+				func(o client.Object) string { return o.(*corev1.Secret).Name }))).
 		Named("user").
 		Complete(r)
 }

@@ -24,6 +24,7 @@ const (
 	indexRoleOUHandle                      = "spec.ouHandle"
 	indexUserTypeOUHandle                  = "spec.ouHandle"
 	indexUserOUHandle                      = "spec.ouHandle"
+	indexUserCredentialsSecretRef          = "spec.credentialsSecretRef"
 	indexResourceServerOUHandle            = "spec.ouHandle"
 	indexGroupOUHandle                     = "spec.ouHandle"
 )
@@ -77,6 +78,11 @@ func SetupReferenceIndexes(ctx context.Context, mgr ctrl.Manager) error {
 	}
 	if err := indexer.IndexField(ctx, &appsv1alpha1.User{}, indexUserOUHandle, func(o client.Object) []string {
 		return refValue(o.(*appsv1alpha1.User).Spec.OUHandle)
+	}); err != nil {
+		return err
+	}
+	if err := indexer.IndexField(ctx, &appsv1alpha1.User{}, indexUserCredentialsSecretRef, func(o client.Object) []string {
+		return refValue(o.(*appsv1alpha1.User).Spec.CredentialsSecretRef)
 	}); err != nil {
 		return err
 	}

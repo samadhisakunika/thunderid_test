@@ -64,6 +64,17 @@ spec:
                 - maxReplicas
                 - minReplicas
                 type: object
+              dataVolumeSize:
+                description: |-
+                  DataVolumeSize, when set (e.g. "1Gi"), provisions a ReadWriteOnce PersistentVolumeClaim
+                  mounted at /opt/thunderid/repository/database (where the SQLite files live) and gates
+                  setup.sh to run only once: the container entrypoint checks a marker file on that volume
+                  and skips setup.sh on every restart after the first, instead of rerunning it (and wiping
+                  the database) on every pod restart. Because the PVC is ReadWriteOnce, the Deployment
+                  strategy switches to Recreate to avoid two pods mounting it at once — only meaningful with
+                  replicas: 1. Leave unset to keep the existing ephemeral-SQLite, setup.sh-every-restart
+                  behavior.
+                type: string
               domain:
                 type: string
               image:
