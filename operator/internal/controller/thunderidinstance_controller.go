@@ -178,7 +178,7 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, publicURL string) (string, error) {
 
-	configContent := fmt.Sprintf(deploymentConfigTemplate, publicURL, publicURL, publicURL)
+	configContent := fmt.Sprintf(deploymentConfigTemplate, publicURL)
 
 	// Load base resources from external ConfigMap.
 	var resourcesContent string
@@ -323,9 +323,16 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	// setupCmd normally reruns setup.sh (and its SQLite reinitialization) on every container
 	// start. With a persistent data volume, repository/database survives restarts, so setup.sh
 	// only needs to run once: gate it behind a marker file written on that same volume.
+	//
+	// ThunderID's SQLite schema is created at image-build time (via dbscripts/*/sqlite.sql),
+	// not at runtime — the image's own database/*.db files already have schema and seed data
+	// (default OU, base user types, etc). The PVC starts empty, so on first boot only, seed it
+	// from those files before setup.sh connects; otherwise setup.sh's bootstrap step fails with
+	// "no such table" against a schema-less database.
 	setupCmd := "./setup.sh"
 	if hasDataVolume {
-		setupCmd = "[ -f repository/database/.setup-complete ] || { ./setup.sh && touch repository/database/.setup-complete; }"
+		setupCmd = "[ -f repository/database/configdb.db ] || cp /opt/thunderid/database/*.db repository/database/; " +
+			"[ -f repository/database/.setup-complete ] || { ./setup.sh && touch repository/database/.setup-complete; }"
 	}
 	startCmd := fmt.Sprintf("cd /opt/thunderid && %s && exec ./start.sh", setupCmd)
 	if hasResources {
@@ -335,7 +342,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      "config",
-			MountPath: "/opt/thunderid/repository/conf/deployment.yaml",
+			MountPath: "/opt/thunderid/deployment.yaml",
 			SubPath:   "deployment.yaml",
 		},
 	}

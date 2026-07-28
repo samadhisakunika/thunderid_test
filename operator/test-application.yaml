@@ -6,8 +6,8 @@ metadata:
 spec:
   instanceRef: thunderid-prod
   name: Test Web Application3
-  ouHandle: test-ou
-  authFlowHandle: test-basic-flow
+  ouHandle: default
+  authFlowHandle: default-flow
   themeId: "019f83c6-e188-747e-95f1-b7c3a119abed"
   logoUrl: "emoji:👨‍💻"
   isRegistrationFlowEnabled: true
