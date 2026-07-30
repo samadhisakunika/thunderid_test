@@ -48,6 +48,14 @@ import (
 //go:embed deployment-config.yaml
 var deploymentConfigTemplate string
 
+// initContainerImage is used for init containers that only need plain POSIX utilities
+// (cp, chmod, stat, chown) — not the ThunderID app itself. Pinned to a specific tag, unlike
+// instance.Spec.Image which is typically ":latest": a floating tag forces imagePullPolicy to
+// default to Always, so every container built from it re-checks the registry on every pod
+// start. Pinning here lets these two containers safely use IfNotPresent instead, while the
+// main "thunderid" container keeps its own image and Always semantics untouched.
+const initContainerImage = "busybox:1.36"
+
 // ThunderIDInstanceReconciler reconciles a ThunderIDInstance object
 type ThunderIDInstanceReconciler struct {
 	client.Client
@@ -421,8 +429,9 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 
 	initContainers := []corev1.Container{
 		{
-			Name:  "seed-direct-auth-secret",
-			Image: instance.Spec.Image,
+			Name:            "seed-direct-auth-secret",
+			Image:           initContainerImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command: []string{"/bin/sh", "-c", fmt.Sprintf(
 				"cp /run/security-seed/%[1]s /opt/thunderid/config/secrets/%[1]s && chmod 600 /opt/thunderid/config/secrets/%[1]s",
 				securityKeyDirectAuth)},
@@ -437,11 +446,19 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		// backend — notably plain hostPath PVs, which is what minikube's default storage
 		// class provisions. Chown explicitly, as root, so the non-root "thunderid" container
 		// can write its setup-complete marker regardless of what's backing the PVC.
+		//
+		// The recursive chown only needs to happen once per PVC: everything the "thunderid"
+		// container (uid 10001) creates afterwards is already owned by 10001. On every restart
+		// after the first, skip the walk — which only gets slower as WAL/journal files
+		// accumulate — by checking the top-level dir's owner first.
 		root := int64(0)
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "fix-data-volume-permissions",
-			Image:           instance.Spec.Image,
-			Command:         []string{"chown", "-R", "10001:10001", "/opt/thunderid/repository/database"},
+			Image:           initContainerImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command: []string{"/bin/sh", "-c",
+				`owner=$(stat -c %u /opt/thunderid/repository/database 2>/dev/null || echo -1); ` +
+					`[ "$owner" = "10001" ] || chown -R 10001:10001 /opt/thunderid/repository/database`},
 			SecurityContext: &corev1.SecurityContext{RunAsUser: &root},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/thunderid/repository/database"},
