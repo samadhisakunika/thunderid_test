@@ -375,19 +375,29 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			SubPath:   f,
 		})
 	}
-	// direct_auth_secret is handled separately from the cert/key files above: setup.sh
-	// unconditionally chmod's it (600) even when reusing an existing value, and Secret-backed
-	// volumes are always mounted read-only, so a direct subPath mount here would crash setup.sh
-	// with "Read-only file system". Instead it's seeded into a writable emptyDir by an init
-	// container, which is where the chmod actually happens.
-	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name:      "direct-auth-secret",
-		MountPath: "/opt/thunderid/config/secrets",
-	})
+	// direct_auth_secret is handled separately from the cert/key files above: the running server
+	// re-reads it (via deployment.yaml's file:// reference) on every boot, and it unconditionally
+	// chmod's/rewrites it during setup, but Secret-backed volumes are always mounted read-only —
+	// a direct subPath mount here would fail with "Read-only file system". Instead it's seeded
+	// into a writable location by an init container.
 	if hasDataVolume {
+		// Backed by the PVC (subPath keeps it a distinct directory from the SQLite files), not an
+		// emptyDir: this makes seeding a true one-time cost, since the file persists across
+		// restarts instead of vanishing with the pod like an emptyDir would.
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "data",
+			MountPath: "/opt/thunderid/config/secrets",
+			SubPath:   "secrets",
+		})
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "data",
 			MountPath: "/opt/thunderid/repository/database",
+		})
+	} else {
+		// No PVC to persist onto — same emptyDir-every-boot approach as before.
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "direct-auth-secret",
+			MountPath: "/opt/thunderid/config/secrets",
 		})
 	}
 
@@ -427,20 +437,8 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		})
 	}
 
-	initContainers := []corev1.Container{
-		{
-			Name:            "seed-direct-auth-secret",
-			Image:           initContainerImage,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command: []string{"/bin/sh", "-c", fmt.Sprintf(
-				"cp /run/security-seed/%[1]s /opt/thunderid/config/secrets/%[1]s && chmod 600 /opt/thunderid/config/secrets/%[1]s",
-				securityKeyDirectAuth)},
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: "security", MountPath: "/run/security-seed", ReadOnly: true},
-				{Name: "direct-auth-secret", MountPath: "/opt/thunderid/config/secrets"},
-			},
-		},
-	}
+	thunderidUID := int64(10001)
+	var initContainers []corev1.Container
 	if hasDataVolume {
 		// fsGroup (set below on the pod's SecurityContext) isn't honored by every volume
 		// backend — notably plain hostPath PVs, which is what minikube's default storage
@@ -451,13 +449,23 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		// container (uid 10001) creates afterwards is already owned by 10001. On every restart
 		// after the first, skip the walk — which only gets slower as WAL/journal files
 		// accumulate — by checking the top-level dir's owner first.
+		//
+		// This must run before seed-direct-auth-secret below: on a fresh PVC the top-level dir
+		// is root-owned, and seed-direct-auth-secret (running as uid 10001, not root) can't
+		// create a file under a directory it doesn't yet own.
 		root := int64(0)
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "fix-data-volume-permissions",
 			Image:           initContainerImage,
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command: []string{"/bin/sh", "-c",
-				`owner=$(stat -c %u /opt/thunderid/repository/database 2>/dev/null || echo -1); ` +
+				// mkdir+chown here is a cheap, non-recursive, always-run step — kept separate
+				// from the owner check below so it isn't skipped on a PVC that already shows
+				// owner 10001 from before this directory existed (e.g. from an earlier restart
+				// under an older version of this init container).
+				`mkdir -p /opt/thunderid/repository/database/secrets && ` +
+					`chown 10001:10001 /opt/thunderid/repository/database/secrets; ` +
+					`owner=$(stat -c %u /opt/thunderid/repository/database 2>/dev/null || echo -1); ` +
 					`[ "$owner" = "10001" ] || chown -R 10001:10001 /opt/thunderid/repository/database`},
 			SecurityContext: &corev1.SecurityContext{RunAsUser: &root},
 			VolumeMounts: []corev1.VolumeMount{
@@ -465,6 +473,40 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			},
 		})
 	}
+
+	seedDirectAuthSecretCmd := fmt.Sprintf(
+		"cp /run/security-seed/%[1]s /opt/thunderid/config/secrets/%[1]s && chmod 600 /opt/thunderid/config/secrets/%[1]s",
+		securityKeyDirectAuth)
+	seedDirectAuthSecretMounts := []corev1.VolumeMount{
+		{Name: "security", MountPath: "/run/security-seed", ReadOnly: true},
+	}
+	if hasDataVolume {
+		// Persistent (PVC-backed, via the same subPath the main container mounts), unlike the
+		// emptyDir fallback below: seeding this only needs to happen once, ever, since the file
+		// survives restarts. Check the file's own presence directly.
+		seedDirectAuthSecretCmd = fmt.Sprintf(
+			"[ -f /opt/thunderid/config/secrets/%s ] || { %s; }", securityKeyDirectAuth, seedDirectAuthSecretCmd)
+		seedDirectAuthSecretMounts = append(seedDirectAuthSecretMounts, corev1.VolumeMount{
+			Name: "data", MountPath: "/opt/thunderid/config/secrets", SubPath: "secrets",
+		})
+	} else {
+		seedDirectAuthSecretMounts = append(seedDirectAuthSecretMounts, corev1.VolumeMount{
+			Name: "direct-auth-secret", MountPath: "/opt/thunderid/config/secrets",
+		})
+	}
+	initContainers = append(initContainers, corev1.Container{
+		// RunAsUser must match the "thunderid" container's own uid (10001, from its image's
+		// default): busybox defaults to root, so without this the file gets created root-owned,
+		// and chmod 600 then locks the "thunderid" container (uid 10001) out with "permission
+		// denied" — chmod 600 strips group/other bits entirely, so the pod's FSGroup can't paper
+		// over a uid mismatch here the way it can for group-readable files.
+		Name:            "seed-direct-auth-secret",
+		Image:           initContainerImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-c", seedDirectAuthSecretCmd},
+		SecurityContext: &corev1.SecurityContext{RunAsUser: &thunderidUID},
+		VolumeMounts:    seedDirectAuthSecretMounts,
+	})
 
 	// The data PVC is ReadWriteOnce, so a surging RollingUpdate (the default) would strand the
 	// new pod Pending trying to mount a volume the old pod still holds. Recreate tears the old

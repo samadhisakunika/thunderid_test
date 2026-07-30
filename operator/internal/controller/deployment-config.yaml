@@ -3,6 +3,11 @@ server:
                        # reach it; this is separate from public_url below
   port: 8090
   public_url: "https://localhost:8090" # matches local port-forward/direct testing
+  security:
+    # file:// reference, not an inline value: the server resolves this by reading the file's
+    # content at every boot. The referenced path is exactly where the seed-direct-auth-secret
+    # init container writes the operator-generated secret.
+    direct_auth_secret: "file://config/secrets/direct_auth_secret"
 
 tls:
   min_version: "1.3"
