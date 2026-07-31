@@ -64,7 +64,7 @@ Application CRD       ──writes──►  <instance>-applications ConfigMap
 ```
 
 **Key facts:**
-- By default each ThunderID pod uses an **ephemeral SQLite database**. On every pod restart `setup.sh` reruns and the database is wiped and rebuilt from the resources ConfigMap. Set `spec.dataVolumeSize` on `ThunderIDInstance` to persist `repository/database` on a PVC instead — `setup.sh` then only runs on the pod's first-ever start. (To use PostgreSQL instead of SQLite, set `spec.databaseSecret` — see the ThunderIDConfig reference below.)
+- Every `ThunderIDInstance` must pick a persistent backend: either `spec.dataVolumeSize` (PVC-backed SQLite — `repository/database` persists, `setup.sh` runs once on the pod's first-ever start and is skipped on every restart after that) or `spec.database.type: postgresql` with `spec.database.secretRef` (external PostgreSQL — see [Database](#database) below; every restart re-syncs `resources.yaml` into the database via `start.sh --bootstrap-and-serve`, and `spec.dataVolumeSize` is ignored since there's no local state to persist). Setting neither is rejected — ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
 - `spec.resourcesConfigMap` must point to a ConfigMap that seeds the base OU, flows, and themes **before** any Application resources are loaded. Without this, Application loading will fail with `APP-1018`.
 - All ten resource kinds are loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each CRD's controller reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified, the same way Application does.
 
@@ -220,21 +220,26 @@ kubectl describe applications my-console-app
 
 ## Custom Resources
 
-### ThunderIDConfig
+### ThunderIDInstance
 
-The top-level resource. Creates and manages a `ThunderIDInstance`, `Deployment`, and (optionally) an `HPA`.
+The top-level resource. Creates and manages a `Deployment`, `Service`, `Ingress`, and (optionally) an `HPA`.
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `spec.image` | Yes | ThunderID container image |
 | `spec.domain` | Yes | Public domain for the ThunderID instance |
 | `spec.resourcesConfigMap` | Yes* | ConfigMap containing base resources YAML. **Must be set** — omitting it causes APP-1018 on Application load |
-| `spec.databaseSecret` | No | Kubernetes Secret name with PostgreSQL credentials. When set, `setup.sh` is skipped on pod restart and ThunderID connects to PostgreSQL instead of SQLite |
+| `spec.database.type` | See note | `sqlite` (default) or `postgresql`. See [Database](#database) below. One of `spec.database.type: postgresql` or `spec.dataVolumeSize` **must** be set — a `ThunderIDInstance` with neither is rejected |
+| `spec.database.secretRef` | No | Required when `spec.database.type` is `postgresql`: name of the Secret with connection credentials |
 | `spec.tlsSecret` | No | Kubernetes Secret name for TLS |
+| `spec.dataVolumeSize` | See note | e.g. `"1Gi"`. Provisions a ReadWriteOnce PVC for `repository/database` (the SQLite files) and makes `setup.sh` run only once — on every restart after the first, the entrypoint finds a marker file on that volume and skips straight to `start.sh`. Only meaningful with `replicas: 1` (the Deployment switches to a `Recreate` strategy since the PVC can't be mounted by two pods at once). Ignored when `spec.database.type` is `postgresql` |
+| `spec.replicas` | No | Replica count (set to 0 when using HPA, which manages replicas) |
 | `spec.resources` | No | CPU/memory requests and limits |
 | `spec.autoScaling` | No | HPA settings (`minReplicas`, `maxReplicas`, `targetCPUUtilizationPercentage`, `targetMemoryUtilizationPercentage`) |
 
-**PostgreSQL Secret format** (when `spec.databaseSecret` is set):
+#### Database
+
+By default, `spec.database.type` is `sqlite` and no further configuration is needed. To use PostgreSQL instead, set `spec.database.type: postgresql` and point `spec.database.secretRef` at a Secret shaped like:
 
 ```yaml
 apiVersion: v1
@@ -244,29 +249,17 @@ metadata:
   namespace: default
 stringData:
   host: "postgres.example.com"
-  port: "5432"                    # optional, defaults to 5432
+  port: "5432"                          # optional, defaults to 5432
   username: "thunderid"
   password: "secret"
+  sslmode: "require"                    # optional; require (default), verify-full, verify-ca, or disable
   configDatabase: "thunderid_config"    # optional, default shown
-  runtimeDatabase: "thunderid_runtime"  # optional, default shown
+  runtimeDatabase: "thunderid_runtime"  # optional, default shown — shared by both the transient and
+                                         # persistent runtime stores (they differ by table set, not database)
   userDatabase: "thunderid_users"       # optional, default shown
 ```
 
----
-
-### ThunderIDInstance
-
-Managed automatically by `ThunderIDConfig`. You can also create one directly if you do not need the config-level abstraction.
-
-| Field | Description |
-|-------|-------------|
-| `spec.image` | Container image |
-| `spec.domain` | Public domain |
-| `spec.resourcesConfigMap` | Base resources ConfigMap — **required for applications to load** |
-| `spec.databaseSecret` | PostgreSQL credentials Secret (see ThunderIDConfig above) |
-| `spec.dataVolumeSize` | e.g. `"1Gi"`. Provisions a ReadWriteOnce PVC for `repository/database` (the SQLite files) and makes `setup.sh` run only once — on every restart after the first, the entrypoint finds a marker file on that volume and skips straight to `start.sh`. Only meaningful with `replicas: 1` (the Deployment switches to a `Recreate` strategy since the PVC can't be mounted by two pods at once) |
-| `spec.replicas` | Replica count (set to 0 when using HPA, which manages replicas) |
-| `spec.resources` | Resource limits/requests |
+Everything except `password` is inlined directly into the generated `deployment.yaml`; `password` is mounted into the pod as a file and referenced with a `file://` URI, the same way ThunderID resolves `direct_auth_secret` and `crypto.key`. The operator does not create the databases or run migrations — point it at an empty PostgreSQL server and ThunderID applies its own schema on startup, the same way it seeds SQLite from `dbscripts/*/sqlite.sql` at image-build time.
 
 ---
 
@@ -677,9 +670,9 @@ kubectl delete deployment <instance-name>
 
 ### Pod restarts are slow (SQLite mode)
 
-**Cause:** `setup.sh` runs on every pod restart to reinitialise the SQLite database.
+**Cause:** `setup.sh` runs on every pod restart to reinitialise the SQLite database. This can only happen if `spec.dataVolumeSize` is unset — the operator rejects `ThunderIDInstance` specs with neither `spec.dataVolumeSize` nor `spec.database.type: postgresql` set, precisely to avoid this.
 
-**Fix:** Set `spec.dataVolumeSize` (e.g. `"1Gi"`) on your `ThunderIDInstance`. This provisions a PVC for `repository/database` and gates `setup.sh` behind a marker file on it, so it only runs on the pod's first-ever start — every restart after that skips straight to `start.sh`. Only use this with `replicas: 1`.
+**Fix:** Set `spec.dataVolumeSize` (e.g. `"1Gi"`) on your `ThunderIDInstance`. This provisions a PVC for `repository/database` and gates `setup.sh` behind a marker file on it, so it only runs on the pod's first-ever start — every restart after that skips straight to `start.sh`. Only use this with `replicas: 1`. If you don't need SQLite at all, `spec.database.type: postgresql` avoids `setup.sh` entirely — see [Database](#database).
 
 ---
 

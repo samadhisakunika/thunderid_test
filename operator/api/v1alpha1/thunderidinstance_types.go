@@ -1,19 +1,3 @@
-/*
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package v1alpha1
 
 import (
@@ -21,6 +5,26 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
+
+// DatabaseSpec selects which database backend ThunderID connects to.
+type DatabaseSpec struct {
+	// Type selects the database backend. "sqlite" (default) uses the image's built-in SQLite
+	// files, wiped and reseeded by setup.sh on every restart unless spec.dataVolumeSize is set.
+	// "postgresql" connects to an external PostgreSQL server instead — no local database files,
+	// so spec.dataVolumeSize is ignored.
+	// +kubebuilder:validation:Enum=sqlite;postgresql
+	// +kubebuilder:default=sqlite
+	// +optional
+	Type string `json:"type,omitempty"`
+
+	// SecretRef names a Secret holding PostgreSQL connection credentials. Required when
+	// type is "postgresql", ignored otherwise. Expected keys: host, username, password
+	// (required); port (default "5432"), configDatabase (default "thunderid_config"),
+	// runtimeDatabase (default "thunderid_runtime"), userDatabase (default "thunderid_users"),
+	// sslmode (default "require"; also accepts "verify-full", "verify-ca", "disable") (optional).
+	// +optional
+	SecretRef string `json:"secretRef,omitempty"`
+}
 
 type AutoScalingSpec struct {
 	MinReplicas                       int32 `json:"minReplicas"`
@@ -59,10 +63,15 @@ type ThunderIDInstanceSpec struct {
 	// and skips setup.sh on every restart after the first, instead of rerunning it (and wiping
 	// the database) on every pod restart. Because the PVC is ReadWriteOnce, the Deployment
 	// strategy switches to Recreate to avoid two pods mounting it at once — only meaningful with
-	// replicas: 1. Leave unset to keep the existing ephemeral-SQLite, setup.sh-every-restart
-	// behavior.
+	// replicas: 1. Either this or Database.Type=postgresql must be set — a ThunderIDInstance with
+	// neither is rejected: ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
 	// +optional
 	DataVolumeSize string `json:"dataVolumeSize,omitempty"`
+
+	// Database selects sqlite (default) or postgresql. See DatabaseSpec. When Type is sqlite (or
+	// unset), DataVolumeSize must be set.
+	// +optional
+	Database DatabaseSpec `json:"database,omitempty"`
 
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// +optional

@@ -1,0 +1,11 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ThunderIDInstance
+metadata:
+  name: my-postgres-instance
+spec:
+  image: ghcr.io/thunder-id/thunderid:latest
+  domain: my-instance.local
+  resourcesConfigMap: thunderid-resources
+  database:
+    type: postgresql
+    secretRef: my-postgres-db

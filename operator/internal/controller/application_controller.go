@@ -337,7 +337,14 @@ func (r *ApplicationReconciler) buildApplicationYAML(ctx context.Context, a apps
 		fmt.Fprintf(&buf, "description: %q\n", a.Spec.Description)
 	}
 	if a.Spec.Template != "" {
-		fmt.Fprintf(&buf, "template: %s\n", a.Spec.Template)
+		// ThunderID's own resources.yaml schema calls this field "type" (see
+		// /opt/thunderid/bootstrap/01-default-resources.yaml in the image, e.g. the built-in
+		// "Console" application: "type: browser") — not "template". The CRD field is kept named
+		// spec.template for clarity to operator users (it selects one of browser/fullstack/mobile/
+		// m2m/custom), but must be rendered under ThunderID's actual key or it's silently ignored
+		// as an unrecognized field, then rejected at bootstrap as APP-1042 "Application type is
+		// required".
+		fmt.Fprintf(&buf, "type: %s\n", a.Spec.Template)
 	}
 	if a.Spec.OUID != "" {
 		fmt.Fprintf(&buf, "ouId: %q\n", a.Spec.OUID)

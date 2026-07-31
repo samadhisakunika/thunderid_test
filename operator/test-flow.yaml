@@ -4,9 +4,9 @@ metadata:
   name: test-basic-flow
   namespace: default
 spec:
-  instanceRef: thunderid-prod
+  instanceRef: my-postgres-instance
   handle: test-basic-flow
-  name: Test Basic Authentication Flow
+  name: Test Basic Authentication Flow NEW1
   flowType: AUTHENTICATION
   isReadOnly: false
   nodes:

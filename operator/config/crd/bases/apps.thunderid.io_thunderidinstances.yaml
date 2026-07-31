@@ -72,9 +72,34 @@ spec:
                   and skips setup.sh on every restart after the first, instead of rerunning it (and wiping
                   the database) on every pod restart. Because the PVC is ReadWriteOnce, the Deployment
                   strategy switches to Recreate to avoid two pods mounting it at once — only meaningful with
-                  replicas: 1. Leave unset to keep the existing ephemeral-SQLite, setup.sh-every-restart
-                  behavior.
+                  replicas: 1. Either this or Database.Type=postgresql must be set — a ThunderIDInstance with
+                  neither is rejected: ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
                 type: string
+              database:
+                description: |-
+                  Database selects sqlite (default) or postgresql. See DatabaseSpec. When Type is sqlite (or
+                  unset), DataVolumeSize must be set.
+                properties:
+                  secretRef:
+                    description: |-
+                      SecretRef names a Secret holding PostgreSQL connection credentials. Required when
+                      type is "postgresql", ignored otherwise. Expected keys: host, username, password
+                      (required); port (default "5432"), configDatabase (default "thunderid_config"),
+                      runtimeDatabase (default "thunderid_runtime"), userDatabase (default "thunderid_users"),
+                      sslmode (default "require"; also accepts "verify-full", "verify-ca", "disable") (optional).
+                    type: string
+                  type:
+                    default: sqlite
+                    description: |-
+                      Type selects the database backend. "sqlite" (default) uses the image's built-in SQLite
+                      files, wiped and reseeded by setup.sh on every restart unless spec.dataVolumeSize is set.
+                      "postgresql" connects to an external PostgreSQL server instead — no local database files,
+                      so spec.dataVolumeSize is ignored.
+                    enum:
+                    - sqlite
+                    - postgresql
+                    type: string
+                type: object
               domain:
                 type: string
               image:
