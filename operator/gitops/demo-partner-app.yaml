@@ -10,6 +10,7 @@ spec:
   template: browser
   ouHandle: default
   authFlowHandle: cloud-login-flow
+  appLogoUrl: "emoji:👨‍💻"
   themeId: "01900000-0000-7000-8000-000000000071" # acrylic-orange
   isRegistrationFlowEnabled: false
   allowedUserTypes:
