@@ -1,0 +1,13 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ServerConfig
+metadata:
+  name: thunderid-prod-cors
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  name: cors
+  cors:
+    allowedOrigins:
+      - url: "http://localhost:5173"
+      - url: "http://localhost:5174"
+      - url: "http://localhost:5175"

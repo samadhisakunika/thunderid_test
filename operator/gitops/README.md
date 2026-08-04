@@ -1,9 +1,10 @@
 # GitOps-managed resources
 
-Everything under this directory is watched by Flux (`flux-system` Kustomization
-`gitops`, see `.flux`-generated manifests under `clusters/` at repo root after
-bootstrap). Any CR file committed and pushed here is automatically applied to
-the cluster — no `kubectl apply` needed.
+Everything under this directory (except `flux-system/`, which is Flux's own
+bootstrap-generated config) is watched by the `flux-system` Kustomization on
+the cluster. Any CR file committed and pushed here is automatically applied
+— no `kubectl apply` needed. Default reconcile interval is 1m; force an
+immediate sync with `flux reconcile kustomization flux-system --with-source`.
 
 ## Rules
 
@@ -17,6 +18,11 @@ the cluster — no `kubectl apply` needed.
 
 ## Layout
 
-Empty for now. Once Flux is bootstrapped, CR files placed here (or moved here
-from the root-level demo files) become the live, Git-driven source of truth
-for the cluster.
+- `organizationunit-flux-test.yaml` — throwaway OU proving commit-to-apply and
+  edit-to-apply work end to end. Safe to delete (delete the file + push) once
+  no longer needed; Flux prunes it from the cluster on the next sync.
+- `demo-partner-app.yaml` / `demo-partner-app-cors.yaml` — the live-demo
+  `Application` and CORS `ServerConfig`, promoted here from the repo root so
+  edits (e.g. changing the login flow, redirect URIs) go live via `git push`.
+- `test-flow.yaml` — `test-basic-flow`, the demo login flow with the
+  "Welcome to Demo Partner Portal" heading used in the modification demo.
