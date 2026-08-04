@@ -6,7 +6,6 @@ metadata:
 spec:
   image: ghcr.io/thunder-id/thunderid:latest
   domain: id.example.com
-  resourcesConfigMap: thunderid-resources
   securitySecret: thunderid-prod-manual-security
   dataVolumeSize: "1Gi"
   replicas: 1
