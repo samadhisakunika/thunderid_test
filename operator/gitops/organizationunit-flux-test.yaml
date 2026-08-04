@@ -1,0 +1,10 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: OrganizationUnit
+metadata:
+  name: flux-gitops-test
+  namespace: default
+spec:
+  instanceRef: thunderid-prod
+  handle: flux-gitops-test
+  name: Flux GitOps Test OU
+  description: Proves that committing a CR file to GitHub auto-applies it to the cluster via Flux.
