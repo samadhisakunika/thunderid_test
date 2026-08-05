@@ -1,1 +1,10 @@
 CLAUDE.md
+
+# Kubernetes Secret manifests / dumped credentials — never commit these.
+# Existing tracked files matching these patterns (operator/Admin2User_credentials.yaml,
+# operator/thunderid-prod-manual-security.yaml) predate this rule and stay tracked;
+# this only stops new ones from being added by accident.
+*credentials*.yaml
+*credentials*.yml
+*security*.yaml
+*security*.yml

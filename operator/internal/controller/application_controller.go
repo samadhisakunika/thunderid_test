@@ -442,7 +442,7 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				func(o client.Object) string { return o.(*appsv1alpha1.Flow).Spec.Handle }))).
 		Watches(&appsv1alpha1.Theme{}, handler.EnqueueRequestsFromMapFunc(
 			enqueueReferencing(mgr.GetClient(), indexApplicationThemeHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
-				func(o client.Object) string { return o.GetName() }))).
+				func(o client.Object) string { return o.(*appsv1alpha1.Theme).Spec.Handle }))).
 		Watches(&appsv1alpha1.OrganizationUnit{}, handler.EnqueueRequestsFromMapFunc(
 			enqueueReferencing(mgr.GetClient(), indexApplicationOUHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
 				func(o client.Object) string { return o.(*appsv1alpha1.OrganizationUnit).Spec.Handle }))).
