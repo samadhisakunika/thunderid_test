@@ -129,7 +129,7 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	flow.Status.Phase = "Pending"
 	flow.Status.Synced = false
 	flow.Status.LastSyncTime = &now
-	flow.Status.FlowID = string(flow.UID)
+	flow.Status.FlowID = deterministicUUIDv7(flow.ObjectMeta)
 	if err := r.Status().Update(ctx, flow); err != nil {
 		log.Error(err, "failed to update flow status")
 		return ctrl.Result{}, err

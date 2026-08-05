@@ -132,7 +132,7 @@ func (r *ThemeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	theme.Status.Phase = "Pending"
 	theme.Status.Synced = false
 	theme.Status.LastSyncTime = &now
-	theme.Status.ThemeID = string(theme.UID)
+	theme.Status.ThemeID = deterministicUUIDv7(theme.ObjectMeta)
 	if err := r.Status().Update(ctx, theme); err != nil {
 		log.Error(err, "failed to update theme status")
 		return ctrl.Result{}, err
