@@ -7,5 +7,4 @@ spec:
   image: ghcr.io/thunder-id/thunderid:latest
   replicas: 1
   domain: thunderid-datavol-test.local
-  resourcesConfigMap: thunderid-resources
   dataVolumeSize: "1Gi"

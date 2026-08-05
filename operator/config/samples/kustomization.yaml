@@ -1,10 +1,2 @@
-generatorOptions:
-  disableNameSuffixHash: true
-
-configMapGenerator:
-  - name: thunderid-resources
-    files:
-      - resources.yaml=thunderid-resources.yml
-
 resources:
   - thunderid-instance.yaml
