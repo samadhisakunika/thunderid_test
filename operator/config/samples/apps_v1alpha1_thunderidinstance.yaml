@@ -1,9 +1,0 @@
-apiVersion: apps.thunderid.io/v1alpha1
-kind: ThunderIDInstance
-metadata:
-  labels:
-    app.kubernetes.io/name: operator
-    app.kubernetes.io/managed-by: kustomize
-  name: thunderidinstance-sample
-spec:
-  # TODO(user): Add fields here
