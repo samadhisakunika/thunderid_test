@@ -46,7 +46,8 @@ A Kubernetes operator that manages [ThunderID](https://github.com/thunder-id/thu
 ## Architecture
 
 ```
-ThunderIDInstance  ──creates──►  Deployment / Service / Ingress
+ThunderIDInstance  ──creates──►  Deployment / Service
+      ├──creates──► Ingress (only if spec.domain is set)
       └──creates──► HPA
 
 OrganizationUnit CRD  ──writes──►  <instance>-organizationunits ConfigMap
@@ -65,6 +66,7 @@ Application CRD       ──writes──►  <instance>-applications ConfigMap
 - Every `ThunderIDInstance` must pick a persistent backend: either `spec.dataVolumeSize` (PVC-backed SQLite — `repository/database` persists, `setup.sh` runs once on the pod's first-ever start and is skipped on every restart after that) or `spec.database.type: postgresql` with `spec.database.secretRef` (external PostgreSQL — see [Database](#database) below; every restart re-syncs `resources.yaml` into the database via `start.sh --bootstrap-and-serve`, and `spec.dataVolumeSize` is ignored since there's no local state to persist). Setting neither is rejected — ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
 - The ThunderID image bakes in its own default organization unit, user types, and flows (`default` OU, `Person` user type, `console-app-flow`, `cloud-login-flow`, etc.) — `spec.resourcesConfigMap` is **optional**, only needed if you want to seed additional base resources beyond those defaults.
 - All twelve resource kinds are loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each CRD's controller reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified, the same way Application does.
+- `spec.domain` is **optional** and unset by default — every local/dev workflow in this repo reaches ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead, which is what the operator assumes when no domain is set. Setting `spec.domain` creates a real `Ingress` for external access (a real deployment with real DNS), but the `public_url` value it feeds into ThunderID's own config isn't actually a field ThunderID's schema recognizes — confirmed against the image's own `config/default.json`, which has no `public_url` anywhere. ThunderID silently ignores it either way, so this only matters for the `Ingress` routing itself, not anything ThunderID does internally.
 
 ---
 
