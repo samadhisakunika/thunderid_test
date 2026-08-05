@@ -9,7 +9,7 @@ spec:
   description: Sample login application
   logoUrl: emoji:✈️
   ouId: "019ef85a-0aa4-7736-9357-d25edba4db95" # default OU
-  authFlowId: "019ef85a-0ddd-7ed0-af81-69bae4519c5d" # console-app-flow
+  authFlowId: "019ef85a-0db4-7283-a084-c02463811df4" # console-app-flow (Console App Authentication Flow, not the Registration one which shares the same handle)
   isRegistrationFlowEnabled: false
   assertion:
     validityPeriod: 3600
@@ -17,7 +17,6 @@ spec:
     validityPeriod: 0
   allowedUserTypes:
     - Person
-  themeHandle: pale-indigo
   template: browser
   inboundAuthConfig: |
     - type: oauth2
@@ -48,14 +47,6 @@ spec:
               - family_name
               - email
               - groups
-            responseType: JWT
-          userInfo:
-            responseType: JSON
-            userAttributes:
-              - given_name
-              - family_name
-              - email
-              - groups
         scopeClaims:
           email:
             - email
@@ -65,7 +56,3 @@ spec:
           profile:
             - given_name
             - family_name
-        scopes:
-          - openid
-          - profile
-          - email
