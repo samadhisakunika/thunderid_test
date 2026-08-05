@@ -1,0 +1,36 @@
+#center {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: system-ui, sans-serif;
+}
+
+.landing h1,
+.home-card h1 {
+  margin-bottom: 8px;
+}
+
+.landing p,
+.home-card p {
+  color: #666;
+  margin-bottom: 20px;
+}
+
+.home-card {
+  background: #fff;
+  border: 1px solid #e2e2e2;
+  border-radius: 12px;
+  padding: 40px 56px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+}
+
+.home-card .email {
+  font-weight: 500;
+  color: #333;
+}
+
+.home-card .hint {
+  font-size: 14px;
+}
