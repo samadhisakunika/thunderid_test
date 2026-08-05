@@ -101,6 +101,13 @@ spec:
                     type: string
                 type: object
               domain:
+                description: |-
+                  Domain is the externally-reachable hostname for this instance. When set, the operator
+                  creates an Ingress (Host: spec.domain, TLS via spec.tlsSecret if set) so ThunderID is
+                  reachable without kubectl port-forward access — e.g. a real deployment behind a real
+                  DNS record. Optional: when unset (the default, and what every local/dev workflow in
+                  this repo actually uses), no Ingress is created and ThunderID is only reachable via its
+                  Service (kubectl port-forward svc/<name> 8090:8090 -> https://localhost:8090).
                 type: string
               image:
                 type: string
@@ -178,7 +185,6 @@ spec:
               tlsSecret:
                 type: string
             required:
-            - domain
             - image
             type: object
           status:

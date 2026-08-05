@@ -229,12 +229,12 @@ An alternative to steps 1 and 3 above for a packaged, in-cluster operator deploy
 
 ### ThunderIDInstance
 
-The top-level resource. Creates and manages a `Deployment`, `Service`, `Ingress`, and (optionally) an `HPA`.
+The top-level resource. Creates and manages a `Deployment`, `Service`, and (optionally) an `Ingress` and/or an `HPA`.
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `spec.image` | Yes | ThunderID container image |
-| `spec.domain` | Yes | Public domain for the ThunderID instance |
+| `spec.domain` | No | Externally-reachable hostname. When set, creates an `Ingress` (`Host: spec.domain`, TLS via `spec.tlsSecret` if set) so ThunderID is reachable without `kubectl port-forward` — e.g. a real deployment behind real DNS. When unset (the default — every local/dev workflow in this repo uses this), no `Ingress` is created; reach ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead |
 | `spec.resourcesConfigMap` | No | ConfigMap containing *additional* base resources YAML, seeded alongside the image's own built-in defaults (default OU, user types, flows). Not required for normal use |
 | `spec.database.type` | See note | `sqlite` (default) or `postgresql`. See [Database](#database) below. One of `spec.database.type: postgresql` or `spec.dataVolumeSize` **must** be set — a `ThunderIDInstance` with neither is rejected |
 | `spec.database.secretRef` | No | Required when `spec.database.type` is `postgresql`: name of the Secret with connection credentials |

@@ -41,8 +41,14 @@ type ThunderIDInstanceSpec struct {
 
 	Replicas int32 `json:"replicas,omitempty"`
 
-	// +kubebuilder:validation:Required
-	Domain string `json:"domain"`
+	// Domain is the externally-reachable hostname for this instance. When set, the operator
+	// creates an Ingress (Host: spec.domain, TLS via spec.tlsSecret if set) so ThunderID is
+	// reachable without kubectl port-forward access — e.g. a real deployment behind a real
+	// DNS record. Optional: when unset (the default, and what every local/dev workflow in
+	// this repo actually uses), no Ingress is created and ThunderID is only reachable via its
+	// Service (kubectl port-forward svc/<name> 8090:8090 -> https://localhost:8090).
+	// +optional
+	Domain string `json:"domain,omitempty"`
 
 	// +optional
 	TLSSecret string `json:"tlsSecret,omitempty"`

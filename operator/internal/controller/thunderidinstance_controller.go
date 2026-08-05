@@ -95,7 +95,12 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	publicURL := "https://" + instance.Spec.Domain
+	// No spec.domain means no Ingress (see reconcileIngress) — ThunderID is reached via
+	// kubectl port-forward instead, which always targets localhost:8090.
+	publicURL := "https://localhost:8090"
+	if instance.Spec.Domain != "" {
+		publicURL = "https://" + instance.Spec.Domain
+	}
 
 	resourcesContent, databaseBlock, err := r.reconcileConfigMap(ctx, instance, publicURL)
 	if err != nil {
@@ -1007,6 +1012,17 @@ func (r *ThunderIDInstanceReconciler) reconcileIngress(
 	pathType := networkingv1.PathTypePrefix
 	ing := &networkingv1.Ingress{}
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, ing)
+
+	// No domain means no Ingress — the default, local-dev path (kubectl port-forward instead).
+	// If one exists from a time when spec.domain was set, clean it up rather than leave it
+	// orphaned pointing at a host nobody configured anymore.
+	if instance.Spec.Domain == "" {
+		if err == nil {
+			return r.Delete(ctx, ing)
+		}
+		return client.IgnoreNotFound(err)
+	}
+
 	if errors.IsNotFound(err) {
 		ing = &networkingv1.Ingress{
 			ObjectMeta: metav1.ObjectMeta{
