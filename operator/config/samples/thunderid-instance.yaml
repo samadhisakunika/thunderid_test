@@ -1,9 +1,0 @@
-apiVersion: apps.thunderid.io/v1alpha1
-kind: ThunderIDInstance
-metadata:
-  name: thunderid-sample
-  namespace: default
-spec:
-  image: ghcr.io/thunder-id/thunderid:latest
-  replicas: 1
-  domain: thunderid.local
