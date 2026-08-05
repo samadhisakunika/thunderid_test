@@ -11,7 +11,7 @@ spec:
   ouHandle: default
   authFlowHandle: console-app-flow
   logoUrl: "emoji:👨‍💻"
-  themeId: "01900000-0000-7000-8000-000000000071" # acrylic-orange
+  themeId: "019f83c6-e188-747e-95f1-b7c3a119abed" # acrylic-orange
   isRegistrationFlowEnabled: false
   allowedUserTypes:
     - Person
