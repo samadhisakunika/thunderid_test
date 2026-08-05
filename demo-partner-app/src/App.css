@@ -26,6 +26,13 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
 }
 
+.home-card h1 {
+  /* .home-card's background is fixed white regardless of color scheme,
+     but h1 otherwise inherits index.css's dark-mode-aware --text-h,
+     which goes near-white in dark mode — invisible on this always-white card. */
+  color: #1a1a1a;
+}
+
 .home-card .email {
   font-weight: 500;
   color: #333;
