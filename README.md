@@ -246,6 +246,56 @@ The top-level resource. Creates and manages a `Deployment`, `Service`, and (opti
 | `spec.resources` | No | CPU/memory requests and limits |
 | `spec.autoScaling` | No | HPA settings (`minReplicas`, `maxReplicas`, `targetCPUUtilizationPercentage`, `targetMemoryUtilizationPercentage`) |
 
+#### Public URL / Ingress
+
+By default `spec.domain` is unset and every workflow in this repo reaches
+ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090`.
+Setting `spec.domain` switches to a real `Ingress` instead — useful for a
+deployment with actual DNS pointed at the cluster, not local dev.
+
+**Prerequisite:** the `Ingress` the operator creates hardcodes
+`nginx.ingress.kubernetes.io/backend-protocol: HTTPS` and
+`nginx.ingress.kubernetes.io/ssl-redirect: true` annotations and doesn't set
+`spec.ingressClassName`, so it only works with **ingress-nginx installed as
+the cluster's default `IngressClass`** — on minikube: `minikube addons
+enable ingress`. Other ingress controllers will either ignore those
+annotations or not pick up the resource at all.
+
+To enable it:
+
+```yaml
+spec:
+  image: ghcr.io/thunder-id/thunderid:latest
+  domain: id.example.com        # must resolve to your ingress controller's IP
+  tlsSecret: id-example-com-tls # optional — see below
+```
+
+- **`domain`** becomes the `Ingress`'s `Host` rule and (with no domain-based
+  routing of its own) is also what `publicURL` gets set to internally
+  (`https://<domain>`) — used only for the `Ingress` routing, since
+  ThunderID's own config schema doesn't recognize a `public_url` field at
+  all (see the Key Facts note above).
+- **`tlsSecret`** (optional) names a pre-existing `Secret` (standard
+  `kubernetes.io/tls`, i.e. `tls.crt`/`tls.key`) holding a *real* certificate
+  for `domain` — this is what terminates TLS for external clients at the
+  `Ingress`. It's separate from ThunderID's own internal self-signed
+  cert on the pod itself: the `backend-protocol: HTTPS` annotation just
+  tells ingress-nginx to speak HTTPS to the pod on the backend leg
+  regardless. Without `tlsSecret`, the `Ingress` has no TLS block and serves
+  plain HTTP externally.
+- For local testing without real DNS, point `domain` at a hostname you
+  control via `/etc/hosts` (or Windows' `C:\Windows\System32\drivers\etc\hosts`)
+  mapped to `minikube ip`, rather than a domain that won't resolve — the
+  original bug this section replaces was exactly that: a placeholder domain
+  nothing ever pointed at.
+- **Caveat:** the `Ingress` is only fully built (rules + TLS block) at
+  *creation* time — if you set `domain` first and add `tlsSecret` later,
+  the existing `Ingress` won't pick up the TLS block on its own. Run
+  `kubectl delete ingress <name>` to force the operator to recreate it with
+  the current spec on the next reconcile.
+- To go back to `kubectl port-forward`-only access, unset `domain` — the
+  operator deletes the `Ingress` automatically on the next reconcile.
+
 #### Database
 
 By default, `spec.database.type` is `sqlite` and no further configuration is needed. To use PostgreSQL instead, set `spec.database.type: postgresql` and point `spec.database.secretRef` at a Secret shaped like:
