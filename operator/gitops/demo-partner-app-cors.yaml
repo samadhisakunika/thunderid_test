@@ -9,5 +9,4 @@ spec:
   cors:
     allowedOrigins:
       - url: "http://localhost:5173"
-      - url: "http://localhost:5174"
-      - url: "http://localhost:5175"
+

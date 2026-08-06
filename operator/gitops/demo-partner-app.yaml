@@ -11,7 +11,7 @@ spec:
   ouHandle: default
   authFlowHandle: test-basic-flow
   logoUrl: "emoji:👨‍💻"
-  themeId: "019f83c6-e188-747e-95f1-b7c3a119abed" # acrylic-orange
+  themeId: "019f83c6-e188-747e-95f1-b7c3a119abed"
   isRegistrationFlowEnabled: false
   allowedUserTypes:
     - Person
@@ -22,8 +22,6 @@ spec:
         redirectUris:
           - "http://localhost:5173"
           - "http://localhost:5173/"
-          - "http://localhost:5175"
-          - "http://localhost:5175/"
         grantTypes:
           - authorization_code
           - refresh_token
