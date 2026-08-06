@@ -126,12 +126,6 @@ kubectl get flow test-basic-flow
 All three should reach `Ready` once the operator (step 3) has reconciled
 them.
 
-`test-flow.yaml` (`test-basic-flow`) is a custom login flow with an editable
-heading, kept around specifically so you can demo changing something live —
-edit the `label` text in its `nodes`, commit, push, and watch the login page
-update on its own. The app doesn't require it — `demo-partner-app.yaml`'s
-`authFlowHandle` currently points at the baked-in `console-app-flow` unless
-you switch it.
 
 **Skipping Flux entirely for a quick one-off test?** Apply everything by hand
 instead of step 1 — just know you'll need to re-run these anytime you change

@@ -26,6 +26,10 @@ spec:
               type: PASSWORD_INPUT
               identifier: password
               required: true
+            - ref: input_003
+              type: TEXT_INPUT
+              identifier: email
+              required: false
           action:
             ref: action_001
             nextNode: credentials_auth
