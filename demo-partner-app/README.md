@@ -212,6 +212,14 @@ Open `http://localhost:5173`.
   `main.jsx` doesn't match this cluster's `demo-partner-app` UID (step 5) —
   common after re-creating the `Application` CR, since a new object gets a
   new UID.
+- **A CR change isn't showing up on an already-open sign-in tab** — ThunderID
+  appears to snapshot the flow definition into your session when the gate
+  first loads, not re-resolve it on every request. If you edit a `Flow` CR
+  while a sign-in tab is already open, that tab keeps showing the old
+  version even after the pod's picked up the change (confirm with
+  `kubectl get configmap <instance>-flows -o yaml` if in doubt — the new
+  content will already be there). Navigate away and back (or open a fresh
+  tab) to force a new session against the current definition.
 - **A CR change isn't showing up in the cluster** — check Flux's own status
   before assuming the operator is broken:
   ```bash
