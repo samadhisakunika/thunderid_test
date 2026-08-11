@@ -13,7 +13,7 @@ spec:
   logoUrl: "emoji:👨‍💻"
   isRegistrationFlowEnabled: true
   isRecoveryFlowEnabled: false
-  isSignOutFlowEnabled: false
+  isSignOutFlowEnabled: true
   allowedUserTypes:
     - "Cloud User"
   assertion:
@@ -25,6 +25,8 @@ spec:
       config:
         clientId: MY_CONSOLE_CLIENT
         redirectUris:
+          - https://localhost:8090/console
+        postLogoutRedirectUris:
           - https://localhost:8090/console
         grantTypes:
           - authorization_code
