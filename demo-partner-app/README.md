@@ -186,8 +186,9 @@ Open `http://localhost:5173`.
 ## 8. Try it out
 
 - Click **Sign In** — you'll be redirected to ThunderID's hosted login page
-  (`console-app-flow`, or `test-basic-flow`'s "Welcome to Demo Partner
-  Portal" screen if you switched `authFlowHandle`).
+  (`console-app-flow`, or `test-basic-flow`'s custom heading screen if you
+  switched `authFlowHandle` — its exact text is whatever you last set in
+  `test-flow.yaml`'s `meta`, since that file's under active iteration).
 - Log in as a user that exists in your instance (the baked-in defaults don't
   include one — create a `User` CR first, see the [User](../README.md#user)
   section of the operator README for how to get its generated credentials).

@@ -436,7 +436,7 @@ spec:
 | Field | Description |
 |-------|--------------|
 | `spec.handle` / `spec.name` | Required. Handle is the machine-readable slug, name is the display name |
-| `spec.parentId` / `spec.parentHandle` / `spec.parentRef` | Optional parent organization unit — literal ID, literal handle, or a reference to another `OrganizationUnit` CR by Kubernetes object name (priority: ID > handle > ref) |
+| `spec.parentId` | Optional parent organization unit — a literal ThunderID ID only; there's no handle-based resolution for this field (unlike `ouId`/`ouHandle` elsewhere) |
 | `spec.logoUrl` | Optional. Free text — quoted safely for values that may contain emoji |
 
 ---
@@ -456,7 +456,7 @@ spec:
   name: System
   description: System resource server
   identifier: https://localhost:8090/mcp
-  ouRef: default-ou
+  ouHandle: default
   delimiter: ":"
   resources:
     - name: System
@@ -476,7 +476,7 @@ spec:
 |-------|--------------|
 | `spec.name` / `spec.identifier` | Required. ThunderID rejects a resource server with no identifier, crash-looping the whole pod on next restart — the CRD now enforces this too |
 | `spec.handle` / `spec.delimiter` | Optional. `delimiter` joins a resource and action handle into a permission string (e.g. `ou:view`) |
-| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType. One of `ouId`/`ouHandle` must resolve to a real org unit, or the operator skips syncing this resource server rather than writing an incomplete entry |
+| `spec.ouId` / `spec.ouHandle` | Owning organization unit — literal ID, or a handle that's resolved live against a matching `OrganizationUnit` CR's `spec.handle` (see [OrganizationUnit](#organizationunit)). One of the two must resolve to a real org unit, or the operator skips syncing this resource server rather than writing an incomplete entry |
 | `spec.resources[].name` / `.handle` / `.description` | Required name/handle per resource, optional description |
 | `spec.resources[].parent` | Optional — the `handle` of another entry in the same `resources` list (not a Kubernetes reference) |
 | `spec.resources[].actions[]` | Optional list of `{name, handle, description}` actions available on that resource |
@@ -497,7 +497,7 @@ spec:
   instanceRef: thunderid-prod
   name: Administrator
   description: System administrator role with full permissions
-  ouRef: default-ou   # or ouId / ouHandle for a literal reference
+  ouHandle: default   # or ouId for a literal ID
   permissions:
     - resourceServerId: "019f215e-1a55-72db-9743-ac25d839c72a"
       permissions:
@@ -510,7 +510,7 @@ spec:
 | Field | Description |
 |-------|-------------|
 | `spec.name` | Required |
-| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit — literal ID, literal handle, or a reference to an `OrganizationUnit` CR by name |
+| `spec.ouId` / `spec.ouHandle` | Owning organization unit — literal ID, or a handle resolved live against a matching `OrganizationUnit` CR's `spec.handle` |
 | `spec.permissions[].resourceServerId` / `.permissions` | The resource server this grant applies to, and which permission names are granted on it |
 | `spec.assignments[].id` / `.type` | Who the role is assigned to (e.g. a group ID) and the assignment type |
 
@@ -530,7 +530,7 @@ spec:
   instanceRef: thunderid-prod
   category: user
   name: Person
-  ouRef: default-ou
+  ouHandle: default
   systemAttributes:
     display: username
   schema: |
@@ -544,7 +544,7 @@ spec:
 | Field | Description |
 |-------|-------------|
 | `spec.category` / `spec.name` | Required. Category is a free-form string (e.g. `user`) |
-| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role |
+| `spec.ouId` / `spec.ouHandle` | Owning organization unit, same as Role |
 | `spec.systemAttributes` | Small key/value map, e.g. which attribute is used as the display name |
 | `spec.schema` | Required. The attribute schema as raw JSON — pasted verbatim, single or multi-line |
 
@@ -563,7 +563,7 @@ metadata:
 spec:
   instanceRef: thunderid-prod
   type: Person
-  ouRef: default-ou
+  ouHandle: default
   attributes:
     email: admin@example.com
     given_name: Admin
@@ -577,7 +577,7 @@ spec:
 | Field | Description |
 |-------|-------------|
 | `spec.type` | Required. The **name** of a `UserType` (e.g. `Person`) — a literal string, not a Kubernetes reference, same convention as `Application.allowedUserTypes` |
-| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType/ResourceServer |
+| `spec.ouId` / `spec.ouHandle` | Owning organization unit, same as Role/UserType/ResourceServer |
 | `spec.attributes` | Free-form key/value map — the keys should match the attributes defined in the referenced `UserType`'s `schema` |
 | `spec.credentialsSecretRef` | Name of a Secret (same namespace) holding this user's credentials — see below |
 
@@ -636,7 +636,7 @@ spec:
   instanceRef: thunderid-prod
   name: Administrators
   description: System administrators group
-  ouRef: default-ou
+  ouHandle: default
   members:
     - id: "<user-or-group-id>"
       type: user
@@ -645,7 +645,7 @@ spec:
 | Field | Description |
 |-------|-------------|
 | `spec.name` | Required |
-| `spec.ouId` / `spec.ouHandle` / `spec.ouRef` | Owning organization unit, same triad as Role/UserType/User |
+| `spec.ouId` / `spec.ouHandle` | Owning organization unit, same as Role/UserType/User |
 | `spec.members[].id` / `.type` | Literal member ID (a `User` or `Group`'s ID) and type (e.g. `user`, `group`) — literal, not a Kubernetes reference, same convention as `Role.assignments` |
 
 ---

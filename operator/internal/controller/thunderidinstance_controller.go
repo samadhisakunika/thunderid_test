@@ -89,7 +89,7 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// a quick demo but not something to run for real. Require the operator to persist state one way
 	// or the other instead of silently defaulting to it.
 	if instance.Spec.DataVolumeSize == "" && !usingPostgres(instance) {
-		err := fmt.Errorf("spec.dataVolumeSize or spec.database.type=postgresql must be set; ephemeral SQLite is not supported")
+		err := fmt.Errorf("spec.dataVolumeSize or spec.database.type=postgresql must be set")
 		log.Error(err, "invalid ThunderIDInstance spec")
 		r.Recorder.Event(instance, corev1.EventTypeWarning, "InvalidSpec", err.Error())
 		return ctrl.Result{}, err
