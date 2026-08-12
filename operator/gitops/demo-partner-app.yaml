@@ -11,7 +11,7 @@ spec:
   ouHandle: default
   authFlowHandle: test-basic-flow
   logoUrl: "emoji:👨‍💻"
-  themeId: "01900000-0000-7000-8000-000000000071"
+  themeId: "01900000-0000-7000-8000-000000000073"
   isRegistrationFlowEnabled: false
   allowedUserTypes:
     - Person
