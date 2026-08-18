@@ -1,0 +1,144 @@
+
+==> Audit <==
+┌────────────┬──────────────────────────────────────────────┬─────────────────┬───────────┬─────────┬───────────────────────┬───────────────────────┐
+│  COMMAND   │                     ARGS                     │     PROFILE     │   USER    │ VERSION │      START TIME       │       END TIME        │
+├────────────┼──────────────────────────────────────────────┼─────────────────┼───────────┼─────────┼───────────────────────┼───────────────────────┤
+│ start      │ --driver=none --container-runtime=containerd │ minikube        │ root      │ v1.38.1 │ 12 May 26 10:39 +0530 │                       │
+│ start      │ --driver=none --container-runtime=containerd │ minikube        │ root      │ v1.38.1 │ 12 May 26 10:41 +0530 │                       │
+│ start      │ --driver=none --container-runtime=containerd │ minikube        │ root      │ v1.38.1 │ 12 May 26 10:43 +0530 │                       │
+│ start      │ --driver=none --container-runtime=containerd │ minikube        │ root      │ v1.38.1 │ 12 May 26 10:47 +0530 │ 12 May 26 10:48 +0530 │
+│ start      │ --driver=none --container-runtime=containerd │ minikube        │ root      │ v1.38.1 │ 14 May 26 11:01 +0530 │ 14 May 26 11:01 +0530 │
+│ start      │                                              │ minikube        │ root      │ v1.38.1 │ 25 May 26 14:31 +0530 │ 25 May 26 14:31 +0530 │
+│ addons     │ enable ingress                               │ minikube        │ samadhiwa │ v1.38.1 │ 26 May 26 14:03 +0530 │ 26 May 26 14:04 +0530 │
+│ ip         │                                              │ minikube        │ samadhiwa │ v1.38.1 │ 26 May 26 14:08 +0530 │ 26 May 26 14:08 +0530 │
+│ stop       │                                              │ minikube        │ samadhiwa │ v1.38.1 │ 27 May 26 10:38 +0530 │ 27 May 26 10:38 +0530 │
+│ start      │ --driver=none                                │ minikube        │ samadhiwa │ v1.38.1 │ 16 Jun 26 14:52 +0530 │ 16 Jun 26 14:53 +0530 │
+│ ip         │                                              │ minikube        │ samadhiwa │ v1.38.1 │ 23 Jun 26 15:04 +0530 │ 23 Jun 26 15:04 +0530 │
+│ completion │ bash                                         │ minikube        │ samadhiwa │ v1.38.1 │ 06 Jul 26 11:02 +0530 │ 06 Jul 26 11:02 +0530 │
+│ start      │ t                                            │ minikube        │ samadhiwa │ v1.38.1 │ 06 Jul 26 11:02 +0530 │                       │
+│ start      │                                              │ minikube        │ samadhiwa │ v1.38.1 │ 06 Jul 26 11:02 +0530 │                       │
+│ start      │                                              │ minikube        │ samadhiwa │ v1.38.1 │ 16 Jul 26 11:11 +0530 │ 16 Jul 26 11:11 +0530 │
+│ image      │ build -t local/thunderid:pr-4103 .           │ minikube        │ samadhiwa │ v1.38.1 │ 17 Jul 26 15:33 +0530 │                       │
+│ image      │ build -t local/thunderid:pr-4103 .           │ minikube        │ samadhiwa │ v1.38.1 │ 17 Jul 26 15:36 +0530 │                       │
+│ ssh        │ -- ps aux | grep buildkit                    │ minikube        │ samadhiwa │ v1.38.1 │ 17 Jul 26 15:44 +0530 │                       │
+│ image      │ build -t local/thunderid:pr-4103 .           │ minikube        │ samadhiwa │ v1.38.1 │ 17 Jul 26 15:56 +0530 │ 17 Jul 26 15:56 +0530 │
+│ image      │ build -t local/thunderid:pr-4103 .           │ minikube        │ samadhiwa │ v1.38.1 │ 17 Jul 26 16:03 +0530 │ 17 Jul 26 16:07 +0530 │
+│ image      │ build -t local/thunderid:pr-4103 .           │ minikube        │ samadhiwa │ v1.38.1 │ 17 Jul 26 16:09 +0530 │ 17 Jul 26 16:18 +0530 │
+│ image      │ ls                                           │ minikube        │ samadhiwa │ v1.38.1 │ 17 Jul 26 16:42 +0530 │ 17 Jul 26 16:42 +0530 │
+│ completion │ bash                                         │ minikube        │ samadhiwa │ v1.38.1 │ 20 Jul 26 12:01 +0530 │ 20 Jul 26 12:01 +0530 │
+│ start      │                                              │ minikube        │ samadhiwa │ v1.38.1 │ 20 Jul 26 12:01 +0530 │                       │
+│ image      │ ls                                           │ minikube        │ samadhiwa │ v1.38.1 │ 22 Jul 26 12:27 +0530 │ 22 Jul 26 12:27 +0530 │
+│ image      │ rm ghcr.io/thunder-id/thunderid:latest       │ minikube        │ samadhiwa │ v1.38.1 │ 22 Jul 26 12:28 +0530 │ 22 Jul 26 12:28 +0530 │
+│ image      │ ls                                           │ minikube        │ samadhiwa │ v1.38.1 │ 22 Jul 26 12:28 +0530 │ 22 Jul 26 12:28 +0530 │
+│ start      │                                              │ minikube        │ samadhiwa │ v1.38.1 │ 27 Jul 26 14:29 +0530 │                       │
+│ config     │ get driver                                   │ minikube        │ samadhiwa │ v1.38.1 │ 30 Jul 26 13:24 +0530 │                       │
+│ config     │ get container-runtime                        │ minikube        │ samadhiwa │ v1.38.1 │ 30 Jul 26 13:24 +0530 │                       │
+│ image      │ ls                                           │ minikube        │ samadhiwa │ v1.38.1 │ 05 Aug 26 11:32 +0530 │ 05 Aug 26 11:32 +0530 │
+│ start      │ -p thunderid-fresh                           │ thunderid-fresh │ samadhiwa │ v1.38.1 │ 06 Aug 26 09:15 +0530 │                       │
+│ start      │ -p thunderid-fresh --driver=none             │ thunderid-fresh │ samadhiwa │ v1.38.1 │ 06 Aug 26 09:17 +0530 │                       │
+│ delete     │                                              │ minikube        │ samadhiwa │ v1.38.1 │ 11 Aug 26 15:32 +0530 │ 11 Aug 26 15:33 +0530 │
+│ start      │ --driver=none                                │ minikube        │ samadhiwa │ v1.38.1 │ 11 Aug 26 15:33 +0530 │                       │
+└────────────┴──────────────────────────────────────────────┴─────────────────┴───────────┴─────────┴───────────────────────┴───────────────────────┘
+
+
+==> Last Start <==
+Log file created at: 2026/08/11 15:33:35
+Running on machine: samadhiwa
+Binary: Built with gc go1.25.5 for linux/amd64
+Log line format: [IWEF]mmdd hh:mm:ss.uuuuuu threadid file:line] msg
+I0811 15:33:35.620630   25596 out.go:360] Setting OutFile to fd 1 ...
+I0811 15:33:35.620976   25596 out.go:413] isatty.IsTerminal(1) = true
+I0811 15:33:35.620980   25596 out.go:374] Setting ErrFile to fd 2...
+I0811 15:33:35.620983   25596 out.go:413] isatty.IsTerminal(2) = true
+I0811 15:33:35.621512   25596 root.go:338] Updating PATH: /home/samadhiwa/.minikube/bin
+I0811 15:33:35.629810   25596 out.go:368] Setting JSON to false
+I0811 15:33:35.636356   25596 start.go:134] hostinfo: {"hostname":"samadhiwa","uptime":32550,"bootTime":1786410066,"procs":36,"os":"linux","platform":"ubuntu","platformFamily":"debian","platformVersion":"26.04","kernelVersion":"6.6.114.1-microsoft-standard-WSL2","kernelArch":"x86_64","virtualizationSystem":"kvm","virtualizationRole":"guest","hostId":"38bb6f42-4344-4651-a924-90b2fd13ce76"}
+I0811 15:33:35.636904   25596 start.go:144] virtualization: kvm guest
+I0811 15:33:35.654309   25596 out.go:179] 😄  minikube v1.38.1 on Ubuntu 26.04 (kvm/amd64)
+W0811 15:33:35.660323   25596 preload.go:371] Failed to list preload files: open /home/samadhiwa/.minikube/cache/preloaded-tarball: no such file or directory
+I0811 15:33:35.660370   25596 notify.go:220] Checking for updates...
+I0811 15:33:35.660499   25596 out.go:179]     ▪ KUBECONFIG=/home/samadhiwa/.kube/config
+I0811 15:33:35.664712   25596 driver.go:422] Setting default libvirt URI to qemu:///system
+I0811 15:33:35.690993   25596 out.go:179] ✨  Using the none driver based on user configuration
+I0811 15:33:35.694905   25596 start.go:310] selected driver: none
+I0811 15:33:35.694977   25596 start.go:935] validating driver "none" against <nil>
+I0811 15:33:35.695009   25596 start.go:946] status for none: {Installed:true Healthy:true Running:false NeedsImprovement:false Error:<nil> Reason: Fix: Doc: Version:}
+I0811 15:33:35.695065   25596 start.go:1767] auto setting extra-config to "kubelet.resolv-conf=/run/systemd/resolve/resolv.conf".
+W0811 15:33:35.695571   25596 out.go:285] ❗  Starting v1.39.0, minikube will default to "containerd" container runtime. See #21973 for more info.
+I0811 15:33:35.695639   25596 start_flags.go:332] no existing cluster config was found, will generate one from the flags 
+I0811 15:33:35.699138   25596 start_flags.go:416] Using suggested 3072MB memory alloc based on sys=7804MB, container=0MB
+I0811 15:33:35.700517   25596 start_flags.go:1000] Wait components to verify : map[apiserver:true system_pods:true]
+I0811 15:33:35.700617   25596 cni.go:83] Creating CNI manager for ""
+I0811 15:33:35.700693   25596 cni.go:157] "none" driver + "docker" container runtime found on kubernetes v1.24+, recommending bridge
+I0811 15:33:35.700701   25596 start_flags.go:341] Found "bridge CNI" CNI - setting NetworkPlugin=cni
+I0811 15:33:35.700830   25596 start.go:358] cluster config:
+{Name:minikube KeepContext:false EmbedCerts:false MinikubeISO: KicBaseImage:gcr.io/k8s-minikube/kicbase:v0.0.50@sha256:eb4fec00e8ad70adf8e6436f195cc429825ffb85f95afcdb5d8d9deb576f3e93 Memory:3072 CPUs:2 DiskSize:20000 Driver:none HyperkitVpnKitSock: HyperkitVSockPorts:[] DockerEnv:[] ContainerVolumeMounts:[] InsecureRegistry:[] RegistryMirror:[] HostOnlyCIDR:192.168.59.1/24 HypervVirtualSwitch: HypervUseExternalSwitch:false HypervExternalAdapter: KVMNetwork:default KVMQemuURI:qemu:///system KVMGPU:false KVMHidden:false KVMNUMACount:1 APIServerPort:8443 DockerOpt:[] DisableDriverMounts:false NFSShare:[] NFSSharesRoot:/nfsshares UUID: NoVTXCheck:false DNSProxy:false HostDNSResolver:true HostOnlyNicType:virtio NatNicType:virtio SSHIPAddress: SSHUser:root SSHKey: SSHPort:22 KubernetesConfig:{KubernetesVersion:v1.35.1 ClusterName:minikube Namespace:default APIServerHAVIP: APIServerName:minikubeCA APIServerNames:[] APIServerIPs:[] DNSDomain:cluster.local ContainerRuntime:docker CRISocket: NetworkPlugin:cni FeatureGates: ServiceCIDR:10.96.0.0/12 ImageRepository: LoadBalancerStartIP: LoadBalancerEndIP: CustomIngressCert: RegistryAliases: ExtraOptions:[{Component:kubelet Key:resolv-conf Value:/run/systemd/resolve/resolv.conf}] ShouldLoadCachedImages:false EnableDefaultCNI:false CNI:} Nodes:[{Name: IP: Port:8443 KubernetesVersion:v1.35.1 ContainerRuntime:docker ControlPlane:true Worker:true}] Addons:map[] CustomAddonImages:map[] CustomAddonRegistries:map[] VerifyComponents:map[apiserver:true system_pods:true] StartHostTimeout:6m0s ScheduledStop:<nil> ExposedPorts:[] ListenAddress: Network: Subnet: MultiNodeRequested:false ExtraDisks:0 CertExpiration:26280h0m0s MountString: Mount9PVersion:9p2000.L MountGID:docker MountIP: MountMSize:262144 MountOptions:[] MountPort:0 MountType:9p MountUID:docker BinaryMirror: DisableOptimizations:false DisableMetrics:false DisableCoreDNSLog:false CustomQemuFirmwarePath: SocketVMnetClientPath: SocketVMnetPath: StaticIP: SSHAuthSock: SSHAgentPID:0 GPUs: AutoPauseInterval:1m0s Rosetta:false}
+I0811 15:33:35.704829   25596 out.go:179] 👍  Starting "minikube" primary control-plane node in "minikube" cluster
+I0811 15:33:35.708213   25596 profile.go:143] Saving config to /home/samadhiwa/.minikube/profiles/minikube/config.json ...
+I0811 15:33:35.708291   25596 lock.go:61] WriteFile acquiring /home/samadhiwa/.minikube/profiles/minikube/config.json: {Name:mk231d1498d27152e9865c2f3a7dea94c62436a2 Timeout:1m0s Delay:500ms}
+I0811 15:33:35.709007   25596 start.go:359] acquireMachinesLock for minikube: {Name:mk9f840c56ce91ba470f94b78fed175a06c16e6c Timeout:13m0s Delay:500ms}
+I0811 15:33:35.709071   25596 start.go:363] duration metric: took 51.149µs to acquireMachinesLock for "minikube"
+I0811 15:33:35.709084   25596 start.go:92] Provisioning new machine with config: &{Name:minikube KeepContext:false EmbedCerts:false MinikubeISO: KicBaseImage:gcr.io/k8s-minikube/kicbase:v0.0.50@sha256:eb4fec00e8ad70adf8e6436f195cc429825ffb85f95afcdb5d8d9deb576f3e93 Memory:3072 CPUs:2 DiskSize:20000 Driver:none HyperkitVpnKitSock: HyperkitVSockPorts:[] DockerEnv:[] ContainerVolumeMounts:[] InsecureRegistry:[] RegistryMirror:[] HostOnlyCIDR:192.168.59.1/24 HypervVirtualSwitch: HypervUseExternalSwitch:false HypervExternalAdapter: KVMNetwork:default KVMQemuURI:qemu:///system KVMGPU:false KVMHidden:false KVMNUMACount:1 APIServerPort:8443 DockerOpt:[] DisableDriverMounts:false NFSShare:[] NFSSharesRoot:/nfsshares UUID: NoVTXCheck:false DNSProxy:false HostDNSResolver:true HostOnlyNicType:virtio NatNicType:virtio SSHIPAddress: SSHUser:root SSHKey: SSHPort:22 KubernetesConfig:{KubernetesVersion:v1.35.1 ClusterName:minikube Namespace:default APIServerHAVIP: APIServerName:minikubeCA APIServerNames:[] APIServerIPs:[] DNSDomain:cluster.local ContainerRuntime:docker CRISocket: NetworkPlugin:cni FeatureGates: ServiceCIDR:10.96.0.0/12 ImageRepository: LoadBalancerStartIP: LoadBalancerEndIP: CustomIngressCert: RegistryAliases: ExtraOptions:[{Component:kubelet Key:resolv-conf Value:/run/systemd/resolve/resolv.conf}] ShouldLoadCachedImages:false EnableDefaultCNI:false CNI:} Nodes:[{Name: IP: Port:8443 KubernetesVersion:v1.35.1 ContainerRuntime:docker ControlPlane:true Worker:true}] Addons:map[] CustomAddonImages:map[] CustomAddonRegistries:map[] VerifyComponents:map[apiserver:true system_pods:true] StartHostTimeout:6m0s ScheduledStop:<nil> ExposedPorts:[] ListenAddress: Network: Subnet: MultiNodeRequested:false ExtraDisks:0 CertExpiration:26280h0m0s MountString: Mount9PVersion:9p2000.L MountGID:docker MountIP: MountMSize:262144 MountOptions:[] MountPort:0 MountType:9p MountUID:docker BinaryMirror: DisableOptimizations:false DisableMetrics:false DisableCoreDNSLog:false CustomQemuFirmwarePath: SocketVMnetClientPath: SocketVMnetPath: StaticIP: SSHAuthSock: SSHAgentPID:0 GPUs: AutoPauseInterval:1m0s Rosetta:false} &{Name: IP: Port:8443 KubernetesVersion:v1.35.1 ContainerRuntime:docker ControlPlane:true Worker:true}
+I0811 15:33:35.709131   25596 start.go:124] createHost starting for "" (driver="none")
+I0811 15:33:35.712768   25596 out.go:179] 🤹  Running on localhost (CPUs=8, Memory=7804MB, Disk=1031018MB) ...
+I0811 15:33:35.717542   25596 exec_runner.go:50] Run: systemctl --version
+I0811 15:33:35.727773   25596 none.go:258] Updating runtime from "Docker" to "docker"
+I0811 15:33:35.727816   25596 start.go:158] libmachine.API.Create for "minikube" (driver="none")
+I0811 15:33:35.727873   25596 client.go:173] LocalClient.Create starting
+I0811 15:33:35.729521   25596 main.go:144] libmachine: Reading certificate data from /home/samadhiwa/.minikube/certs/ca.pem
+I0811 15:33:35.730124   25596 main.go:144] libmachine: Decoding PEM data...
+I0811 15:33:35.730199   25596 main.go:144] libmachine: Parsing certificate...
+I0811 15:33:35.732143   25596 main.go:144] libmachine: Reading certificate data from /home/samadhiwa/.minikube/certs/cert.pem
+I0811 15:33:35.732605   25596 main.go:144] libmachine: Decoding PEM data...
+I0811 15:33:35.732674   25596 main.go:144] libmachine: Parsing certificate...
+I0811 15:33:35.818349   25596 client.go:176] duration metric: took 90.46029ms to LocalClient.Create
+I0811 15:33:37.819429   25596 start.go:127] duration metric: took 2.110158521s to createHost
+I0811 15:33:37.819443   25596 start.go:82] releasing machines lock for "minikube", held for 2.110366099s
+W0811 15:33:37.819484   25596 start.go:726] error starting host: creating host: create: precreate: exec: "docker": executable file not found in $PATH
+I0811 15:33:37.861696   25596 cli_runner.go:164] Run: docker container inspect minikube --format={{.State.Status}}
+I0811 15:33:37.862128   25596 delete.go:46] couldn't inspect container "minikube" before deleting: unknown state "minikube": docker container inspect minikube --format={{.State.Status}}: exec: "docker": executable file not found in $PATH
+stdout:
+
+stderr:
+I0811 15:33:37.903390   25596 cli_runner.go:164] Run: sudo -n podman container inspect minikube --format={{.State.Status}}
+W0811 15:33:37.912492   25596 cli_runner.go:211] sudo -n podman container inspect minikube --format={{.State.Status}} returned with exit code 1
+I0811 15:33:37.912528   25596 delete.go:46] couldn't inspect container "minikube" before deleting: unknown state "minikube": sudo -n podman container inspect minikube --format={{.State.Status}}: exit status 1
+stdout:
+
+stderr:
+sudo: 'podman': command not found
+W0811 15:33:37.912552   25596 start.go:731] delete host: Docker machine "minikube" does not exist. Use "docker-machine ls" to list machines. Use "docker-machine create" to add a new one.
+W0811 15:33:37.913063   25596 out.go:285] 🤦  StartHost failed, but will try again: creating host: create: precreate: exec: "docker": executable file not found in $PATH
+I0811 15:33:37.913151   25596 start.go:742] Will try again in 5 seconds ...
+I0811 15:33:42.914641   25596 start.go:359] acquireMachinesLock for minikube: {Name:mk9f840c56ce91ba470f94b78fed175a06c16e6c Timeout:13m0s Delay:500ms}
+I0811 15:33:42.914709   25596 start.go:363] duration metric: took 53.682µs to acquireMachinesLock for "minikube"
+I0811 15:33:42.914722   25596 start.go:92] Provisioning new machine with config: &{Name:minikube KeepContext:false EmbedCerts:false MinikubeISO: KicBaseImage:gcr.io/k8s-minikube/kicbase:v0.0.50@sha256:eb4fec00e8ad70adf8e6436f195cc429825ffb85f95afcdb5d8d9deb576f3e93 Memory:3072 CPUs:2 DiskSize:20000 Driver:none HyperkitVpnKitSock: HyperkitVSockPorts:[] DockerEnv:[] ContainerVolumeMounts:[] InsecureRegistry:[] RegistryMirror:[] HostOnlyCIDR:192.168.59.1/24 HypervVirtualSwitch: HypervUseExternalSwitch:false HypervExternalAdapter: KVMNetwork:default KVMQemuURI:qemu:///system KVMGPU:false KVMHidden:false KVMNUMACount:1 APIServerPort:8443 DockerOpt:[] DisableDriverMounts:false NFSShare:[] NFSSharesRoot:/nfsshares UUID: NoVTXCheck:false DNSProxy:false HostDNSResolver:true HostOnlyNicType:virtio NatNicType:virtio SSHIPAddress: SSHUser:root SSHKey: SSHPort:22 KubernetesConfig:{KubernetesVersion:v1.35.1 ClusterName:minikube Namespace:default APIServerHAVIP: APIServerName:minikubeCA APIServerNames:[] APIServerIPs:[] DNSDomain:cluster.local ContainerRuntime:docker CRISocket: NetworkPlugin:cni FeatureGates: ServiceCIDR:10.96.0.0/12 ImageRepository: LoadBalancerStartIP: LoadBalancerEndIP: CustomIngressCert: RegistryAliases: ExtraOptions:[{Component:kubelet Key:resolv-conf Value:/run/systemd/resolve/resolv.conf}] ShouldLoadCachedImages:false EnableDefaultCNI:false CNI:} Nodes:[{Name: IP: Port:8443 KubernetesVersion:v1.35.1 ContainerRuntime:docker ControlPlane:true Worker:true}] Addons:map[] CustomAddonImages:map[] CustomAddonRegistries:map[] VerifyComponents:map[apiserver:true system_pods:true] StartHostTimeout:6m0s ScheduledStop:<nil> ExposedPorts:[] ListenAddress: Network: Subnet: MultiNodeRequested:false ExtraDisks:0 CertExpiration:26280h0m0s MountString: Mount9PVersion:9p2000.L MountGID:docker MountIP: MountMSize:262144 MountOptions:[] MountPort:0 MountType:9p MountUID:docker BinaryMirror: DisableOptimizations:false DisableMetrics:false DisableCoreDNSLog:false CustomQemuFirmwarePath: SocketVMnetClientPath: SocketVMnetPath: StaticIP: SSHAuthSock: SSHAgentPID:0 GPUs: AutoPauseInterval:1m0s Rosetta:false} &{Name: IP: Port:8443 KubernetesVersion:v1.35.1 ContainerRuntime:docker ControlPlane:true Worker:true}
+I0811 15:33:42.914764   25596 start.go:124] createHost starting for "" (driver="none")
+I0811 15:33:42.919265   25596 out.go:179] 🤹  Running on localhost (CPUs=8, Memory=7804MB, Disk=1031018MB) ...
+I0811 15:33:42.921961   25596 none.go:258] Updating runtime from "Docker" to "docker"
+I0811 15:33:42.921990   25596 start.go:158] libmachine.API.Create for "minikube" (driver="none")
+I0811 15:33:42.922063   25596 client.go:173] LocalClient.Create starting
+I0811 15:33:42.922169   25596 main.go:144] libmachine: Reading certificate data from /home/samadhiwa/.minikube/certs/ca.pem
+I0811 15:33:42.922204   25596 main.go:144] libmachine: Decoding PEM data...
+I0811 15:33:42.922219   25596 main.go:144] libmachine: Parsing certificate...
+I0811 15:33:42.922290   25596 main.go:144] libmachine: Reading certificate data from /home/samadhiwa/.minikube/certs/cert.pem
+I0811 15:33:42.922314   25596 main.go:144] libmachine: Decoding PEM data...
+I0811 15:33:42.922327   25596 main.go:144] libmachine: Parsing certificate...
+I0811 15:33:42.972513   25596 client.go:176] duration metric: took 50.433206ms to LocalClient.Create
+I0811 15:33:44.973843   25596 start.go:127] duration metric: took 2.059040704s to createHost
+I0811 15:33:44.973855   25596 start.go:82] releasing machines lock for "minikube", held for 2.059142043s
+W0811 15:33:44.974057   25596 out.go:285] 😿  Failed to start none bare metal machine. Running "minikube delete" may fix it: creating host: create: precreate: exec: "docker": executable file not found in $PATH
+I0811 15:33:44.977782   25596 out.go:203] 
+W0811 15:33:44.981301   25596 out.go:285] ❌  Exiting due to GUEST_PROVISION: error provisioning guest: Failed to start host: creating host: create: precreate: exec: "docker": executable file not found in $PATH
+W0811 15:33:44.981373   25596 out.go:285] 
+W0811 15:33:44.983588   25596 out.go:308] [31m╭───────────────────────────────────────────────────────────────────────────────────────────╮[0m
+[31m│[0m                                                                                           [31m│[0m
+[31m│[0m    😿  If the above advice does not help, please let us know:                             [31m│[0m
+[31m│[0m    👉  https://github.com/kubernetes/minikube/issues/new/choose                           [31m│[0m
+[31m│[0m                                                                                           [31m│[0m
+[31m│[0m    Please run `minikube logs --file=logs.txt` and attach logs.txt to the GitHub issue.    [31m│[0m
+[31m│[0m                                                                                           [31m│[0m
+[31m╰───────────────────────────────────────────────────────────────────────────────────────────╯[0m
+I0811 15:33:44.989090   25596 out.go:203] 
+
+

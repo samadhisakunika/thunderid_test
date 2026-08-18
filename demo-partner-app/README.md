@@ -173,6 +173,19 @@ open `https://localhost:8090` directly in your browser once first and accept
 the certificate warning, otherwise the app's background requests to it will
 silently fail.
 
+`kubectl port-forward svc/...` pins to whichever pod is currently backing the
+Service — it does **not** follow rollouts, so it dies with `error: lost
+connection to pod` every time a CR change triggers a restart (which happens
+a lot while iterating). Use a self-healing loop instead if that's disruptive:
+
+```bash
+while true; do
+  kubectl port-forward svc/thunderid-prod 8090:8090
+  echo "port-forward died, restarting in 1s..."
+  sleep 1
+done
+```
+
 ## 7. Run the frontend
 
 ```bash

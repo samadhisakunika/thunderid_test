@@ -9,13 +9,13 @@ spec:
   template: browser
   ouHandle: default
   authFlowHandle: console-app-flow
-  themeId: "01900000-0000-7000-8000-000000000071" # acrylic-orange
+  themeId: "01900000-0000-7000-8000-000000000073" # acrylic-orange
   logoUrl: "emoji:👨‍💻"
   isRegistrationFlowEnabled: true
   isRecoveryFlowEnabled: false
   isSignOutFlowEnabled: true
   allowedUserTypes:
-    - "Cloud User"
+    - "Person"
   assertion:
     validityPeriod: 3600
   loginConsent:
