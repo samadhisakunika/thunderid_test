@@ -80,13 +80,38 @@ spec:
                   Database selects sqlite (default) or postgresql. See DatabaseSpec. When Type is sqlite (or
                   unset), DataVolumeSize must be set.
                 properties:
+                  configDatabase:
+                    default: thunderid_config
+                    description: ConfigDatabase is the database name backing the config and entity scopes.
+                    type: string
+                  host:
+                    description: |-
+                      Host is the PostgreSQL server hostname. Required when type is "postgresql", ignored
+                      otherwise.
+                    type: string
+                  port:
+                    default: "5432"
+                    description: Port is the PostgreSQL server port.
+                    type: string
+                  runtimeDatabase:
+                    default: thunderid_runtime
+                    description: |-
+                      RuntimeDatabase is the database name backing the runtime_transient and
+                      runtime_persistent scopes.
+                    type: string
                   secretRef:
                     description: |-
-                      SecretRef names a Secret holding PostgreSQL connection credentials. Required when
-                      type is "postgresql", ignored otherwise. Expected keys: host, username, password
-                      (required); port (default "5432"), configDatabase (default "thunderid_config"),
-                      runtimeDatabase (default "thunderid_runtime"), userDatabase (default "thunderid_users"),
-                      sslmode (default "require"; also accepts "verify-full", "verify-ca", "disable") (optional).
+                      SecretRef names a Secret holding the PostgreSQL password, under key "password".
+                      Required when type is "postgresql", ignored otherwise.
+                    type: string
+                  sslmode:
+                    default: require
+                    description: SSLMode is the PostgreSQL SSL mode.
+                    enum:
+                    - require
+                    - verify-full
+                    - verify-ca
+                    - disable
                     type: string
                   type:
                     default: sqlite
@@ -98,6 +123,11 @@ spec:
                     enum:
                     - sqlite
                     - postgresql
+                    type: string
+                  username:
+                    description: |-
+                      Username is the PostgreSQL user ThunderID connects as. Required when type is
+                      "postgresql", ignored otherwise.
                     type: string
                 type: object
               domain:
