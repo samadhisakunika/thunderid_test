@@ -4,7 +4,7 @@ metadata:
   name: demo-partner-app
   namespace: default
 spec:
-  instanceRef: thunderid-prod
+  instanceRef: external-pg-instance
   name: Demo Partner App
   description: Sample partner integration for the live-update demo
   template: browser
