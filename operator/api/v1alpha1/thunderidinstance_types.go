@@ -17,13 +17,77 @@ type DatabaseSpec struct {
 	// +optional
 	Type string `json:"type,omitempty"`
 
-	// SecretRef names a Secret holding PostgreSQL connection credentials. Required when
-	// type is "postgresql", ignored otherwise. Expected keys: host, username, password
-	// (required); port (default "5432"), configDatabase (default "thunderid_config"),
-	// runtimeDatabase (default "thunderid_runtime"), userDatabase (default "thunderid_users"),
-	// sslmode (default "require"; also accepts "verify-full", "verify-ca", "disable") (optional).
+	// Host is the PostgreSQL server hostname. Required when type is "postgresql", ignored
+	// otherwise.
+	// +optional
+	Host string `json:"host,omitempty"`
+
+	// Port is the PostgreSQL server port.
+	// +kubebuilder:default="5432"
+	// +optional
+	Port string `json:"port,omitempty"`
+
+	// Username is the PostgreSQL user ThunderID connects as. Required when type is
+	// "postgresql", ignored otherwise.
+	// +optional
+	Username string `json:"username,omitempty"`
+
+	// SSLMode is the PostgreSQL SSL mode.
+	// +kubebuilder:validation:Enum=require;verify-full;verify-ca;disable
+	// +kubebuilder:default="require"
+	// +optional
+	SSLMode string `json:"sslmode,omitempty"`
+
+	// ConfigDatabase is the database name backing the config and entity scopes.
+	// +kubebuilder:default="thunderid_config"
+	// +optional
+	ConfigDatabase string `json:"configDatabase,omitempty"`
+
+	// RuntimeDatabase is the database name backing the runtime_transient and
+	// runtime_persistent scopes.
+	// +kubebuilder:default="thunderid_runtime"
+	// +optional
+	RuntimeDatabase string `json:"runtimeDatabase,omitempty"`
+
+	// SecretRef names a Secret holding the PostgreSQL password, under key "password".
+	// Required when type is "postgresql", ignored otherwise.
 	// +optional
 	SecretRef string `json:"secretRef,omitempty"`
+}
+
+// EmailSpec configures the SMTP client ThunderID uses for outbound email (registration
+// confirmation, password reset, etc). Unset (the default) means no email section is written into
+// deployment.yaml at all, matching the image's own out-of-the-box behavior.
+type EmailSpec struct {
+	// SMTPHost is the SMTP server hostname.
+	// +kubebuilder:validation:Required
+	SMTPHost string `json:"smtpHost"`
+
+	// SMTPPort is the SMTP server port.
+	// +kubebuilder:validation:Required
+	SMTPPort int32 `json:"smtpPort"`
+
+	// Username authenticates to the SMTP server. Required when EnableAuthentication is true,
+	// ignored otherwise.
+	// +optional
+	Username string `json:"username,omitempty"`
+
+	// SecretRef names a Secret holding the SMTP password, under key "password". Required when
+	// EnableAuthentication is true, ignored otherwise.
+	// +optional
+	SecretRef string `json:"secretRef,omitempty"`
+
+	// FromAddress is the sender address on outbound email.
+	// +kubebuilder:validation:Required
+	FromAddress string `json:"fromAddress"`
+
+	// EnableStartTLS upgrades the SMTP connection to TLS via STARTTLS.
+	// +optional
+	EnableStartTLS bool `json:"enableStartTLS,omitempty"`
+
+	// EnableAuthentication authenticates to the SMTP server using Username/SecretRef.
+	// +optional
+	EnableAuthentication bool `json:"enableAuthentication,omitempty"`
 }
 
 type AutoScalingSpec struct {
@@ -82,6 +146,38 @@ type ThunderIDInstanceSpec struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// +optional
 	AutoScaling *AutoScalingSpec `json:"autoScaling,omitempty"`
+
+	// Port is the port ThunderID listens on inside the pod — also used for the container port,
+	// all three probes, the Service, and the Ingress backend, so it only needs setting once here.
+	// +kubebuilder:default=8090
+	// +optional
+	Port int32 `json:"port,omitempty"`
+
+	// TLSMinVersion is the minimum TLS version ThunderID's own HTTPS listener accepts. Unrelated
+	// to spec.tlsSecret, which is the Ingress's TLS termination — this is the app's own listener.
+	// +kubebuilder:validation:Enum="1.2";"1.3"
+	// +kubebuilder:default="1.3"
+	// +optional
+	TLSMinVersion string `json:"tlsMinVersion,omitempty"`
+
+	// JWTPreferredKeyID selects which of ThunderID's two built-in signing keys ("default-key",
+	// RSA, or "ecdsa-key", ECDSA) it signs new tokens with. Both remain valid for verifying
+	// already-issued tokens regardless of this setting.
+	// +kubebuilder:validation:Enum=default-key;ecdsa-key
+	// +kubebuilder:default="default-key"
+	// +optional
+	JWTPreferredKeyID string `json:"jwtPreferredKeyId,omitempty"`
+
+	// PasskeyExtraAllowedOrigins adds WebAuthn/passkey origins beyond the instance's own public
+	// URL (spec.domain, or https://localhost:<port> when unset) — e.g. a separate frontend origin
+	// that also needs to register/verify passkeys against this instance.
+	// +optional
+	PasskeyExtraAllowedOrigins []string `json:"passkeyExtraAllowedOrigins,omitempty"`
+
+	// Email configures outbound SMTP. Unset means no email section in deployment.yaml at all —
+	// see EmailSpec.
+	// +optional
+	Email *EmailSpec `json:"email,omitempty"`
 }
 
 // ThunderIDInstanceStatus defines the observed state of ThunderIDInstance.
