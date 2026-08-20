@@ -76,8 +76,8 @@ spec:
                     properties:
                       configDatabase:
                         default: thunderid_config
-                        description: ConfigDatabase is the database name backing
-                          the config and entity scopes.
+                        description: ConfigDatabase is the database name backing the
+                          config and entity scopes.
                         type: string
                       host:
                         description: |-
@@ -131,12 +131,12 @@ spec:
                       see EmailSpec.
                     properties:
                       enableAuthentication:
-                        description: EnableAuthentication authenticates to the
-                          SMTP server using Username/SecretRef.
+                        description: EnableAuthentication authenticates to the SMTP
+                          server using Username/SecretRef.
                         type: boolean
                       enableStartTLS:
-                        description: EnableStartTLS upgrades the SMTP connection
-                          to TLS via STARTTLS.
+                        description: EnableStartTLS upgrades the SMTP connection to
+                          TLS via STARTTLS.
                         type: boolean
                       fromAddress:
                         description: FromAddress is the sender address on outbound
