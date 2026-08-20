@@ -14,15 +14,9 @@ import (
 const (
 	databaseTypePostgreSQL = "postgresql"
 
-	databaseSecretKeyHost            = "host"
-	databaseSecretKeyPort            = "port"
-	databaseSecretKeyUsername        = "username"
-	databaseSecretKeyPassword        = "password"
-	databaseSecretKeyConfigDatabase  = "configDatabase"
-	databaseSecretKeyRuntimeDatabase = "runtimeDatabase"
-	databaseSecretKeySSLMode         = "sslmode"
+	databaseSecretKeyPassword = "password"
 
-	// databasePasswordMountPath is where the password key of spec.database.secretRef is mounted
+	// databasePasswordMountPath is where the password key of spec.config.database.secretRef is mounted
 	// into the container. The postgres block built below references it via a file:// URI, the
 	// same pattern deployment-config.yaml already uses for direct_auth_secret and crypto.key.
 	databasePasswordMountPath = "config/secrets/db_password"
@@ -33,7 +27,7 @@ const (
 	databaseBlockMarker = `  __DATABASE_BLOCK__: placeholder # replaced whole-line by reconcileConfigMap with the sqlite or postgres block`
 )
 
-// sqliteDatabaseBlock is the "database:" body used when spec.database.type is unset or "sqlite" —
+// sqliteDatabaseBlock is the "database:" body used when spec.config.database.type is unset or "sqlite" —
 // unchanged from what deployment-config.yaml hardcoded before postgres support existed.
 const sqliteDatabaseBlock = `  config:
     type: "sqlite"
@@ -71,57 +65,63 @@ const sqliteDatabaseBlock = `  config:
 // usingPostgres reports whether instance is configured to connect to an external PostgreSQL
 // server instead of the image's built-in SQLite files.
 func usingPostgres(instance *appsv1alpha1.ThunderIDInstance) bool {
-	return instance.Spec.Database.Type == databaseTypePostgreSQL
+	return instance.Spec.Config.Database.Type == databaseTypePostgreSQL
 }
 
 // resolveDatabaseConfig returns the YAML to substitute into deployment-config.yaml's "database:"
 // section, and — for postgres — the credentials Secret name so reconcileDeployment can mount its
-// password key into the pod. Connection details (host/port/username/database names/sslmode)
-// are inlined directly since they aren't sensitive; only the password is kept out of the
-// ConfigMap, resolved at runtime via a file:// reference like ThunderID's other secret values.
+// password key into the pod. Connection details (host/port/username/database names/sslmode) come
+// straight from spec.config.database and are inlined directly since they aren't sensitive; only the
+// password is kept out of the ConfigMap, sourced from spec.config.database.secretRef and resolved at
+// runtime via a file:// reference like ThunderID's other secret values.
 func (r *ThunderIDInstanceReconciler) resolveDatabaseConfig(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) (block string, secretName string, err error) {
 	if !usingPostgres(instance) {
 		return sqliteDatabaseBlock, "", nil
 	}
 
-	if instance.Spec.Database.SecretRef == "" {
-		return "", "", fmt.Errorf(
-			"spec.database.type is %q but spec.database.secretRef is not set", databaseTypePostgreSQL)
+	db := instance.Spec.Config.Database
+
+	var missing []string
+	if db.Host == "" {
+		missing = append(missing, "spec.config.database.host")
+	}
+	if db.Username == "" {
+		missing = append(missing, "spec.config.database.username")
+	}
+	if db.SecretRef == "" {
+		missing = append(missing, "spec.config.database.secretRef")
+	}
+	if len(missing) > 0 {
+		return "", "", fmt.Errorf("spec.config.database.type is %q but missing required field(s): %s",
+			databaseTypePostgreSQL, strings.Join(missing, ", "))
 	}
 
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name: instance.Spec.Database.SecretRef, Namespace: instance.Namespace,
+		Name: db.SecretRef, Namespace: instance.Namespace,
 	}, secret); err != nil {
-		return "", "", fmt.Errorf("spec.database.secretRef %q: %w", instance.Spec.Database.SecretRef, err)
+		return "", "", fmt.Errorf("spec.config.database.secretRef %q: %w", db.SecretRef, err)
 	}
 
-	get := func(key string) string { return string(secret.Data[key]) }
-	getOr := func(key, def string) string {
-		if v := get(key); v != "" {
+	password := string(secret.Data[databaseSecretKeyPassword])
+	if password == "" {
+		return "", "", fmt.Errorf("spec.config.database.secretRef %q is missing required key: password", db.SecretRef)
+	}
+
+	getOr := func(v, def string) string {
+		if v != "" {
 			return v
 		}
 		return def
 	}
 
-	var missing []string
-	for _, key := range []string{databaseSecretKeyHost, databaseSecretKeyUsername, databaseSecretKeyPassword} {
-		if get(key) == "" {
-			missing = append(missing, key)
-		}
-	}
-	if len(missing) > 0 {
-		return "", "", fmt.Errorf("spec.database.secretRef %q is missing required key(s): %s",
-			instance.Spec.Database.SecretRef, strings.Join(missing, ", "))
-	}
-
-	host := get(databaseSecretKeyHost)
-	port := getOr(databaseSecretKeyPort, "5432")
-	username := get(databaseSecretKeyUsername)
-	sslmode := getOr(databaseSecretKeySSLMode, "require")
-	configDB := getOr(databaseSecretKeyConfigDatabase, "thunderid_config")
-	runtimeDB := getOr(databaseSecretKeyRuntimeDatabase, "thunderid_runtime")
+	host := db.Host
+	port := getOr(db.Port, "5432")
+	username := db.Username
+	sslmode := getOr(db.SSLMode, "require")
+	configDB := getOr(db.ConfigDatabase, "thunderid_config")
+	runtimeDB := getOr(db.RuntimeDatabase, "thunderid_runtime")
 
 	// Field names (config.PostgresDataSource) confirmed by iterating against the running image's
 	// own strict YAML unmarshal errors, not just binary string inspection: it named the struct
@@ -150,5 +150,5 @@ func (r *ThunderIDInstanceReconciler) resolveDatabaseConfig(
 	block = fmt.Sprintf("  config:\n%s\n  runtime_transient:\n%s\n  entity:\n%s\n  runtime_persistent:\n%s",
 		section(configDB), section(runtimeDB), section(configDB), section(runtimeDB))
 
-	return block, instance.Spec.Database.SecretRef, nil
+	return block, instance.Spec.Config.Database.SecretRef, nil
 }

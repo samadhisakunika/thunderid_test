@@ -97,6 +97,49 @@ type AutoScalingSpec struct {
 	TargetMemoryUtilizationPercentage int32 `json:"targetMemoryUtilizationPercentage,omitempty"`
 }
 
+// AppConfigSpec groups every field that maps directly into ThunderID's own deployment.yaml —
+// as opposed to ThunderIDInstanceSpec's other fields (image, replicas, resources, autoScaling,
+// domain, tlsSecret, securitySecret, resourcesConfigMap, dataVolumeSize), which are Kubernetes/
+// operator-level concerns deployment.yaml has no notion of at all.
+type AppConfigSpec struct {
+	// Database selects sqlite (default) or postgresql. See DatabaseSpec. When Type is sqlite (or
+	// unset), spec.dataVolumeSize must be set.
+	// +optional
+	Database DatabaseSpec `json:"database,omitempty"`
+
+	// Port is the port ThunderID listens on inside the pod — also used for the container port,
+	// all three probes, the Service, and the Ingress backend, so it only needs setting once here.
+	// +kubebuilder:default=8090
+	// +optional
+	Port int32 `json:"port,omitempty"`
+
+	// TLSMinVersion is the minimum TLS version ThunderID's own HTTPS listener accepts. Unrelated
+	// to spec.tlsSecret, which is the Ingress's TLS termination — this is the app's own listener.
+	// +kubebuilder:validation:Enum="1.2";"1.3"
+	// +kubebuilder:default="1.3"
+	// +optional
+	TLSMinVersion string `json:"tlsMinVersion,omitempty"`
+
+	// JWTPreferredKeyID selects which of ThunderID's two built-in signing keys ("default-key",
+	// RSA, or "ecdsa-key", ECDSA) it signs new tokens with. Both remain valid for verifying
+	// already-issued tokens regardless of this setting.
+	// +kubebuilder:validation:Enum=default-key;ecdsa-key
+	// +kubebuilder:default="default-key"
+	// +optional
+	JWTPreferredKeyID string `json:"jwtPreferredKeyId,omitempty"`
+
+	// PasskeyExtraAllowedOrigins adds WebAuthn/passkey origins beyond the instance's own public
+	// URL (spec.domain, or https://localhost:<port> when unset) — e.g. a separate frontend origin
+	// that also needs to register/verify passkeys against this instance.
+	// +optional
+	PasskeyExtraAllowedOrigins []string `json:"passkeyExtraAllowedOrigins,omitempty"`
+
+	// Email configures outbound SMTP. Unset means no email section in deployment.yaml at all —
+	// see EmailSpec.
+	// +optional
+	Email *EmailSpec `json:"email,omitempty"`
+}
+
 // ThunderIDInstanceSpec defines the desired state of ThunderIDInstance
 type ThunderIDInstanceSpec struct {
 
@@ -133,51 +176,19 @@ type ThunderIDInstanceSpec struct {
 	// and skips setup.sh on every restart after the first, instead of rerunning it (and wiping
 	// the database) on every pod restart. Because the PVC is ReadWriteOnce, the Deployment
 	// strategy switches to Recreate to avoid two pods mounting it at once — only meaningful with
-	// replicas: 1. Either this or Database.Type=postgresql must be set — a ThunderIDInstance with
-	// neither is rejected: ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
+	// replicas: 1. Either this or Config.Database.Type=postgresql must be set — a ThunderIDInstance
+	// with neither is rejected: ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
 	// +optional
 	DataVolumeSize string `json:"dataVolumeSize,omitempty"`
-
-	// Database selects sqlite (default) or postgresql. See DatabaseSpec. When Type is sqlite (or
-	// unset), DataVolumeSize must be set.
-	// +optional
-	Database DatabaseSpec `json:"database,omitempty"`
 
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// +optional
 	AutoScaling *AutoScalingSpec `json:"autoScaling,omitempty"`
 
-	// Port is the port ThunderID listens on inside the pod — also used for the container port,
-	// all three probes, the Service, and the Ingress backend, so it only needs setting once here.
-	// +kubebuilder:default=8090
+	// Config groups every field that maps directly into ThunderID's own deployment.yaml — see
+	// AppConfigSpec. Kept separate from this struct's other, Kubernetes/operator-level fields.
 	// +optional
-	Port int32 `json:"port,omitempty"`
-
-	// TLSMinVersion is the minimum TLS version ThunderID's own HTTPS listener accepts. Unrelated
-	// to spec.tlsSecret, which is the Ingress's TLS termination — this is the app's own listener.
-	// +kubebuilder:validation:Enum="1.2";"1.3"
-	// +kubebuilder:default="1.3"
-	// +optional
-	TLSMinVersion string `json:"tlsMinVersion,omitempty"`
-
-	// JWTPreferredKeyID selects which of ThunderID's two built-in signing keys ("default-key",
-	// RSA, or "ecdsa-key", ECDSA) it signs new tokens with. Both remain valid for verifying
-	// already-issued tokens regardless of this setting.
-	// +kubebuilder:validation:Enum=default-key;ecdsa-key
-	// +kubebuilder:default="default-key"
-	// +optional
-	JWTPreferredKeyID string `json:"jwtPreferredKeyId,omitempty"`
-
-	// PasskeyExtraAllowedOrigins adds WebAuthn/passkey origins beyond the instance's own public
-	// URL (spec.domain, or https://localhost:<port> when unset) — e.g. a separate frontend origin
-	// that also needs to register/verify passkeys against this instance.
-	// +optional
-	PasskeyExtraAllowedOrigins []string `json:"passkeyExtraAllowedOrigins,omitempty"`
-
-	// Email configures outbound SMTP. Unset means no email section in deployment.yaml at all —
-	// see EmailSpec.
-	// +optional
-	Email *EmailSpec `json:"email,omitempty"`
+	Config AppConfigSpec `json:"config,omitempty"`
 }
 
 // ThunderIDInstanceStatus defines the observed state of ThunderIDInstance.

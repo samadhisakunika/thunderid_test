@@ -6,6 +6,11 @@ spec:
   image: ghcr.io/thunder-id/thunderid:latest
   domain: my-instance.local
   resourcesConfigMap: thunderid-resources
-  database:
-    type: postgresql
-    secretRef: my-postgres-db
+  config:
+    database:
+      type: postgresql
+      host: postgres.default.svc.cluster.local
+      port: "5432"
+      username: postgres
+      sslmode: disable
+      secretRef: my-postgres-db

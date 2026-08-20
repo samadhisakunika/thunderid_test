@@ -1,0 +1,56 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ThunderIDInstance
+metadata:
+  name: external-pg-instance
+spec:
+  image: ghcr.io/thunder-id/thunderid:latest
+  replicas: 1
+
+  # domain: my-instance.local
+  # tlsSecret: my-tls-secret
+  # securitySecret: my-security-secret
+
+  # resourcesConfigMap: thunderid-resources
+  # dataVolumeSize: "1Gi"
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  autoScaling:
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  # config groups everything that maps directly into ThunderID's own deployment.yaml
+  config:
+    database:
+      type: postgresql
+      host: "172.19.208.1"
+      port: "5432"
+      username: "postgres"
+      sslmode: "disable"
+      configDatabase: "thunderid_config"
+      runtimeDatabase: "thunderid_runtime"
+      secretRef: thunderid-db
+
+    port: 8091
+    tlsMinVersion: "1.3"
+    jwtPreferredKeyId: "default-key"
+
+    passkeyExtraAllowedOrigins:
+      - "https://extra-frontend.example.com"
+
+    email:
+      smtpHost: "smtp.example.com"
+      smtpPort: 587
+      fromAddress: "noreply@example.com"
+      enableStartTLS: true
+      enableAuthentication: false
+      # username: "smtp-user"
+      # secretRef: my-smtp-secret

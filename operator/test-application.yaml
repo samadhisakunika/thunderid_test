@@ -4,12 +4,12 @@ metadata:
   name: my-console-app
   namespace: default
 spec:
-  instanceRef: thunderid-prod
+  instanceRef: external-pg-instance
   name: Test Web Application
   template: browser
   ouHandle: default
   authFlowHandle: console-app-flow
-  themeId: "01900000-0000-7000-8000-000000000073" # acrylic-orange
+  themeId: "01900000-0000-7000-8000-000000000071" # acrylic-orange
   logoUrl: "emoji:👨‍💻"
   isRegistrationFlowEnabled: true
   isRecoveryFlowEnabled: false

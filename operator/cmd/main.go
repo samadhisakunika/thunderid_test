@@ -186,18 +186,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.ThunderIDInstanceReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("thunderidinstance-controller"),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "thunderidinstance")
-		os.Exit(1)
-	}
-
 	kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		setupLog.Error(err, "Failed to create Kubernetes client")
+		os.Exit(1)
+	}
+
+	if err := (&controller.ThunderIDInstanceReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("thunderidinstance-controller"),
+		KubeClient: kubeClient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "thunderidinstance")
 		os.Exit(1)
 	}
 

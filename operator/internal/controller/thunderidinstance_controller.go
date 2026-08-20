@@ -22,6 +22,9 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"regexp"
+	"strconv"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -36,13 +39,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
 )
@@ -61,8 +68,9 @@ const initContainerImage = "busybox:1.36"
 // ThunderIDInstanceReconciler reconciles a ThunderIDInstance object
 type ThunderIDInstanceReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Scheme     *runtime.Scheme
+	Recorder   record.EventRecorder
+	KubeClient kubernetes.Interface
 }
 
 // RBAC annotations for the controller
@@ -72,6 +80,8 @@ type ThunderIDInstanceReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps;services;secrets;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
@@ -89,20 +99,27 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// a quick demo but not something to run for real. Require the operator to persist state one way
 	// or the other instead of silently defaulting to it.
 	if instance.Spec.DataVolumeSize == "" && !usingPostgres(instance) {
-		err := fmt.Errorf("spec.dataVolumeSize or spec.database.type=postgresql must be set")
+		err := fmt.Errorf("spec.dataVolumeSize or spec.config.database.type=postgresql must be set")
 		log.Error(err, "invalid ThunderIDInstance spec")
 		r.Recorder.Event(instance, corev1.EventTypeWarning, "InvalidSpec", err.Error())
 		return ctrl.Result{}, err
 	}
 
+	// spec.config.port defaults to 8090 — also used for the container port, all three probes, the
+	// Service, and the Ingress backend (see reconcileDeployment/reconcileService/reconcileIngress).
+	port := instance.Spec.Config.Port
+	if port == 0 {
+		port = 8090
+	}
+
 	// No spec.domain means no Ingress (see reconcileIngress) — ThunderID is reached via
-	// kubectl port-forward instead, which always targets localhost:8090.
-	publicURL := "https://localhost:8090"
+	// kubectl port-forward instead, which always targets localhost:<port>.
+	publicURL := fmt.Sprintf("https://localhost:%d", port)
 	if instance.Spec.Domain != "" {
 		publicURL = "https://" + instance.Spec.Domain
 	}
 
-	resourcesContent, databaseBlock, err := r.reconcileConfigMap(ctx, instance, publicURL)
+	resourcesContent, baseResourcesContent, databaseBlock, emailBlock, err := r.reconcileConfigMap(ctx, instance, publicURL)
 	if err != nil {
 		log.Error(err, "failed to reconcile ConfigMap")
 		r.Recorder.Event(instance, corev1.EventTypeWarning, "ConfigMapError", err.Error())
@@ -116,7 +133,9 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Hash includes every resource-kind's version annotation so pod rolls when any of them changes.
 	configHash := func() string {
 		h := sha256.New()
-		h.Write([]byte(publicURL + instance.Spec.ResourcesConfigMap + databaseBlock +
+		h.Write([]byte(publicURL + strconv.Itoa(int(port)) + instance.Spec.ResourcesConfigMap + databaseBlock + emailBlock +
+			instance.Spec.Config.TLSMinVersion + instance.Spec.Config.JWTPreferredKeyID +
+			strings.Join(instance.Spec.Config.PasskeyExtraAllowedOrigins, ",") +
 			instance.Annotations["thunderid.io/serverconfigs-version"] +
 			instance.Annotations["thunderid.io/organizationunits-version"] +
 			instance.Annotations["thunderid.io/resourceservers-version"] +
@@ -131,6 +150,17 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return hex.EncodeToString(h.Sum(nil))[:16]
 	}()
 
+	// Narrower than configHash: start.sh --bootstrap only ever creates the baseline default
+	// resources (default OU, admin user, etc.) from spec.resourcesConfigMap's own raw content —
+	// it never touches the per-entity ConfigMaps that make up the rest of configHash. Keying the
+	// bootstrap Job on the full configHash instead would re-run bootstrap every time an unrelated
+	// Role/Flow/User/etc. CR changes, even though nothing bootstrap actually reads changed.
+	seedHash := func() string {
+		h := sha256.New()
+		h.Write([]byte(baseResourcesContent + databaseBlock))
+		return hex.EncodeToString(h.Sum(nil))[:16]
+	}()
+
 	securitySecretName, err := r.reconcileSecuritySecret(ctx, instance)
 	if err != nil {
 		log.Error(err, "failed to reconcile security Secret")
@@ -138,7 +168,7 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileBootstrapJob(ctx, instance, configHash, resourcesContent != "", securitySecretName); err != nil {
+	if err := r.reconcileBootstrapJob(ctx, instance, seedHash, securitySecretName); err != nil {
 		log.Error(err, "failed to reconcile bootstrap Job")
 		r.Recorder.Event(instance, corev1.EventTypeWarning, "BootstrapJobError", err.Error())
 		return ctrl.Result{}, err
@@ -200,6 +230,27 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&networkingv1.Ingress{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&autoscalingv2.HorizontalPodAutoscaler{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.PersistentVolumeClaim{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		// Watches, not Owns: pods are owned by the Deployment's ReplicaSet, not directly by
+		// ThunderIDInstance, so Owns() (which only follows one ownership hop) can't see them.
+		// CreateFunc only — a brand-new serving pod object is exactly "the pod restarted,"
+		// regardless of why (manual delete, crash-loop, rollout); routine status updates on an
+		// existing pod fire UpdateFunc constantly and aren't a restart, so they're ignored here.
+		// See mapServingPodToInstance for what this actually does with that signal.
+		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.mapServingPodToInstance),
+			builder.WithPredicates(predicate.Funcs{
+				CreateFunc: func(e event.CreateEvent) bool {
+					labels := e.Object.GetLabels()
+					_, hasApp := labels["app"]
+					return hasApp && labels["thunderid.io/role"] != "bootstrap"
+				},
+				UpdateFunc:  func(event.UpdateEvent) bool { return false },
+				DeleteFunc:  func(event.DeleteEvent) bool { return false },
+				GenericFunc: func(event.GenericEvent) bool { return false },
+			})).
+		// No GenerationChangedPredicate here deliberately: a Job's transition to Failed/Complete
+		// only updates status, which never bumps generation. reconcileBootstrapJob needs to see
+		// that transition to retry a failed bootstrap automatically.
+		Owns(&batchv1.Job{}).
 		//Owns(&corev1.ConfigMap{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 		// Only react to the instance's own config ConfigMap, not sub-controller CMs.
 		// Sub-controller CM changes are signalled via ThunderIDInstance annotation patches,
@@ -209,15 +260,97 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named("thunderidinstance").
 		Complete(r)
 }
+
+// mapServingPodToInstance handles a freshly (re)created serving pod: if this instance's
+// bootstrap Job is currently sitting Failed (whether it gave up after bootstrapMaxAttempts or
+// hit a bootstrapPermanentFailureReason), the pod coming back is treated as a real chance
+// something changed, and the Job is deleted right here — not just requeued for evaluation. That
+// makes the reconcile this returns see "Job not found" and take reconcileBootstrapJob's normal
+// first-time-bootstrap path, starting a fresh attempt=1..bootstrapMaxAttempts cycle, with no
+// separate "should I retry" state to track. A pod restart for a totally unrelated reason (OOM,
+// node eviction) still only re-runs bootstrap's idempotent upserts — wasted work, not harmful —
+// so this doesn't need to be more selective about why the pod restarted.
+func (r *ThunderIDInstanceReconciler) mapServingPodToInstance(ctx context.Context, obj client.Object) []reconcile.Request {
+	pod, ok := obj.(*corev1.Pod)
+	if !ok {
+		return nil
+	}
+	instanceName, ok := pod.Labels["app"]
+	if !ok {
+		return nil
+	}
+
+	jobs := &batchv1.JobList{}
+	if err := r.List(ctx, jobs, client.InNamespace(pod.Namespace),
+		client.MatchingLabels{"app": instanceName, "thunderid.io/role": "bootstrap"}); err == nil {
+		for i := range jobs.Items {
+			if bootstrapJobFailed(&jobs.Items[i]) {
+				_ = r.Delete(ctx, &jobs.Items[i], client.PropagationPolicy(metav1.DeletePropagationBackground))
+			}
+		}
+	}
+
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: instanceName, Namespace: pod.Namespace}}}
+}
+
+// Markers substituted into deploymentConfigTemplate by reconcileConfigMap. serverPortMarker/
+// publicURLMarker/tlsMinVersionMarker/jwtPreferredKeyIDMarker are plain strings.ReplaceAll
+// targets; the other two are whole-line markers (the full line, comment included) swapped out
+// via strings.Replace, the same convention databaseBlockMarker already established.
+const (
+	serverPortMarker        = "__SERVER_PORT__"
+	publicURLMarker         = "__PUBLIC_URL__"
+	tlsMinVersionMarker     = "__TLS_MIN_VERSION__"
+	jwtPreferredKeyIDMarker = "__JWT_PREFERRED_KEY_ID__"
+
+	passkeyExtraOriginsMarkerLine = `    - "__PASSKEY_EXTRA_ORIGINS__" # replaced whole-line by reconcileConfigMap with 0+ additional "- \"origin\"" lines, or removed if spec.config.passkeyExtraAllowedOrigins is unset`
+)
+
+// reconcileConfigMap returns resourcesContent (the full resources.yaml — base seed plus every
+// sub-controller's appended resources, what actually gets mounted for the serving pod),
+// baseResourcesContent (just the base seed, spec.resourcesConfigMap's raw content, before the
+// entity-append loop — the bootstrap Job's seed hash is computed from this narrower value, since
+// entity CRs like Role/Flow/User have nothing to do with what start.sh --bootstrap creates),
+// databaseBlock, and emailBlock.
 func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
-	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, publicURL string) (resourcesContent, databaseBlock string, err error) {
+	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, publicURL string) (
+	resourcesContent, baseResourcesContent, databaseBlock, emailBlock string, err error) {
 
 	databaseBlock, _, err = r.resolveDatabaseConfig(ctx, instance)
 	if err != nil {
-		return "", "", err
+		return "", "", "", "", err
 	}
-	configContent := strings.Replace(
-		fmt.Sprintf(deploymentConfigTemplate, publicURL), databaseBlockMarker, databaseBlock, 1)
+	emailBlock, err = r.resolveEmailConfig(ctx, instance)
+	if err != nil {
+		return "", "", "", "", err
+	}
+
+	port := instance.Spec.Config.Port
+	if port == 0 {
+		port = 8090
+	}
+	tlsMinVersion := instance.Spec.Config.TLSMinVersion
+	if tlsMinVersion == "" {
+		tlsMinVersion = "1.3"
+	}
+	jwtPreferredKeyID := instance.Spec.Config.JWTPreferredKeyID
+	if jwtPreferredKeyID == "" {
+		jwtPreferredKeyID = "default-key"
+	}
+	passkeyExtraOriginLines := make([]string, len(instance.Spec.Config.PasskeyExtraAllowedOrigins))
+	for i, o := range instance.Spec.Config.PasskeyExtraAllowedOrigins {
+		passkeyExtraOriginLines[i] = fmt.Sprintf("    - %q", o)
+	}
+
+	configContent := deploymentConfigTemplate
+	configContent = strings.ReplaceAll(configContent, serverPortMarker, strconv.Itoa(int(port)))
+	configContent = strings.ReplaceAll(configContent, publicURLMarker, publicURL)
+	configContent = strings.ReplaceAll(configContent, tlsMinVersionMarker, tlsMinVersion)
+	configContent = strings.ReplaceAll(configContent, jwtPreferredKeyIDMarker, jwtPreferredKeyID)
+	configContent = strings.Replace(configContent, passkeyExtraOriginsMarkerLine,
+		strings.Join(passkeyExtraOriginLines, "\n"), 1)
+	configContent = strings.Replace(configContent, emailBlockMarkerLine, emailBlock, 1)
+	configContent = strings.Replace(configContent, databaseBlockMarker, databaseBlock, 1)
 
 	// Load base resources from external ConfigMap.
 	if instance.Spec.ResourcesConfigMap != "" {
@@ -226,10 +359,11 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 			Name:      instance.Spec.ResourcesConfigMap,
 			Namespace: instance.Namespace,
 		}, externalCM); err != nil {
-			return "", "", err
+			return "", "", "", "", err
 		}
 		resourcesContent = externalCM.Data["resources.yaml"]
 	}
+	baseResourcesContent = resourcesContent
 
 	// Append custom resources from each sub-controller's ConfigMap into the same
 	// resources.yaml so ThunderID loads them in a single pass on startup.
@@ -248,7 +382,7 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	} {
 		appended, err := r.appendResourceConfigMap(ctx, instance, res.suffix, res.key)
 		if err != nil {
-			return "", "", err
+			return "", "", "", "", err
 		}
 		resourcesContent += appended
 	}
@@ -271,17 +405,17 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 			Data: data,
 		}
 		_ = ctrl.SetControllerReference(instance, cm, r.Scheme)
-		return resourcesContent, databaseBlock, r.Create(ctx, cm)
+		return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, r.Create(ctx, cm)
 	}
 	if err != nil {
-		return "", "", err
+		return "", "", "", "", err
 	}
 	// Skip update if content is unchanged to avoid triggering unnecessary reconciles.
 	if cm.Data["deployment.yaml"] == data["deployment.yaml"] && cm.Data["resources.yaml"] == data["resources.yaml"] {
-		return resourcesContent, databaseBlock, nil
+		return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, nil
 	}
 	cm.Data = data
-	return resourcesContent, databaseBlock, r.Update(ctx, cm)
+	return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, r.Update(ctx, cm)
 }
 
 func (r *ThunderIDInstanceReconciler) appendResourceConfigMap(
@@ -342,13 +476,17 @@ func (r *ThunderIDInstanceReconciler) reconcileDataVolume(
 
 // reconcileBootstrapJob imports resources.yaml into the postgres database via a one-shot Job,
 // decoupled from the serving pod's own lifecycle (see the postgres branch of reconcileDeployment's
-// startCmd). The Job's name is suffixed with configHash, so it only ever runs once per distinct
-// config: an ordinary pod restart or HPA scale-out reconciles with the same hash, finds the Job
-// already exists, and does nothing — avoiding the redundant (and, under concurrent scale-out,
-// potentially racy) DB writes that running bootstrap from every pod's own boot command would cause.
-// A genuine resources.yaml change produces a new hash and thus a new Job — at which point any
-// previous bootstrap Job(s) for this instance are deleted, since they're no longer the "did we
-// already import the current config" marker.
+// startCmd). The Job's name is suffixed with seedHash — a narrower hash than the Deployment's own
+// configHash, covering only spec.resourcesConfigMap's raw content and the DB connection target,
+// since those are the only things start.sh --bootstrap actually reads. It deliberately excludes
+// the per-entity ConfigMaps (Role/Flow/User/etc.) that make up the rest of configHash: bootstrap
+// never touches those, so a Role/Flow/User CR changing shouldn't re-run it. An ordinary pod
+// restart, HPA scale-out, or an unrelated entity CR change all reconcile with the same seedHash,
+// find the Job already exists, and do nothing — avoiding the redundant (and, under concurrent
+// scale-out, potentially racy) DB writes that running bootstrap from every pod's own boot command
+// would cause. A genuine change to the base seed or DB target produces a new hash and thus a new
+// Job — at which point any previous bootstrap Job(s) for this instance are deleted, since they're
+// no longer the "did we already import the current config" marker.
 //
 // Deliberately no TTLSecondsAfterFinished here: relying on Kubernetes' TTL controller to garbage
 // collect a finished Job would make the "does a Job already exist for this hash" check below only
@@ -357,20 +495,53 @@ func (r *ThunderIDInstanceReconciler) reconcileDataVolume(
 // and silently re-run the whole bootstrap import, indefinitely, for a config that never changed.
 // That defeats the entire point of this Job existing. Cleanup is instead handled explicitly, below,
 // exactly when it's actually safe to do — the moment a new hash makes the old Job obsolete.
+//
+// A Job that reaches the Failed condition (its own BackoffLimit exhausted — e.g. the DB was
+// temporarily unreachable) is retried automatically up to bootstrapMaxAttempts times: the attempt
+// count travels on the replacement Job's own bootstrapAttemptLabel, so it survives across
+// reconciles without needing separate state on the ThunderIDInstance. Past the cap, the Job is
+// left as-is (Failed, inspectable via its logs) and reconcile stops touching it — avoiding an
+// endless recreate loop against a genuinely broken config (e.g. a permanently wrong password).
+const (
+	bootstrapAttemptLabel = "thunderid.io/bootstrap-attempt"
+	bootstrapMaxAttempts  = 3
+)
+
 func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
-	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, configHash string,
-	hasResources bool, securitySecretName string) error {
+	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, seedHash string,
+	securitySecretName string) error {
 	if !usingPostgres(instance) {
 		return nil
 	}
 
-	jobName := fmt.Sprintf("%s-bootstrap-%s", instance.Name, configHash)
+	jobName := fmt.Sprintf("%s-bootstrap-%s", instance.Name, seedHash)
 	existing := &batchv1.Job{}
 	err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: instance.Namespace}, existing)
 	if err == nil {
-		// Already created for this exact config — nothing to do, whether it's still running,
-		// succeeded, or (see the type's doc comment for the current known limitation) failed.
-		return nil
+		if !bootstrapJobFailed(existing) {
+			// Still running, or succeeded — nothing to do.
+			return nil
+		}
+		if reason := r.bootstrapPermanentFailureReason(ctx, existing); reason != "" {
+			// A misconfiguration (wrong password, bad host, wrong database/role name) — retrying
+			// won't fix this, only burns time against a config that will never work. Stop
+			// immediately regardless of attempt count and point at the actual cause.
+			r.Recorder.Eventf(instance, corev1.EventTypeWarning, "BootstrapJobFailed",
+				"bootstrap Job %s failed and will not be retried automatically: %s — "+
+					"fix spec.config.database (or its Secret), then delete the Job to retry", jobName, reason)
+			return nil
+		}
+		attempt := bootstrapAttempt(existing)
+		if attempt >= bootstrapMaxAttempts {
+			r.Recorder.Eventf(instance, corev1.EventTypeWarning, "BootstrapJobFailed",
+				"bootstrap Job %s has failed %d time(s) and reached the retry limit; "+
+					"inspect its logs, then delete it to retry", jobName, attempt)
+			return nil
+		}
+		if err := r.Delete(ctx, existing, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+		return r.createBootstrapJob(ctx, instance, jobName, securitySecretName, attempt+1)
 	}
 	if !errors.IsNotFound(err) {
 		return err
@@ -390,23 +561,102 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 		}
 	}
 
+	return r.createBootstrapJob(ctx, instance, jobName, securitySecretName, 1)
+}
+
+// bootstrapJobFailed reports whether job has permanently failed (its BackoffLimit exhausted),
+// as opposed to merely running or having succeeded.
+func bootstrapJobFailed(job *batchv1.Job) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+// bootstrapAttempt reads how many attempts job itself represents, defaulting to 1 for a Job
+// created before this label existed or with an otherwise-unparseable value.
+func bootstrapAttempt(job *batchv1.Job) int {
+	n, err := strconv.Atoi(job.Labels[bootstrapAttemptLabel])
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
+// bootstrapPermanentErrorPatterns maps known-unfixable-by-retrying failure signatures (observed
+// verbatim from the pq driver and Go's net package — e.g. "pq: password authentication failed
+// for user 'x'", "dial tcp: lookup x: no such host") to a human-readable reason. Anything not
+// matching one of these is treated as possibly transient (cold-start timeout, network blip) and
+// left to the normal attempt-count retry instead.
+var bootstrapPermanentErrorPatterns = []struct {
+	pattern *regexp.Regexp
+	reason  string
+}{
+	{regexp.MustCompile(`password authentication failed`), "wrong spec.config.database.username or the Secret's password"},
+	{regexp.MustCompile(`no such host`), "spec.config.database.host does not resolve"},
+	{regexp.MustCompile(`database "[^"]*" does not exist`), "spec.config.database.configDatabase/runtimeDatabase does not exist on the server"},
+	{regexp.MustCompile(`role "[^"]*" does not exist`), "spec.config.database.username does not exist on the server"},
+	{regexp.MustCompile(`connection refused`), "spec.config.database.host/port is unreachable — nothing is listening there"},
+}
+
+// bootstrapPermanentFailureReason fetches the failed bootstrap pod's logs and checks them
+// against bootstrapPermanentErrorPatterns. Returns "" (meaning: might be transient, worth
+// retrying) whenever the pod, its logs, or a matching pattern can't be found — this only ever
+// short-circuits a retry when it has positive evidence the failure is a real misconfiguration.
+//
+// Looks the pod up via KubeClient (a direct API read) rather than r.List (the manager's cached
+// client): against a fast-failing DB (e.g. local Postgres rejecting bad auth in milliseconds,
+// versus a remote one's multi-second round trip), the pod can fail and this function can run
+// before the watch-fed cache has caught up, making a cached lookup see zero pods and silently
+// fall back to "unknown, maybe transient" — masking a real, immediately-diagnosable error.
+func (r *ThunderIDInstanceReconciler) bootstrapPermanentFailureReason(ctx context.Context, job *batchv1.Job) string {
+	selector := fmt.Sprintf("app=%s,thunderid.io/role=bootstrap,%s=%s",
+		job.Labels["app"], bootstrapAttemptLabel, job.Labels[bootstrapAttemptLabel])
+	pods, err := r.KubeClient.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil || len(pods.Items) == 0 {
+		return ""
+	}
+
+	req := r.KubeClient.CoreV1().Pods(job.Namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: "bootstrap"})
+	rc, err := req.Stream(ctx)
+	if err != nil {
+		return ""
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return ""
+	}
+
+	logs := string(data)
+	for _, p := range bootstrapPermanentErrorPatterns {
+		if p.pattern.MatchString(logs) {
+			return p.reason
+		}
+	}
+	return ""
+}
+
+func (r *ThunderIDInstanceReconciler) createBootstrapJob(
+	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, jobName string,
+	securitySecretName string, attempt int) error {
 	// Plain "--bootstrap" (import-only, as opposed to "--bootstrap-and-serve") rejects
 	// --admin-username/--admin-password outright: "Error: --admin-username/--admin-password are
 	// only valid together with --bootstrap-and-serve". Admin creation for this mode instead comes
 	// from the ADMIN_USERNAME/ADMIN_PASSWORD env vars below — the same mechanism setup.sh's own
 	// wrapped "start.sh --bootstrap" call already relies on for the SQLite path.
+	//
+	// No resources.yaml argument here — confirmed against the real start.sh that "--bootstrap"
+	// never forwards the positional resources-file argument to the "bootstrap" subcommand at all
+	// (only BOOTSTRAP_EXTRA_ARGS, i.e. --admin-username/--admin-password/--console-redirect-uris),
+	// so passing it was always a dead argument. Declarative resources reach ThunderID via the
+	// serving pod's own resources.yaml mount instead (see reconcileDeployment), not this Job.
 	bootstrapCmd := "./start.sh --bootstrap"
-	if hasResources {
-		bootstrapCmd += " /opt/thunderid/resources.yaml"
-	}
 
 	volumeMounts := []corev1.VolumeMount{
 		{Name: "config", MountPath: "/opt/thunderid/deployment.yaml", SubPath: "deployment.yaml"},
-	}
-	if hasResources {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name: "config", MountPath: "/opt/thunderid/resources.yaml", SubPath: "resources.yaml",
-		})
 	}
 	// Same cert/secret mounts as the serving container's postgres branch (reconcileDeployment):
 	// certs are always pre-supplied, direct_auth_secret and the db password are read-only.
@@ -427,6 +677,14 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 		SubPath:   "password",
 		ReadOnly:  true,
 	})
+	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.EnableAuthentication {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "email",
+			MountPath: "/opt/thunderid/" + emailPasswordMountPath,
+			SubPath:   "password",
+			ReadOnly:  true,
+		})
+	}
 
 	defaultMode := int32(0644)
 	volumes := []corev1.Volume{
@@ -449,28 +707,55 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 			Name: "database",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: instance.Spec.Database.SecretRef,
+					SecretName: instance.Spec.Config.Database.SecretRef,
 					Items:      []corev1.KeyToPath{{Key: databaseSecretKeyPassword, Path: "password"}},
 				},
 			},
 		},
 	}
+	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.EnableAuthentication {
+		volumes = append(volumes, corev1.Volume{
+			Name: "email",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: instance.Spec.Config.Email.SecretRef,
+					Items:      []corev1.KeyToPath{{Key: emailSecretKeyPassword, Path: "password"}},
+				},
+			},
+		})
+	}
 
-	backoffLimit := int32(3)
+	labels := map[string]string{
+		"app":                 instance.Name,
+		"thunderid.io/role":   "bootstrap",
+		bootstrapAttemptLabel: strconv.Itoa(attempt),
+	}
+
+	// 0, not the earlier 3 (or 1): with the operator's own attempt-count retry (createBootstrapJob's
+	// caller) now handling recreation across full Job attempts, a Job-internal retry loop on top
+	// would multiply total pod attempts before giving up — needlessly slow. RestartPolicy: Never
+	// pairs with this deliberately, not OnFailure: OnFailure restarts the container in place, and
+	// that in-place restart's pod-replacement triggers Kubernetes to clean up the old failed pod
+	// almost immediately — often before bootstrapPermanentFailureReason gets a chance to read its
+	// logs (confirmed: its pod lookup came back empty every time under this combination, even
+	// though the pod was visible via a plain "kubectl get pod" moments earlier). With BackoffLimit:
+	// 0 there's only ever one pod per Job anyway, so there's nothing to restart in place — Never
+	// avoids the replacement-driven cleanup and leaves that one failed pod inspectable.
+	backoffLimit := int32(0)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobName,
 			Namespace: instance.Namespace,
-			Labels:    map[string]string{"app": instance.Name, "thunderid.io/role": "bootstrap"},
+			Labels:    labels,
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit: &backoffLimit,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": instance.Name, "thunderid.io/role": "bootstrap"},
+					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyOnFailure,
+					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{
 						{
 							Name:    "bootstrap",
@@ -500,12 +785,12 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 // as the only grace period, a pod with a large enough resources.yaml gets killed by the liveness
 // probe before it ever finishes starting, and never gets a chance to come up at all. FailureThreshold
 // of 60 at PeriodSeconds=2 gives ~2 minutes of startup grace before that liveness enforcement begins.
-func thunderidStartupProbe() *corev1.Probe {
+func thunderidStartupProbe(port int32) *corev1.Probe {
 	return &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path:   "/health/liveness",
-				Port:   intstr.FromInt(8090),
+				Port:   intstr.FromInt32(port),
 				Scheme: corev1.URISchemeHTTPS,
 			},
 		},
@@ -517,11 +802,49 @@ func thunderidStartupProbe() *corev1.Probe {
 	}
 }
 
+func thunderidLivenessProbe(port int32) *corev1.Probe {
+	return &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path:   "/health/liveness",
+				Port:   intstr.FromInt32(port),
+				Scheme: corev1.URISchemeHTTPS,
+			},
+		},
+		InitialDelaySeconds: 1,
+		PeriodSeconds:       3,
+		FailureThreshold:    3,
+		SuccessThreshold:    1,
+		TimeoutSeconds:      1,
+	}
+}
+
+func thunderidReadinessProbe(port int32) *corev1.Probe {
+	return &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path:   "/health/readiness",
+				Port:   intstr.FromInt32(port),
+				Scheme: corev1.URISchemeHTTPS,
+			},
+		},
+		InitialDelaySeconds: 1,
+		PeriodSeconds:       2,
+		FailureThreshold:    6,
+		SuccessThreshold:    1,
+		TimeoutSeconds:      1,
+	}
+}
+
 func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, configHash string, hasResources bool,
 	securitySecretName string) error {
 	replicas := instance.Spec.Replicas
 	configMapName := instance.Name + "-config"
+	port := instance.Spec.Config.Port
+	if port == 0 {
+		port = 8090
+	}
 
 	// With postgres, all state lives in the external database — there are no local SQLite files
 	// to persist, so spec.dataVolumeSize (and the once-only setup.sh gating below) is ignored.
@@ -641,6 +964,14 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			ReadOnly:  true,
 		})
 	}
+	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.EnableAuthentication {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "email",
+			MountPath: "/opt/thunderid/" + emailPasswordMountPath,
+			SubPath:   "password",
+			ReadOnly:  true,
+		})
+	}
 
 	defaultMode := int32(0644)
 	volumes := []corev1.Volume{
@@ -678,8 +1009,19 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			Name: "database",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: instance.Spec.Database.SecretRef,
+					SecretName: instance.Spec.Config.Database.SecretRef,
 					Items:      []corev1.KeyToPath{{Key: databaseSecretKeyPassword, Path: "password"}},
+				},
+			},
+		})
+	}
+	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.EnableAuthentication {
+		volumes = append(volumes, corev1.Volume{
+			Name: "email",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: instance.Spec.Config.Email.SecretRef,
+					Items:      []corev1.KeyToPath{{Key: emailSecretKeyPassword, Path: "password"}},
 				},
 			},
 		})
@@ -794,38 +1136,12 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 									{Name: "ADMIN_USERNAME", Value: "admin"},
 									{Name: "ADMIN_PASSWORD", Value: "admin"},
 								},
-								Ports:        []corev1.ContainerPort{{ContainerPort: 8090, Protocol: corev1.ProtocolTCP}},
-								VolumeMounts: volumeMounts,
-								Resources:    instance.Spec.Resources,
-								StartupProbe: thunderidStartupProbe(),
-								LivenessProbe: &corev1.Probe{
-									ProbeHandler: corev1.ProbeHandler{
-										HTTPGet: &corev1.HTTPGetAction{
-											Path:   "/health/liveness",
-											Port:   intstr.FromInt(8090),
-											Scheme: corev1.URISchemeHTTPS,
-										},
-									},
-									InitialDelaySeconds: 1,
-									PeriodSeconds:       3,
-									FailureThreshold:    3,
-									SuccessThreshold:    1,
-									TimeoutSeconds:      1,
-								},
-								ReadinessProbe: &corev1.Probe{
-									ProbeHandler: corev1.ProbeHandler{
-										HTTPGet: &corev1.HTTPGetAction{
-											Path:   "/health/readiness",
-											Port:   intstr.FromInt(8090),
-											Scheme: corev1.URISchemeHTTPS,
-										},
-									},
-									InitialDelaySeconds: 1,
-									PeriodSeconds:       2,
-									FailureThreshold:    6,
-									SuccessThreshold:    1,
-									TimeoutSeconds:      1,
-								},
+								Ports:          []corev1.ContainerPort{{ContainerPort: port, Protocol: corev1.ProtocolTCP}},
+								VolumeMounts:   volumeMounts,
+								Resources:      instance.Spec.Resources,
+								StartupProbe:   thunderidStartupProbe(port),
+								LivenessProbe:  thunderidLivenessProbe(port),
+								ReadinessProbe: thunderidReadinessProbe(port),
 							},
 						},
 						Volumes: volumes,
@@ -884,35 +1200,10 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	}
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
 	dep.Spec.Template.Spec.Containers[0].Resources = instance.Spec.Resources
-	dep.Spec.Template.Spec.Containers[0].StartupProbe = thunderidStartupProbe()
-	dep.Spec.Template.Spec.Containers[0].LivenessProbe = &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Path:   "/health/liveness",
-				Port:   intstr.FromInt(8090),
-				Scheme: corev1.URISchemeHTTPS,
-			},
-		},
-		InitialDelaySeconds: 1,
-		PeriodSeconds:       3,
-		FailureThreshold:    3,
-		SuccessThreshold:    1,
-		TimeoutSeconds:      1,
-	}
-	dep.Spec.Template.Spec.Containers[0].ReadinessProbe = &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Path:   "/health/readiness",
-				Port:   intstr.FromInt(8090),
-				Scheme: corev1.URISchemeHTTPS,
-			},
-		},
-		InitialDelaySeconds: 1,
-		PeriodSeconds:       2,
-		FailureThreshold:    6,
-		SuccessThreshold:    1,
-		TimeoutSeconds:      1,
-	}
+	dep.Spec.Template.Spec.Containers[0].Ports = []corev1.ContainerPort{{ContainerPort: port, Protocol: corev1.ProtocolTCP}}
+	dep.Spec.Template.Spec.Containers[0].StartupProbe = thunderidStartupProbe(port)
+	dep.Spec.Template.Spec.Containers[0].LivenessProbe = thunderidLivenessProbe(port)
+	dep.Spec.Template.Spec.Containers[0].ReadinessProbe = thunderidReadinessProbe(port)
 	dep.Spec.Template.Spec.Volumes = volumes
 	dep.Spec.Template.Spec.InitContainers = initContainers
 	dep.Spec.Template.Spec.SecurityContext = podSecurityContext
@@ -982,6 +1273,10 @@ func normalizeContainersForDiff(containers []corev1.Container) []corev1.Containe
 
 func (r *ThunderIDInstanceReconciler) reconcileService(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) error {
+	port := instance.Spec.Config.Port
+	if port == 0 {
+		port = 8090
+	}
 	svc := &corev1.Service{}
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, svc)
 	if errors.IsNotFound(err) {
@@ -994,8 +1289,8 @@ func (r *ThunderIDInstanceReconciler) reconcileService(
 				Selector: map[string]string{"app": instance.Name},
 				Ports: []corev1.ServicePort{
 					{
-						Port:       8090,
-						TargetPort: intstr.FromInt(8090),
+						Port:       port,
+						TargetPort: intstr.FromInt32(port),
 						Protocol:   corev1.ProtocolTCP,
 					},
 				},
@@ -1004,11 +1299,31 @@ func (r *ThunderIDInstanceReconciler) reconcileService(
 		_ = ctrl.SetControllerReference(instance, svc, r.Scheme)
 		return r.Create(ctx, svc)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// spec.config.port is the only thing about this Service that ever changes after creation — no
+	// other field is derived from the CR at all — so a plain equality check on it is enough to
+	// decide whether an update is needed, unlike the Deployment's much larger diff.
+	if len(svc.Spec.Ports) == 1 && svc.Spec.Ports[0].Port == port && svc.Spec.Ports[0].TargetPort == intstr.FromInt32(port) {
+		return nil
+	}
+	svc.Spec.Ports = []corev1.ServicePort{
+		{
+			Port:       port,
+			TargetPort: intstr.FromInt32(port),
+			Protocol:   corev1.ProtocolTCP,
+		},
+	}
+	return r.Update(ctx, svc)
 }
 
 func (r *ThunderIDInstanceReconciler) reconcileIngress(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) error {
+	port := instance.Spec.Config.Port
+	if port == 0 {
+		port = 8090
+	}
 	pathType := networkingv1.PathTypePrefix
 	ing := &networkingv1.Ingress{}
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, ing)
@@ -1047,7 +1362,7 @@ func (r *ThunderIDInstanceReconciler) reconcileIngress(
 											Service: &networkingv1.IngressServiceBackend{
 												Name: instance.Name,
 												Port: networkingv1.ServiceBackendPort{
-													Number: 8090,
+													Number: port,
 												},
 											},
 										},
@@ -1070,7 +1385,17 @@ func (r *ThunderIDInstanceReconciler) reconcileIngress(
 		_ = ctrl.SetControllerReference(instance, ing, r.Scheme)
 		return r.Create(ctx, ing)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// spec.config.port drift is the only thing this checks for on an existing Ingress — domain/tlsSecret
+	// changes on an already-created Ingress are a pre-existing gap, unrelated to this check.
+	if len(ing.Spec.Rules) == 1 && len(ing.Spec.Rules[0].HTTP.Paths) == 1 &&
+		ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number == port {
+		return nil
+	}
+	ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number = port
+	return r.Update(ctx, ing)
 }
 
 func (r *ThunderIDInstanceReconciler) reconcileHPA(ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) error {
