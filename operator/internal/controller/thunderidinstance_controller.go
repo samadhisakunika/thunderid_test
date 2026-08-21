@@ -18,7 +18,7 @@ package controller
 
 import (
 	"context"
-	"crypto/sha256" //compute the config checksum
+	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
 	"fmt"
@@ -88,7 +88,6 @@ type ThunderIDInstanceReconciler struct {
 
 func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-	// Fetch the ThunderIDInstance from kubernetes
 	instance := &appsv1alpha1.ThunderIDInstance{}
 	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -251,12 +250,6 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// only updates status, which never bumps generation. reconcileBootstrapJob needs to see
 		// that transition to retry a failed bootstrap automatically.
 		Owns(&batchv1.Job{}).
-		//Owns(&corev1.ConfigMap{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
-		// Only react to the instance's own config ConfigMap, not sub-controller CMs.
-		// Sub-controller CM changes are signalled via ThunderIDInstance annotation patches,
-		// which AnnotationChangedPredicate on For() already catches.
-		//	return strings.HasSuffix(obj.GetName(), "-config")
-		//}))).
 		Named("thunderidinstance").
 		Complete(r)
 }
