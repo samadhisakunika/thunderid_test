@@ -4,7 +4,7 @@ metadata:
   name: demo-partner-app
   namespace: default
   labels:
-    thunderid.io/instance: thunderid-instance
+    thunderid.io/instance: thunderid-prod
 spec:
   name: Demo Partner App
   description: Sample partner integration for the live-update demo
