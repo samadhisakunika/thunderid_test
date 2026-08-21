@@ -58,12 +58,12 @@ func (r *TranslationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: t.Namespace, Name: t.Spec.InstanceRef}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: t.Namespace, Name: t.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", t.Spec.InstanceRef)
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", t.Labels[appsv1alpha1.InstanceRefLabel])
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", t.Spec.InstanceRef)
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", t.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
 	}
 
@@ -241,7 +241,7 @@ func (r *TranslationReconciler) rebuildTranslationsConfigMap(ctx context.Context
 
 	var buf bytes.Buffer
 	for _, tr := range list.Items {
-		if tr.Spec.InstanceRef != instance.Name {
+		if tr.Labels[appsv1alpha1.InstanceRefLabel] != instance.Name {
 			continue
 		}
 		if excludeUID != "" && string(tr.UID) == excludeUID {
@@ -355,7 +355,7 @@ func (r *TranslationReconciler) translationsForDeployment(ctx context.Context, o
 	}
 	var reqs []reconcile.Request
 	for _, t := range list.Items {
-		if t.Spec.InstanceRef != dep.GetName() {
+		if t.Labels[appsv1alpha1.InstanceRefLabel] != dep.GetName() {
 			continue
 		}
 		switch t.Status.Phase {
@@ -381,7 +381,7 @@ func (r *TranslationReconciler) translationsForInstance(ctx context.Context, obj
 	}
 	var reqs []reconcile.Request
 	for _, t := range list.Items {
-		if t.Spec.InstanceRef == obj.GetName() {
+		if t.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: t.Name, Namespace: t.Namespace},
 			})

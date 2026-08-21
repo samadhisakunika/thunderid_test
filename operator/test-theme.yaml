@@ -3,8 +3,9 @@ kind: Theme
 metadata:
   name: test-theme
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   handle: test-theme
   displayName: Test Theme
   description: A simple test theme for verifying the Theme controller.

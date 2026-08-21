@@ -6,9 +6,6 @@ import (
 )
 
 type TranslationSpec struct {
-	// +kubebuilder:validation:Required
-	InstanceRef string `json:"instanceRef"`
-
 	// BCP 47 language tag (e.g. "en-US", "es", "fr-CA"). This is the unique identifier
 	// for this translation set within the instance.
 	// +kubebuilder:validation:Required
@@ -37,7 +34,7 @@ type TranslationStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".spec.instanceRef"
+// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
 // +kubebuilder:printcolumn:name="Language",type="string",JSONPath=".spec.language"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"

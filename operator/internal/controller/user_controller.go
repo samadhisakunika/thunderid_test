@@ -60,12 +60,12 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: user.Namespace, Name: user.Spec.InstanceRef}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: user.Namespace, Name: user.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", user.Spec.InstanceRef)
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", user.Labels[appsv1alpha1.InstanceRefLabel])
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", user.Spec.InstanceRef)
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", user.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
 	}
 
@@ -270,7 +270,7 @@ func (r *UserReconciler) rebuildUsersConfigMap(ctx context.Context, instance *ap
 
 	var buf bytes.Buffer
 	for _, u := range userList.Items {
-		if u.Spec.InstanceRef != instance.Name {
+		if u.Labels[appsv1alpha1.InstanceRefLabel] != instance.Name {
 			continue
 		}
 		if excludeUID != "" && string(u.UID) == excludeUID {
@@ -437,7 +437,7 @@ func (r *UserReconciler) usersForDeployment(ctx context.Context, obj client.Obje
 	}
 	var reqs []reconcile.Request
 	for _, user := range userList.Items {
-		if user.Spec.InstanceRef != dep.GetName() {
+		if user.Labels[appsv1alpha1.InstanceRefLabel] != dep.GetName() {
 			continue
 		}
 		switch user.Status.Phase {
@@ -463,7 +463,7 @@ func (r *UserReconciler) usersForInstance(ctx context.Context, obj client.Object
 	}
 	var reqs []reconcile.Request
 	for _, user := range userList.Items {
-		if user.Spec.InstanceRef == obj.GetName() {
+		if user.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: user.Name, Namespace: user.Namespace},
 			})

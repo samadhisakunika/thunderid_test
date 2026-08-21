@@ -6,78 +6,132 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// DatabaseSpec selects which database backend ThunderID connects to.
-type DatabaseSpec struct {
-	// Type selects the database backend. "sqlite" (default) uses the image's built-in SQLite
-	// files, wiped and reseeded by setup.sh on every restart unless spec.dataVolumeSize is set.
-	// "postgresql" connects to an external PostgreSQL server instead — no local database files,
-	// so spec.dataVolumeSize is ignored.
-	// +kubebuilder:validation:Enum=sqlite;postgresql
-	// +kubebuilder:default=sqlite
+// SQLiteBackendSpec configures one database scope's SQLite connection — mirrors ThunderID's own
+// database.<scope>.sqlite: block field-for-field. Any field left unset falls back to the same
+// default the scope uses when spec.config.database is omitted entirely.
+type SQLiteBackendSpec struct {
+	// +optional
+	Path string `json:"path,omitempty"`
+	// +optional
+	Options string `json:"options,omitempty"`
+	// +optional
+	MaxOpenConns int32 `json:"maxOpenConns,omitempty"`
+	// +optional
+	MaxIdleConns int32 `json:"maxIdleConns,omitempty"`
+	// +optional
+	ConnMaxLifetime int32 `json:"connMaxLifetime,omitempty"`
+}
+
+// PostgresBackendSpec configures one database scope's PostgreSQL connection — mirrors
+// ThunderID's own database.<scope>.postgres: block, except password: DatabaseSpec.SecretRef backs
+// every postgres scope's password uniformly, since ThunderID's own password field is always a
+// file:// reference regardless of scope.
+type PostgresBackendSpec struct {
+	// +optional
+	Hostname string `json:"hostname,omitempty"`
+	// +optional
+	Port string `json:"port,omitempty"`
+	// +optional
+	Username string `json:"username,omitempty"`
+	// +optional
+	Name string `json:"name,omitempty"`
+	// +kubebuilder:validation:Enum=require;verify-full;verify-ca;disable
+	// +optional
+	SSLMode string `json:"sslmode,omitempty"`
+	// +optional
+	MaxOpenConns int32 `json:"maxOpenConns,omitempty"`
+	// +optional
+	MaxIdleConns int32 `json:"maxIdleConns,omitempty"`
+	// +optional
+	ConnMaxLifetime int32 `json:"connMaxLifetime,omitempty"`
+}
+
+// DatabaseBackendSpec is one database scope. ThunderID has four (config, runtime_transient,
+// entity, runtime_persistent), each independently typed — see DatabaseSpec.
+type DatabaseBackendSpec struct {
+	// +kubebuilder:validation:Enum=sqlite;postgres
 	// +optional
 	Type string `json:"type,omitempty"`
 
-	// Host is the PostgreSQL server hostname. Required when type is "postgresql", ignored
-	// otherwise.
+	// Set when type is "sqlite" (or unset).
 	// +optional
-	Host string `json:"host,omitempty"`
+	SQLite *SQLiteBackendSpec `json:"sqlite,omitempty"`
 
-	// Port is the PostgreSQL server port.
-	// +kubebuilder:default="5432"
+	// Set when type is "postgres".
 	// +optional
-	Port string `json:"port,omitempty"`
+	Postgres *PostgresBackendSpec `json:"postgres,omitempty"`
+}
 
-	// Username is the PostgreSQL user ThunderID connects as. Required when type is
-	// "postgresql", ignored otherwise.
+// DatabaseSpec mirrors ThunderID's own deployment.yaml "database:" section 1:1 — four
+// independent scopes, each with its own backend, rather than one connection reused everywhere
+// (config+entity always share a database in practice, and so do runtime_transient+
+// runtime_persistent, but ThunderID's own schema doesn't encode that pairing, so neither does
+// this). When spec.config.database is omitted entirely, deployment-config.yaml's static sqlite
+// section stands untouched (see staticSQLiteDatabaseSection in database_config.go) — this type
+// only comes into play once at least one scope is set.
+type DatabaseSpec struct {
 	// +optional
-	Username string `json:"username,omitempty"`
-
-	// SSLMode is the PostgreSQL SSL mode.
-	// +kubebuilder:validation:Enum=require;verify-full;verify-ca;disable
-	// +kubebuilder:default="require"
+	Config DatabaseBackendSpec `json:"config,omitempty"`
 	// +optional
-	SSLMode string `json:"sslmode,omitempty"`
-
-	// ConfigDatabase is the database name backing the config and entity scopes.
-	// +kubebuilder:default="thunderid_config"
+	RuntimeTransient DatabaseBackendSpec `json:"runtimeTransient,omitempty"`
 	// +optional
-	ConfigDatabase string `json:"configDatabase,omitempty"`
-
-	// RuntimeDatabase is the database name backing the runtime_transient and
-	// runtime_persistent scopes.
-	// +kubebuilder:default="thunderid_runtime"
+	Entity DatabaseBackendSpec `json:"entity,omitempty"`
 	// +optional
-	RuntimeDatabase string `json:"runtimeDatabase,omitempty"`
+	RuntimePersistent DatabaseBackendSpec `json:"runtimePersistent,omitempty"`
 
-	// SecretRef names a Secret holding the PostgreSQL password, under key "password".
-	// Required when type is "postgresql", ignored otherwise.
+	// SecretRef names a Secret holding the PostgreSQL password, under key "password" — shared by
+	// every scope whose type is postgres. K8s-only glue, not a ThunderID field. Required when any
+	// scope's type is postgres.
 	// +optional
 	SecretRef string `json:"secretRef,omitempty"`
 }
 
-// EmailSpec configures the SMTP client ThunderID uses for outbound email (registration
-// confirmation, password reset, etc). Unset (the default) means no email section is written into
-// deployment.yaml at all, matching the image's own out-of-the-box behavior.
-type EmailSpec struct {
-	// SMTPHost is the SMTP server hostname.
-	// +kubebuilder:validation:Required
-	SMTPHost string `json:"smtpHost"`
+// TLSConfigSpec mirrors ThunderID's own deployment.yaml "tls:" section — only min_version is
+// user-configurable; cert_file/key_file are fixed, operator-managed paths.
+type TLSConfigSpec struct {
+	// MinVersion is the minimum TLS version ThunderID's own HTTPS listener accepts. Unrelated to
+	// spec.tlsSecret, which is the Ingress's TLS termination — this is the app's own listener.
+	// +kubebuilder:validation:Enum="1.2";"1.3"
+	// +kubebuilder:default="1.3"
+	// +optional
+	MinVersion string `json:"minVersion,omitempty"`
+}
 
-	// SMTPPort is the SMTP server port.
+// JWTConfigSpec mirrors ThunderID's own deployment.yaml "jwt:" section.
+type JWTConfigSpec struct {
+	// PreferredKeyID selects which of ThunderID's two built-in signing keys ("default-key", RSA,
+	// or "ecdsa-key", ECDSA) it signs new tokens with. Both remain valid for verifying
+	// already-issued tokens regardless of this setting.
+	// +kubebuilder:validation:Enum=default-key;ecdsa-key
+	// +kubebuilder:default="default-key"
+	// +optional
+	PreferredKeyID string `json:"preferredKeyId,omitempty"`
+}
+
+// PasskeyConfigSpec mirrors ThunderID's own deployment.yaml "passkey:" section.
+type PasskeyConfigSpec struct {
+	// ExtraAllowedOrigins adds WebAuthn/passkey origins beyond the instance's own public URL
+	// (spec.domain, or https://localhost:<port> when unset), which the operator always includes
+	// automatically — e.g. a separate frontend origin that also needs to register/verify passkeys
+	// against this instance.
+	// +optional
+	ExtraAllowedOrigins []string `json:"extraAllowedOrigins,omitempty"`
+}
+
+// SMTPConfigSpec mirrors ThunderID's own deployment.yaml "email.smtp:" section, except password:
+// EmailSpec.SecretRef backs it, since ThunderID's own password field is always a file:// reference.
+type SMTPConfigSpec struct {
 	// +kubebuilder:validation:Required
-	SMTPPort int32 `json:"smtpPort"`
+	Host string `json:"host"`
+
+	// +kubebuilder:validation:Required
+	Port int32 `json:"port"`
 
 	// Username authenticates to the SMTP server. Required when EnableAuthentication is true,
 	// ignored otherwise.
 	// +optional
 	Username string `json:"username,omitempty"`
 
-	// SecretRef names a Secret holding the SMTP password, under key "password". Required when
-	// EnableAuthentication is true, ignored otherwise.
-	// +optional
-	SecretRef string `json:"secretRef,omitempty"`
-
-	// FromAddress is the sender address on outbound email.
 	// +kubebuilder:validation:Required
 	FromAddress string `json:"fromAddress"`
 
@@ -85,9 +139,22 @@ type EmailSpec struct {
 	// +optional
 	EnableStartTLS bool `json:"enableStartTLS,omitempty"`
 
-	// EnableAuthentication authenticates to the SMTP server using Username/SecretRef.
+	// EnableAuthentication authenticates to the SMTP server using Username/EmailSpec.SecretRef.
 	// +optional
 	EnableAuthentication bool `json:"enableAuthentication,omitempty"`
+}
+
+// EmailSpec configures the SMTP client ThunderID uses for outbound email (registration
+// confirmation, password reset, etc). Unset (the default) means no email section is written into
+// deployment.yaml at all, matching the image's own out-of-the-box behavior.
+type EmailSpec struct {
+	// +kubebuilder:validation:Required
+	SMTP SMTPConfigSpec `json:"smtp"`
+
+	// SecretRef names a Secret holding the SMTP password, under key "password". Required when
+	// smtp.enableAuthentication is true, ignored otherwise. K8s-only glue, not a ThunderID field.
+	// +optional
+	SecretRef string `json:"secretRef,omitempty"`
 }
 
 type AutoScalingSpec struct {
@@ -102,40 +169,35 @@ type AutoScalingSpec struct {
 // domain, tlsSecret, securitySecret, resourcesConfigMap, dataVolumeSize), which are Kubernetes/
 // operator-level concerns deployment.yaml has no notion of at all.
 type AppConfigSpec struct {
-	// Database selects sqlite (default) or postgresql. See DatabaseSpec. When Type is sqlite (or
-	// unset), spec.dataVolumeSize must be set.
+	// Database mirrors ThunderID's own "database:" section — see DatabaseSpec. Unset means the
+	// image's built-in sqlite default stands untouched. When unset, or set but not every scope
+	// resolves to postgres, spec.dataVolumeSize must be set (at least one local sqlite file needs
+	// somewhere to persist).
 	// +optional
-	Database DatabaseSpec `json:"database,omitempty"`
+	Database *DatabaseSpec `json:"database,omitempty"`
 
 	// Port is the port ThunderID listens on inside the pod — also used for the container port,
 	// all three probes, the Service, and the Ingress backend, so it only needs setting once here.
+	// Dual-purpose (Kubernetes wiring too), so it stays flat here rather than nested under a
+	// mirrored "server:" block like the rest of this struct.
 	// +kubebuilder:default=8090
 	// +optional
 	Port int32 `json:"port,omitempty"`
 
-	// TLSMinVersion is the minimum TLS version ThunderID's own HTTPS listener accepts. Unrelated
-	// to spec.tlsSecret, which is the Ingress's TLS termination — this is the app's own listener.
-	// +kubebuilder:validation:Enum="1.2";"1.3"
-	// +kubebuilder:default="1.3"
+	// TLS mirrors ThunderID's own "tls:" section.
 	// +optional
-	TLSMinVersion string `json:"tlsMinVersion,omitempty"`
+	TLS TLSConfigSpec `json:"tls,omitempty"`
 
-	// JWTPreferredKeyID selects which of ThunderID's two built-in signing keys ("default-key",
-	// RSA, or "ecdsa-key", ECDSA) it signs new tokens with. Both remain valid for verifying
-	// already-issued tokens regardless of this setting.
-	// +kubebuilder:validation:Enum=default-key;ecdsa-key
-	// +kubebuilder:default="default-key"
+	// JWT mirrors ThunderID's own "jwt:" section.
 	// +optional
-	JWTPreferredKeyID string `json:"jwtPreferredKeyId,omitempty"`
+	JWT JWTConfigSpec `json:"jwt,omitempty"`
 
-	// PasskeyExtraAllowedOrigins adds WebAuthn/passkey origins beyond the instance's own public
-	// URL (spec.domain, or https://localhost:<port> when unset) — e.g. a separate frontend origin
-	// that also needs to register/verify passkeys against this instance.
+	// Passkey mirrors ThunderID's own "passkey:" section.
 	// +optional
-	PasskeyExtraAllowedOrigins []string `json:"passkeyExtraAllowedOrigins,omitempty"`
+	Passkey PasskeyConfigSpec `json:"passkey,omitempty"`
 
-	// Email configures outbound SMTP. Unset means no email section in deployment.yaml at all —
-	// see EmailSpec.
+	// Email mirrors ThunderID's own "email:" section. Unset means no email section in
+	// deployment.yaml at all — see EmailSpec.
 	// +optional
 	Email *EmailSpec `json:"email,omitempty"`
 }
@@ -176,8 +238,9 @@ type ThunderIDInstanceSpec struct {
 	// and skips setup.sh on every restart after the first, instead of rerunning it (and wiping
 	// the database) on every pod restart. Because the PVC is ReadWriteOnce, the Deployment
 	// strategy switches to Recreate to avoid two pods mounting it at once — only meaningful with
-	// replicas: 1. Either this or Config.Database.Type=postgresql must be set — a ThunderIDInstance
-	// with neither is rejected: ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
+	// replicas: 1. Either this or every Config.Database scope's Type=postgres must be set — a
+	// ThunderIDInstance with neither is rejected: ephemeral, wipe-on-every-restart SQLite is not a
+	// supported configuration.
 	// +optional
 	DataVolumeSize string `json:"dataVolumeSize,omitempty"`
 

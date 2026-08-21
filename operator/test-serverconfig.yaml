@@ -3,8 +3,9 @@ kind: ServerConfig
 metadata:
   name: thunderid-cors
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   name: cors
   cors:
     allowedOrigins:
@@ -17,8 +18,9 @@ kind: ServerConfig
 metadata:
   name: thunderid-session
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   name: session
   session:
     idleTimeoutSeconds: 1800
@@ -29,8 +31,9 @@ kind: ServerConfig
 metadata:
   name: thunderid-default-rs
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   name: defaultResourceServer
   defaultResourceServer:
     resourceServerId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8d"

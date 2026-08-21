@@ -71,133 +71,334 @@ spec:
                 properties:
                   database:
                     description: |-
-                      Database selects sqlite (default) or postgresql. See DatabaseSpec. When Type is sqlite (or
-                      unset), spec.dataVolumeSize must be set.
+                      Database mirrors ThunderID's own "database:" section — see DatabaseSpec. Unset means the
+                      image's built-in sqlite default stands untouched. When unset, or set but not every scope
+                      resolves to postgres, spec.dataVolumeSize must be set (at least one local sqlite file needs
+                      somewhere to persist).
                     properties:
-                      configDatabase:
-                        default: thunderid_config
-                        description: ConfigDatabase is the database name backing the
-                          config and entity scopes.
-                        type: string
-                      host:
+                      config:
                         description: |-
-                          Host is the PostgreSQL server hostname. Required when type is "postgresql", ignored
-                          otherwise.
-                        type: string
-                      port:
-                        default: "5432"
-                        description: Port is the PostgreSQL server port.
-                        type: string
-                      runtimeDatabase:
-                        default: thunderid_runtime
+                          DatabaseBackendSpec is one database scope. ThunderID has four (config, runtime_transient,
+                          entity, runtime_persistent), each independently typed — see DatabaseSpec.
+                        properties:
+                          postgres:
+                            description: Set when type is "postgres".
+                            properties:
+                              connMaxLifetime:
+                                format: int32
+                                type: integer
+                              hostname:
+                                type: string
+                              maxIdleConns:
+                                format: int32
+                                type: integer
+                              maxOpenConns:
+                                format: int32
+                                type: integer
+                              name:
+                                type: string
+                              port:
+                                type: string
+                              sslmode:
+                                enum:
+                                - require
+                                - verify-full
+                                - verify-ca
+                                - disable
+                                type: string
+                              username:
+                                type: string
+                            type: object
+                          sqlite:
+                            description: Set when type is "sqlite" (or unset).
+                            properties:
+                              connMaxLifetime:
+                                format: int32
+                                type: integer
+                              maxIdleConns:
+                                format: int32
+                                type: integer
+                              maxOpenConns:
+                                format: int32
+                                type: integer
+                              options:
+                                type: string
+                              path:
+                                type: string
+                            type: object
+                          type:
+                            enum:
+                            - sqlite
+                            - postgres
+                            type: string
+                        type: object
+                      entity:
                         description: |-
-                          RuntimeDatabase is the database name backing the runtime_transient and
-                          runtime_persistent scopes.
-                        type: string
+                          DatabaseBackendSpec is one database scope. ThunderID has four (config, runtime_transient,
+                          entity, runtime_persistent), each independently typed — see DatabaseSpec.
+                        properties:
+                          postgres:
+                            description: Set when type is "postgres".
+                            properties:
+                              connMaxLifetime:
+                                format: int32
+                                type: integer
+                              hostname:
+                                type: string
+                              maxIdleConns:
+                                format: int32
+                                type: integer
+                              maxOpenConns:
+                                format: int32
+                                type: integer
+                              name:
+                                type: string
+                              port:
+                                type: string
+                              sslmode:
+                                enum:
+                                - require
+                                - verify-full
+                                - verify-ca
+                                - disable
+                                type: string
+                              username:
+                                type: string
+                            type: object
+                          sqlite:
+                            description: Set when type is "sqlite" (or unset).
+                            properties:
+                              connMaxLifetime:
+                                format: int32
+                                type: integer
+                              maxIdleConns:
+                                format: int32
+                                type: integer
+                              maxOpenConns:
+                                format: int32
+                                type: integer
+                              options:
+                                type: string
+                              path:
+                                type: string
+                            type: object
+                          type:
+                            enum:
+                            - sqlite
+                            - postgres
+                            type: string
+                        type: object
+                      runtimePersistent:
+                        description: |-
+                          DatabaseBackendSpec is one database scope. ThunderID has four (config, runtime_transient,
+                          entity, runtime_persistent), each independently typed — see DatabaseSpec.
+                        properties:
+                          postgres:
+                            description: Set when type is "postgres".
+                            properties:
+                              connMaxLifetime:
+                                format: int32
+                                type: integer
+                              hostname:
+                                type: string
+                              maxIdleConns:
+                                format: int32
+                                type: integer
+                              maxOpenConns:
+                                format: int32
+                                type: integer
+                              name:
+                                type: string
+                              port:
+                                type: string
+                              sslmode:
+                                enum:
+                                - require
+                                - verify-full
+                                - verify-ca
+                                - disable
+                                type: string
+                              username:
+                                type: string
+                            type: object
+                          sqlite:
+                            description: Set when type is "sqlite" (or unset).
+                            properties:
+                              connMaxLifetime:
+                                format: int32
+                                type: integer
+                              maxIdleConns:
+                                format: int32
+                                type: integer
+                              maxOpenConns:
+                                format: int32
+                                type: integer
+                              options:
+                                type: string
+                              path:
+                                type: string
+                            type: object
+                          type:
+                            enum:
+                            - sqlite
+                            - postgres
+                            type: string
+                        type: object
+                      runtimeTransient:
+                        description: |-
+                          DatabaseBackendSpec is one database scope. ThunderID has four (config, runtime_transient,
+                          entity, runtime_persistent), each independently typed — see DatabaseSpec.
+                        properties:
+                          postgres:
+                            description: Set when type is "postgres".
+                            properties:
+                              connMaxLifetime:
+                                format: int32
+                                type: integer
+                              hostname:
+                                type: string
+                              maxIdleConns:
+                                format: int32
+                                type: integer
+                              maxOpenConns:
+                                format: int32
+                                type: integer
+                              name:
+                                type: string
+                              port:
+                                type: string
+                              sslmode:
+                                enum:
+                                - require
+                                - verify-full
+                                - verify-ca
+                                - disable
+                                type: string
+                              username:
+                                type: string
+                            type: object
+                          sqlite:
+                            description: Set when type is "sqlite" (or unset).
+                            properties:
+                              connMaxLifetime:
+                                format: int32
+                                type: integer
+                              maxIdleConns:
+                                format: int32
+                                type: integer
+                              maxOpenConns:
+                                format: int32
+                                type: integer
+                              options:
+                                type: string
+                              path:
+                                type: string
+                            type: object
+                          type:
+                            enum:
+                            - sqlite
+                            - postgres
+                            type: string
+                        type: object
                       secretRef:
                         description: |-
-                          SecretRef names a Secret holding the PostgreSQL password, under key "password".
-                          Required when type is "postgresql", ignored otherwise.
-                        type: string
-                      sslmode:
-                        default: require
-                        description: SSLMode is the PostgreSQL SSL mode.
-                        enum:
-                        - require
-                        - verify-full
-                        - verify-ca
-                        - disable
-                        type: string
-                      type:
-                        default: sqlite
-                        description: |-
-                          Type selects the database backend. "sqlite" (default) uses the image's built-in SQLite
-                          files, wiped and reseeded by setup.sh on every restart unless spec.dataVolumeSize is set.
-                          "postgresql" connects to an external PostgreSQL server instead — no local database files,
-                          so spec.dataVolumeSize is ignored.
-                        enum:
-                        - sqlite
-                        - postgresql
-                        type: string
-                      username:
-                        description: |-
-                          Username is the PostgreSQL user ThunderID connects as. Required when type is
-                          "postgresql", ignored otherwise.
+                          SecretRef names a Secret holding the PostgreSQL password, under key "password" — shared by
+                          every scope whose type is postgres. K8s-only glue, not a ThunderID field. Required when any
+                          scope's type is postgres.
                         type: string
                     type: object
                   email:
                     description: |-
-                      Email configures outbound SMTP. Unset means no email section in deployment.yaml at all —
-                      see EmailSpec.
+                      Email mirrors ThunderID's own "email:" section. Unset means no email section in
+                      deployment.yaml at all — see EmailSpec.
                     properties:
-                      enableAuthentication:
-                        description: EnableAuthentication authenticates to the SMTP
-                          server using Username/SecretRef.
-                        type: boolean
-                      enableStartTLS:
-                        description: EnableStartTLS upgrades the SMTP connection to
-                          TLS via STARTTLS.
-                        type: boolean
-                      fromAddress:
-                        description: FromAddress is the sender address on outbound
-                          email.
-                        type: string
                       secretRef:
                         description: |-
                           SecretRef names a Secret holding the SMTP password, under key "password". Required when
-                          EnableAuthentication is true, ignored otherwise.
+                          smtp.enableAuthentication is true, ignored otherwise. K8s-only glue, not a ThunderID field.
                         type: string
-                      smtpHost:
-                        description: SMTPHost is the SMTP server hostname.
-                        type: string
-                      smtpPort:
-                        description: SMTPPort is the SMTP server port.
-                        format: int32
-                        type: integer
-                      username:
+                      smtp:
                         description: |-
-                          Username authenticates to the SMTP server. Required when EnableAuthentication is true,
-                          ignored otherwise.
-                        type: string
+                          SMTPConfigSpec mirrors ThunderID's own deployment.yaml "email.smtp:" section, except password:
+                          EmailSpec.SecretRef backs it, since ThunderID's own password field is always a file:// reference.
+                        properties:
+                          enableAuthentication:
+                            description: EnableAuthentication authenticates to the
+                              SMTP server using Username/EmailSpec.SecretRef.
+                            type: boolean
+                          enableStartTLS:
+                            description: EnableStartTLS upgrades the SMTP connection
+                              to TLS via STARTTLS.
+                            type: boolean
+                          fromAddress:
+                            type: string
+                          host:
+                            type: string
+                          port:
+                            format: int32
+                            type: integer
+                          username:
+                            description: |-
+                              Username authenticates to the SMTP server. Required when EnableAuthentication is true,
+                              ignored otherwise.
+                            type: string
+                        required:
+                        - fromAddress
+                        - host
+                        - port
+                        type: object
                     required:
-                    - fromAddress
-                    - smtpHost
-                    - smtpPort
+                    - smtp
                     type: object
-                  jwtPreferredKeyId:
-                    default: default-key
-                    description: |-
-                      JWTPreferredKeyID selects which of ThunderID's two built-in signing keys ("default-key",
-                      RSA, or "ecdsa-key", ECDSA) it signs new tokens with. Both remain valid for verifying
-                      already-issued tokens regardless of this setting.
-                    enum:
-                    - default-key
-                    - ecdsa-key
-                    type: string
-                  passkeyExtraAllowedOrigins:
-                    description: |-
-                      PasskeyExtraAllowedOrigins adds WebAuthn/passkey origins beyond the instance's own public
-                      URL (spec.domain, or https://localhost:<port> when unset) — e.g. a separate frontend origin
-                      that also needs to register/verify passkeys against this instance.
-                    items:
-                      type: string
-                    type: array
+                  jwt:
+                    description: JWT mirrors ThunderID's own "jwt:" section.
+                    properties:
+                      preferredKeyId:
+                        default: default-key
+                        description: |-
+                          PreferredKeyID selects which of ThunderID's two built-in signing keys ("default-key", RSA,
+                          or "ecdsa-key", ECDSA) it signs new tokens with. Both remain valid for verifying
+                          already-issued tokens regardless of this setting.
+                        enum:
+                        - default-key
+                        - ecdsa-key
+                        type: string
+                    type: object
+                  passkey:
+                    description: Passkey mirrors ThunderID's own "passkey:" section.
+                    properties:
+                      extraAllowedOrigins:
+                        description: |-
+                          ExtraAllowedOrigins adds WebAuthn/passkey origins beyond the instance's own public URL
+                          (spec.domain, or https://localhost:<port> when unset), which the operator always includes
+                          automatically — e.g. a separate frontend origin that also needs to register/verify passkeys
+                          against this instance.
+                        items:
+                          type: string
+                        type: array
+                    type: object
                   port:
                     default: 8090
                     description: |-
                       Port is the port ThunderID listens on inside the pod — also used for the container port,
                       all three probes, the Service, and the Ingress backend, so it only needs setting once here.
+                      Dual-purpose (Kubernetes wiring too), so it stays flat here rather than nested under a
+                      mirrored "server:" block like the rest of this struct.
                     format: int32
                     type: integer
-                  tlsMinVersion:
-                    default: "1.3"
-                    description: |-
-                      TLSMinVersion is the minimum TLS version ThunderID's own HTTPS listener accepts. Unrelated
-                      to spec.tlsSecret, which is the Ingress's TLS termination — this is the app's own listener.
-                    enum:
-                    - "1.2"
-                    - "1.3"
-                    type: string
+                  tls:
+                    description: TLS mirrors ThunderID's own "tls:" section.
+                    properties:
+                      minVersion:
+                        default: "1.3"
+                        description: |-
+                          MinVersion is the minimum TLS version ThunderID's own HTTPS listener accepts. Unrelated to
+                          spec.tlsSecret, which is the Ingress's TLS termination — this is the app's own listener.
+                        enum:
+                        - "1.2"
+                        - "1.3"
+                        type: string
+                    type: object
                 type: object
               dataVolumeSize:
                 description: |-
@@ -207,8 +408,9 @@ spec:
                   and skips setup.sh on every restart after the first, instead of rerunning it (and wiping
                   the database) on every pod restart. Because the PVC is ReadWriteOnce, the Deployment
                   strategy switches to Recreate to avoid two pods mounting it at once — only meaningful with
-                  replicas: 1. Either this or Config.Database.Type=postgresql must be set — a ThunderIDInstance
-                  with neither is rejected: ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
+                  replicas: 1. Either this or every Config.Database scope's Type=postgres must be set — a
+                  ThunderIDInstance with neither is rejected: ephemeral, wipe-on-every-restart SQLite is not a
+                  supported configuration.
                 type: string
               domain:
                 description: |-

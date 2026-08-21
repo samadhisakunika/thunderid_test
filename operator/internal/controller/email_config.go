@@ -26,8 +26,8 @@ const (
 
 // resolveEmailConfig returns the YAML to substitute for emailBlockMarkerLine — "" when
 // spec.config.email is unset, so the template ends up with no email: section at all. The password (when
-// spec.config.email.enableAuthentication is set) is kept out of the ConfigMap and resolved at runtime
-// via a file:// reference, the same way resolveDatabaseConfig handles the database password.
+// spec.config.email.smtp.enableAuthentication is set) is kept out of the ConfigMap and resolved at
+// runtime via a file:// reference, the same way resolveDatabaseConfig handles the database password.
 func (r *ThunderIDInstanceReconciler) resolveEmailConfig(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) (block string, err error) {
 	email := instance.Spec.Config.Email
@@ -36,9 +36,9 @@ func (r *ThunderIDInstanceReconciler) resolveEmailConfig(
 	}
 
 	password := ""
-	if email.EnableAuthentication {
+	if email.SMTP.EnableAuthentication {
 		if email.SecretRef == "" {
-			return "", fmt.Errorf("spec.config.email.enableAuthentication is true but spec.config.email.secretRef is not set")
+			return "", fmt.Errorf("spec.config.email.smtp.enableAuthentication is true but spec.config.email.secretRef is not set")
 		}
 		secret := &corev1.Secret{}
 		if err := r.Get(ctx, types.NamespacedName{
@@ -61,8 +61,8 @@ func (r *ThunderIDInstanceReconciler) resolveEmailConfig(
     from_address: %q
     enable_start_tls: %t
     enable_authentication: %t`,
-		email.SMTPHost, email.SMTPPort, email.Username, password, email.FromAddress,
-		email.EnableStartTLS, email.EnableAuthentication)
+		email.SMTP.Host, email.SMTP.Port, email.SMTP.Username, password, email.SMTP.FromAddress,
+		email.SMTP.EnableStartTLS, email.SMTP.EnableAuthentication)
 
 	return block, nil
 }

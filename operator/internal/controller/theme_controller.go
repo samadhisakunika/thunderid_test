@@ -60,12 +60,12 @@ func (r *ThemeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: theme.Namespace, Name: theme.Spec.InstanceRef}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: theme.Namespace, Name: theme.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", theme.Spec.InstanceRef)
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", theme.Labels[appsv1alpha1.InstanceRefLabel])
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", theme.Spec.InstanceRef)
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", theme.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
 	}
 
@@ -265,7 +265,7 @@ func (r *ThemeReconciler) rebuildThemesConfigMap(ctx context.Context, instance *
 
 	var buf bytes.Buffer
 	for _, t := range themeList.Items {
-		if t.Spec.InstanceRef != instance.Name {
+		if t.Labels[appsv1alpha1.InstanceRefLabel] != instance.Name {
 			continue
 		}
 		if excludeUID != "" && string(t.UID) == excludeUID {
@@ -406,7 +406,7 @@ func (r *ThemeReconciler) themesForDeployment(ctx context.Context, obj client.Ob
 	}
 	var reqs []reconcile.Request
 	for _, theme := range themeList.Items {
-		if theme.Spec.InstanceRef != dep.GetName() {
+		if theme.Labels[appsv1alpha1.InstanceRefLabel] != dep.GetName() {
 			continue
 		}
 		switch theme.Status.Phase {
@@ -432,7 +432,7 @@ func (r *ThemeReconciler) themesForInstance(ctx context.Context, obj client.Obje
 	}
 	var reqs []reconcile.Request
 	for _, theme := range themeList.Items {
-		if theme.Spec.InstanceRef == obj.GetName() {
+		if theme.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: theme.Name, Namespace: theme.Namespace},
 			})

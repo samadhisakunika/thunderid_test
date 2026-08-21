@@ -18,8 +18,8 @@ metadata:
   namespace: default
   labels:
     loadtest: "true"
+    thunderid.io/instance: $INSTANCE_REF
 spec:
-  instanceRef: $INSTANCE_REF
   name: "Load Test App $i"
   ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
   authFlowHandle: console-app-flow

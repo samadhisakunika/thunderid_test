@@ -15,7 +15,7 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.instanceRef
+    - jsonPath: .metadata.labels['thunderid\.io/instance']
       name: Instance
       type: string
     - jsonPath: .spec.language
@@ -50,8 +50,6 @@ spec:
             type: object
           spec:
             properties:
-              instanceRef:
-                type: string
               language:
                 description: |-
                   BCP 47 language tag (e.g. "en-US", "es", "fr-CA"). This is the unique identifier
@@ -66,7 +64,6 @@ spec:
                   related keys (e.g. "auth", "errors").
                 type: object
             required:
-            - instanceRef
             - language
             - translations
             type: object

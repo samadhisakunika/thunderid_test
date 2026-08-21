@@ -59,12 +59,12 @@ func (r *ResourceServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: rs.Namespace, Name: rs.Spec.InstanceRef}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: rs.Namespace, Name: rs.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", rs.Spec.InstanceRef)
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", rs.Labels[appsv1alpha1.InstanceRefLabel])
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", rs.Spec.InstanceRef)
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", rs.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
 	}
 
@@ -246,7 +246,7 @@ func (r *ResourceServerReconciler) rebuildResourceServersConfigMap(ctx context.C
 
 	var buf bytes.Buffer
 	for _, s := range rsList.Items {
-		if s.Spec.InstanceRef != instance.Name {
+		if s.Labels[appsv1alpha1.InstanceRefLabel] != instance.Name {
 			continue
 		}
 		if excludeUID != "" && string(s.UID) == excludeUID {
@@ -400,7 +400,7 @@ func (r *ResourceServerReconciler) resourceServersForDeployment(ctx context.Cont
 	}
 	var reqs []reconcile.Request
 	for _, rs := range rsList.Items {
-		if rs.Spec.InstanceRef != dep.GetName() {
+		if rs.Labels[appsv1alpha1.InstanceRefLabel] != dep.GetName() {
 			continue
 		}
 		switch rs.Status.Phase {
@@ -426,7 +426,7 @@ func (r *ResourceServerReconciler) resourceServersForInstance(ctx context.Contex
 	}
 	var reqs []reconcile.Request
 	for _, rs := range rsList.Items {
-		if rs.Spec.InstanceRef == obj.GetName() {
+		if rs.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: rs.Name, Namespace: rs.Namespace},
 			})

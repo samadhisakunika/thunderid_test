@@ -12,24 +12,35 @@ import (
 )
 
 const (
-	databaseTypePostgreSQL = "postgresql"
+	databaseTypePostgres = "postgres"
 
 	databaseSecretKeyPassword = "password"
 
 	// databasePasswordMountPath is where the password key of spec.config.database.secretRef is mounted
-	// into the container. The postgres block built below references it via a file:// URI, the
+	// into the container. Every postgres scope's rendered block references it via a file:// URI, the
 	// same pattern deployment-config.yaml already uses for direct_auth_secret and crypto.key.
 	databasePasswordMountPath = "config/secrets/db_password"
 
-	// databaseBlockMarker is the placeholder line in deployment-config.yaml that
-	// reconcileConfigMap replaces with the resolved sqlite/postgres block. It's a full,
-	// syntactically valid YAML entry so the template stays parseable at rest.
-	databaseBlockMarker = `  __DATABASE_BLOCK__: placeholder # replaced whole-line by reconcileConfigMap with the sqlite or postgres block`
+	sqliteConnOptionsDefault = "_journal_mode=WAL&_busy_timeout=5000&_pragma=foreign_keys(1)"
 )
 
-// sqliteDatabaseBlock is the "database:" body used when spec.config.database.type is unset or "sqlite" —
-// unchanged from what deployment-config.yaml hardcoded before postgres support existed.
-const sqliteDatabaseBlock = `  config:
+// databaseScopeDefaultPath is the sqlite file each scope falls back to when its own
+// spec.config.database.<scope>.sqlite.path is unset — the image's own convention, and what
+// deployment-config.yaml's static default section (staticSQLiteDatabaseSection) already uses.
+var databaseScopeDefaultPath = map[string]string{
+	"config":             "repository/database/configdb.db",
+	"runtime_transient":  "repository/database/runtime_transient.db",
+	"entity":             "repository/database/entitydb.db",
+	"runtime_persistent": "repository/database/runtime_persistent.db",
+}
+
+// staticSQLiteDatabaseSection is the literal "database:" body deployment-config.yaml carries by
+// default (sqlite, the image's own built-in behavior) — the template owns this content directly,
+// not the operator. resolveDatabaseConfig only comes into play once spec.config.database is set,
+// where it needs this exact text as the search target to swap out wholesale for the rendered
+// scopes. Must stay byte-identical to deployment-config.yaml's database: body (minus the
+// "database:" header line, which stays put either way).
+const staticSQLiteDatabaseSection = `  config:
     type: "sqlite"
     sqlite:
       path: "repository/database/configdb.db"
@@ -62,73 +73,132 @@ const sqliteDatabaseBlock = `  config:
       max_idle_conns: 100
       conn_max_lifetime: 3600`
 
-// usingPostgres reports whether instance is configured to connect to an external PostgreSQL
-// server instead of the image's built-in SQLite files.
+// usingPostgres reports whether instance is configured with every database scope pointed at
+// PostgreSQL — meaning no local sqlite files exist anywhere, so spec.dataVolumeSize becomes
+// unnecessary. A partial/mixed configuration (or spec.config.database unset entirely, which means
+// all-sqlite) still needs it, since at least one scope's sqlite file needs somewhere to persist.
 func usingPostgres(instance *appsv1alpha1.ThunderIDInstance) bool {
-	return instance.Spec.Config.Database.Type == databaseTypePostgreSQL
+	db := instance.Spec.Config.Database
+	if db == nil {
+		return false
+	}
+	return db.Config.Type == databaseTypePostgres &&
+		db.RuntimeTransient.Type == databaseTypePostgres &&
+		db.Entity.Type == databaseTypePostgres &&
+		db.RuntimePersistent.Type == databaseTypePostgres
 }
 
-// resolveDatabaseConfig returns the YAML to substitute into deployment-config.yaml's "database:"
-// section, and — for postgres — the credentials Secret name so reconcileDeployment can mount its
-// password key into the pod. Connection details (host/port/username/database names/sslmode) come
-// straight from spec.config.database and are inlined directly since they aren't sensitive; only the
-// password is kept out of the ConfigMap, sourced from spec.config.database.secretRef and resolved at
-// runtime via a file:// reference like ThunderID's other secret values.
+// resolveDatabaseConfig returns "" when spec.config.database is unset (deployment-config.yaml's
+// static sqlite section already correct, nothing to substitute), or the full "database:" body —
+// all four scopes, mirroring ThunderID's own deployment.yaml shape 1:1 — to swap in for
+// staticSQLiteDatabaseSection. secretName is the postgres password Secret to mount into the pod,
+// set whenever any scope needs one.
 func (r *ThunderIDInstanceReconciler) resolveDatabaseConfig(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) (block string, secretName string, err error) {
-	if !usingPostgres(instance) {
-		return sqliteDatabaseBlock, "", nil
-	}
-
 	db := instance.Spec.Config.Database
-
-	var missing []string
-	if db.Host == "" {
-		missing = append(missing, "spec.config.database.host")
-	}
-	if db.Username == "" {
-		missing = append(missing, "spec.config.database.username")
-	}
-	if db.SecretRef == "" {
-		missing = append(missing, "spec.config.database.secretRef")
-	}
-	if len(missing) > 0 {
-		return "", "", fmt.Errorf("spec.config.database.type is %q but missing required field(s): %s",
-			databaseTypePostgreSQL, strings.Join(missing, ", "))
+	if db == nil {
+		return "", "", nil
 	}
 
-	secret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Name: db.SecretRef, Namespace: instance.Namespace,
-	}, secret); err != nil {
-		return "", "", fmt.Errorf("spec.config.database.secretRef %q: %w", db.SecretRef, err)
-	}
-
-	password := string(secret.Data[databaseSecretKeyPassword])
-	if password == "" {
-		return "", "", fmt.Errorf("spec.config.database.secretRef %q is missing required key: password", db.SecretRef)
-	}
-
-	getOr := func(v, def string) string {
-		if v != "" {
-			return v
+	needsPassword := db.Config.Type == databaseTypePostgres || db.RuntimeTransient.Type == databaseTypePostgres ||
+		db.Entity.Type == databaseTypePostgres || db.RuntimePersistent.Type == databaseTypePostgres
+	if needsPassword {
+		if db.SecretRef == "" {
+			return "", "", fmt.Errorf("spec.config.database has a postgres scope but spec.config.database.secretRef is not set")
 		}
-		return def
+		secret := &corev1.Secret{}
+		if err := r.Get(ctx, types.NamespacedName{
+			Name: db.SecretRef, Namespace: instance.Namespace,
+		}, secret); err != nil {
+			return "", "", fmt.Errorf("spec.config.database.secretRef %q: %w", db.SecretRef, err)
+		}
+		if string(secret.Data[databaseSecretKeyPassword]) == "" {
+			return "", "", fmt.Errorf("spec.config.database.secretRef %q is missing required key: password", db.SecretRef)
+		}
+		secretName = db.SecretRef
 	}
 
-	host := db.Host
-	port := getOr(db.Port, "5432")
-	username := db.Username
-	sslmode := getOr(db.SSLMode, "require")
-	configDB := getOr(db.ConfigDatabase, "thunderid_config")
-	runtimeDB := getOr(db.RuntimeDatabase, "thunderid_runtime")
+	scopes := []struct {
+		name string
+		spec appsv1alpha1.DatabaseBackendSpec
+	}{
+		{"config", db.Config},
+		{"runtime_transient", db.RuntimeTransient},
+		{"entity", db.Entity},
+		{"runtime_persistent", db.RuntimePersistent},
+	}
 
-	// Field names (config.PostgresDataSource) confirmed by iterating against the running image's
-	// own strict YAML unmarshal errors, not just binary string inspection: it named the struct
-	// and rejected "host"/"database"/"dbname" one at a time while accepting
-	// port/username/password/sslmode/pool settings unmodified — hostname/name is the corrected
-	// pair.
-	section := func(dbName string) string {
+	// No "database:\n" header here — staticSQLiteDatabaseSection (the search target in
+	// reconcileConfigMap) excludes the header line too, since the template keeps it fixed and
+	// only the body underneath gets swapped.
+	var sb strings.Builder
+	for _, s := range scopes {
+		scopeBlock, err := renderDatabaseScope(s.name, s.spec)
+		if err != nil {
+			return "", "", fmt.Errorf("spec.config.database.%s: %w", scopeJSONName(s.name), err)
+		}
+		fmt.Fprintf(&sb, "  %s:\n%s\n", s.name, scopeBlock)
+	}
+
+	return strings.TrimRight(sb.String(), "\n"), secretName, nil
+}
+
+// scopeJSONName maps a rendered scope's snake_case name (ThunderID's own convention) to the CRD's
+// camelCase field name, for error messages.
+func scopeJSONName(scope string) string {
+	switch scope {
+	case "runtime_transient":
+		return "runtimeTransient"
+	case "runtime_persistent":
+		return "runtimePersistent"
+	default:
+		return scope
+	}
+}
+
+// renderDatabaseScope returns the 4-space-indented "type:"/"sqlite:"/"postgres:" body for one
+// database scope.
+func renderDatabaseScope(scopeName string, spec appsv1alpha1.DatabaseBackendSpec) (string, error) {
+	if spec.Type == databaseTypePostgres {
+		pg := spec.Postgres
+		if pg == nil {
+			return "", fmt.Errorf("type is %q but postgres is not set", databaseTypePostgres)
+		}
+		var missing []string
+		if pg.Hostname == "" {
+			missing = append(missing, "postgres.hostname")
+		}
+		if pg.Username == "" {
+			missing = append(missing, "postgres.username")
+		}
+		if pg.Name == "" {
+			missing = append(missing, "postgres.name")
+		}
+		if len(missing) > 0 {
+			return "", fmt.Errorf("missing required field(s): %s", strings.Join(missing, ", "))
+		}
+
+		port := pg.Port
+		if port == "" {
+			port = "5432"
+		}
+		sslmode := pg.SSLMode
+		if sslmode == "" {
+			sslmode = "require"
+		}
+		maxOpen := pg.MaxOpenConns
+		if maxOpen == 0 {
+			maxOpen = 500
+		}
+		maxIdle := pg.MaxIdleConns
+		if maxIdle == 0 {
+			maxIdle = 100
+		}
+		connLifetime := pg.ConnMaxLifetime
+		if connLifetime == 0 {
+			connLifetime = 3600
+		}
+
 		return fmt.Sprintf(`    type: "postgres"
     postgres:
       hostname: "%s"
@@ -137,18 +207,39 @@ func (r *ThunderIDInstanceReconciler) resolveDatabaseConfig(
       password: "file://%s"
       name: "%s"
       sslmode: "%s"
-      max_open_conns: 500
-      max_idle_conns: 100
-      conn_max_lifetime: 3600`, host, port, username, databasePasswordMountPath, dbName, sslmode)
+      max_open_conns: %d
+      max_idle_conns: %d
+      conn_max_lifetime: %d`, pg.Hostname, port, pg.Username, databasePasswordMountPath, pg.Name, sslmode,
+			maxOpen, maxIdle, connLifetime), nil
 	}
 
-	// runtime_transient and runtime_persistent share one database (per the runtimeDatabase key),
-	// and so do config and entity (per configDatabase): ThunderID's own dbscripts/ cross-reference
-	// tables across those pairs (e.g. entity-category lookups query ENTITY_TYPES, which lives in
-	// dbscripts/configdb/), so each pair must resolve to the same physical database, distinguished
-	// by table set rather than by database.
-	block = fmt.Sprintf("  config:\n%s\n  runtime_transient:\n%s\n  entity:\n%s\n  runtime_persistent:\n%s",
-		section(configDB), section(runtimeDB), section(configDB), section(runtimeDB))
+	// sqlite — default when Type is empty or "sqlite".
+	path := databaseScopeDefaultPath[scopeName]
+	options := sqliteConnOptionsDefault
+	maxOpen, maxIdle, connLifetime := int32(500), int32(100), int32(3600)
+	if spec.SQLite != nil {
+		if spec.SQLite.Path != "" {
+			path = spec.SQLite.Path
+		}
+		if spec.SQLite.Options != "" {
+			options = spec.SQLite.Options
+		}
+		if spec.SQLite.MaxOpenConns != 0 {
+			maxOpen = spec.SQLite.MaxOpenConns
+		}
+		if spec.SQLite.MaxIdleConns != 0 {
+			maxIdle = spec.SQLite.MaxIdleConns
+		}
+		if spec.SQLite.ConnMaxLifetime != 0 {
+			connLifetime = spec.SQLite.ConnMaxLifetime
+		}
+	}
 
-	return block, instance.Spec.Config.Database.SecretRef, nil
+	return fmt.Sprintf(`    type: "sqlite"
+    sqlite:
+      path: "%s"
+      options: "%s"
+      max_open_conns: %d
+      max_idle_conns: %d
+      conn_max_lifetime: %d`, path, options, maxOpen, maxIdle, connLifetime), nil
 }

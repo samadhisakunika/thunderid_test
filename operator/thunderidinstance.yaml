@@ -27,30 +27,66 @@ spec:
     targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 80
 
-  # config groups everything that maps directly into ThunderID's own deployment.yaml
+  # config groups everything that maps directly into ThunderID's own deployment.yaml, mirroring
+  # its own top-level blocks (database:/tls:/jwt:/passkey:/email:) 1:1 — copy field names
+  # straight from a real deployment.yaml, besides the Kubernetes-only glue (port doubles as k8s
+  # wiring; secretRef fields source a password from a Secret since ThunderID's own password
+  # field is always a file:// reference).
   config:
     database:
-      type: postgresql
-      host: "172.19.208.1"
-      port: "5432"
-      username: "postgres"
-      sslmode: "disable"
-      configDatabase: "thunderid_config"
-      runtimeDatabase: "thunderid_runtime"
+      # ThunderID has four independent scopes. config+entity share one physical database in
+      # practice, and so do runtimeTransient+runtimePersistent (see database_config.go), but
+      # each is set explicitly here since ThunderID's own schema doesn't encode that pairing.
+      config:
+        type: postgres
+        postgres:
+          hostname: "172.19.208.1"
+          port: "5432"
+          username: "postgres"
+          name: "thunderid_config"
+          sslmode: "disable"
+      entity:
+        type: postgres
+        postgres:
+          hostname: "172.19.208.1"
+          port: "5432"
+          username: "postgres"
+          name: "thunderid_config"
+          sslmode: "disable"
+      runtimeTransient:
+        type: postgres
+        postgres:
+          hostname: "172.19.208.1"
+          port: "5432"
+          username: "postgres"
+          name: "thunderid_runtime"
+          sslmode: "disable"
+      runtimePersistent:
+        type: postgres
+        postgres:
+          hostname: "172.19.208.1"
+          port: "5432"
+          username: "postgres"
+          name: "thunderid_runtime"
+          sslmode: "disable"
       secretRef: thunderid-db
 
-    port: 8091
-    tlsMinVersion: "1.3"
-    jwtPreferredKeyId: "default-key"
+    port: 8090
+    tls:
+      minVersion: "1.3"
+    jwt:
+      preferredKeyId: "default-key"
 
-    passkeyExtraAllowedOrigins:
-      - "https://extra-frontend.example.com"
+    passkey:
+      extraAllowedOrigins:
+        - "https://extra-frontend.example.com"
 
     email:
-      smtpHost: "smtp.example.com"
-      smtpPort: 587
-      fromAddress: "noreply@example.com"
-      enableStartTLS: true
-      enableAuthentication: false
-      # username: "smtp-user"
+      smtp:
+        host: "smtp.example.com"
+        port: 587
+        fromAddress: "noreply@example.com"
+        enableStartTLS: true
+        enableAuthentication: false
+        # username: "smtp-user"
       # secretRef: my-smtp-secret

@@ -63,7 +63,7 @@ Application CRD       ──writes──►  <instance>-applications ConfigMap
 ```
 
 **Key facts:**
-- Every `ThunderIDInstance` must pick a persistent backend: either `spec.dataVolumeSize` (PVC-backed SQLite — `repository/database` persists, `setup.sh` runs once on the pod's first-ever start and is skipped on every restart after that) or `spec.config.database.type: postgresql` with `spec.config.database.secretRef` (external PostgreSQL — see [Database](#database) below; every restart re-syncs `resources.yaml` into the database via `start.sh --bootstrap-and-serve`, and `spec.dataVolumeSize` is ignored since there's no local state to persist). Setting neither is rejected — ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
+- Every `ThunderIDInstance` must pick a persistent backend: either `spec.dataVolumeSize` (PVC-backed SQLite — `repository/database` persists, `setup.sh` runs once on the pod's first-ever start and is skipped on every restart after that) or every `spec.config.database` scope set to `type: postgres` with `spec.config.database.secretRef` (external PostgreSQL — see [Database](#database) below; every restart re-syncs `resources.yaml` into the database via `start.sh --bootstrap-and-serve`, and `spec.dataVolumeSize` is ignored since there's no local state to persist). Setting neither is rejected — ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
 - The ThunderID image bakes in its own default organization unit, user types, and flows (`default` OU, `Person` user type, `console-app-flow`, `cloud-login-flow`, etc.) — `spec.resourcesConfigMap` is **optional**, only needed if you want to seed additional base resources beyond those defaults.
 - All twelve resource kinds are loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each CRD's controller reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified, the same way Application does.
 - `spec.domain` is **optional** and unset by default — every local/dev workflow in this repo reaches ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead, which is what the operator assumes when no domain is set. Setting `spec.domain` creates a real `Ingress` for external access (a real deployment with real DNS), but the `public_url` value it feeds into ThunderID's own config isn't actually a field ThunderID's schema recognizes — confirmed against the image's own `config/default.json`, which has no `public_url` anywhere. ThunderID silently ignores it either way, so this only matters for the `Ingress` routing itself, not anything ThunderID does internally.
@@ -151,7 +151,7 @@ or install the [Helm chart](charts/thunderid-operator) instead — see its own R
 
 ### 4. Register an application
 
-Create an `Application` resource. The `instanceRef` must match the name of your `ThunderIDInstance`. `ouHandle`/`authFlowHandle` resolve against the image's baked-in defaults, so no ID lookup is needed (to reference a theme, `themeId` is the confirmed-working field — see [Application](#application) below):
+Create an `Application` resource. The `thunderid.io/instance` label must match the name of your `ThunderIDInstance`. `ouHandle`/`authFlowHandle` resolve against the image's baked-in defaults, so no ID lookup is needed (to reference a theme, `themeId` is the confirmed-working field — see [Application](#application) below):
 
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
@@ -159,8 +159,9 @@ kind: Application
 metadata:
   name: my-console-app
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   name: My Console App
   ouHandle: default
   authFlowHandle: console-app-flow
@@ -238,19 +239,18 @@ The top-level resource. Creates and manages a `Deployment`, `Service`, and (opti
 | `spec.image` | Yes | ThunderID container image |
 | `spec.domain` | No | Externally-reachable hostname. When set, creates an `Ingress` (`Host: spec.domain`, TLS via `spec.tlsSecret` if set) so ThunderID is reachable without `kubectl port-forward` — e.g. a real deployment behind real DNS. When unset (the default — every local/dev workflow in this repo uses this), no `Ingress` is created; reach ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead |
 | `spec.resourcesConfigMap` | No | ConfigMap containing *additional* base resources YAML, seeded alongside the image's own built-in defaults (default OU, user types, flows). Not required for normal use |
-| `spec.config.database.type` | See note | `sqlite` (default) or `postgresql`. See [Database](#database) below. One of `spec.config.database.type: postgresql` or `spec.dataVolumeSize` **must** be set — a `ThunderIDInstance` with neither is rejected |
-| `spec.config.database.host` / `port` / `username` / `sslmode` / `configDatabase` / `runtimeDatabase` | See note | PostgreSQL connection details, inlined directly into `deployment.yaml`. `host` and `username` required when `spec.config.database.type` is `postgresql`; the rest default (`port: "5432"`, `sslmode: require`, `configDatabase: thunderid_config`, `runtimeDatabase: thunderid_runtime`). See [Database](#database) below |
-| `spec.config.database.secretRef` | No | Required when `spec.config.database.type` is `postgresql`: name of the Secret holding the `password` key |
+| `spec.config.database` | See note | Mirrors ThunderID's own `database:` section 1:1 — four independent scopes (`config`, `runtimeTransient`, `entity`, `runtimePersistent`), each with `type: sqlite` (default) or `type: postgres` and a matching `sqlite:`/`postgres:` block. Unset means the image's built-in sqlite defaults for all four. See [Database](#database) below. Unless every scope is `type: postgres`, `spec.dataVolumeSize` **must** be set — a `ThunderIDInstance` with neither is rejected |
+| `spec.config.database.secretRef` | No | Required when any scope's `type` is `postgres`: name of the Secret holding the `password` key, shared across every postgres scope |
 | `spec.tlsSecret` | No | Kubernetes Secret name for TLS |
-| `spec.dataVolumeSize` | See note | e.g. `"1Gi"`. Provisions a ReadWriteOnce PVC for `repository/database` (the SQLite files) and makes `setup.sh` run only once — on every restart after the first, the entrypoint finds a marker file on that volume and skips straight to `start.sh`. Only meaningful with `replicas: 1` (the Deployment switches to a `Recreate` strategy since the PVC can't be mounted by two pods at once). Ignored when `spec.config.database.type` is `postgresql` |
+| `spec.dataVolumeSize` | See note | e.g. `"1Gi"`. Provisions a ReadWriteOnce PVC for `repository/database` (the SQLite files) and makes `setup.sh` run only once — on every restart after the first, the entrypoint finds a marker file on that volume and skips straight to `start.sh`. Only meaningful with `replicas: 1` (the Deployment switches to a `Recreate` strategy since the PVC can't be mounted by two pods at once). Unnecessary only when every `spec.config.database` scope is `type: postgres` |
 | `spec.replicas` | No | Replica count (set to 0 when using HPA, which manages replicas) |
 | `spec.resources` | No | CPU/memory requests and limits |
 | `spec.autoScaling` | No | HPA settings (`minReplicas`, `maxReplicas`, `targetCPUUtilizationPercentage`, `targetMemoryUtilizationPercentage`) |
-| `spec.config.port` | No | Port ThunderID listens on (default `8090`). Drives the container port, all three probes, the Service, and the Ingress backend — set once here |
-| `spec.config.tlsMinVersion` | No | Minimum TLS version ThunderID's own HTTPS listener accepts (default `"1.3"`, also accepts `"1.2"`). Unrelated to `spec.tlsSecret`, which is the Ingress's TLS termination |
-| `spec.config.jwtPreferredKeyId` | No | Which built-in signing key (`default-key` (RSA) or `ecdsa-key` (ECDSA)) ThunderID signs new tokens with. Default `default-key`; both remain valid for verifying already-issued tokens either way |
-| `spec.config.passkeyExtraAllowedOrigins` | No | Extra WebAuthn/passkey origins beyond the instance's own public URL — e.g. a separate frontend origin that also needs to register/verify passkeys |
-| `spec.config.email` | No | Outbound SMTP config (`smtpHost`, `smtpPort`, `fromAddress` required; `username`/`secretRef`/`enableAuthentication`/`enableStartTLS` optional). Unset means no email section at all — same as the image's own default. `secretRef` names a Secret holding the SMTP password under key `password`, required when `enableAuthentication: true` |
+| `spec.config.port` | No | Port ThunderID listens on (default `8090`). Drives the container port, all three probes, the Service, and the Ingress backend — set once here. Dual-purpose (Kubernetes wiring too), so it stays flat rather than mirrored under `server:` like the rest of `spec.config` |
+| `spec.config.tls.minVersion` | No | Minimum TLS version ThunderID's own HTTPS listener accepts (default `"1.3"`, also accepts `"1.2"`). Unrelated to `spec.tlsSecret`, which is the Ingress's TLS termination |
+| `spec.config.jwt.preferredKeyId` | No | Which built-in signing key (`default-key` (RSA) or `ecdsa-key` (ECDSA)) ThunderID signs new tokens with. Default `default-key`; both remain valid for verifying already-issued tokens either way |
+| `spec.config.passkey.extraAllowedOrigins` | No | Extra WebAuthn/passkey origins beyond the instance's own public URL — e.g. a separate frontend origin that also needs to register/verify passkeys |
+| `spec.config.email` | No | Outbound SMTP config, mirroring ThunderID's own `email:` section — `spec.config.email.smtp.host` / `.port` / `.fromAddress` required, `.username` / `.enableAuthentication` / `.enableStartTLS` optional. Unset means no email section at all — same as the image's own default. `spec.config.email.secretRef` names a Secret holding the SMTP password under key `password`, required when `smtp.enableAuthentication: true` |
 
 #### Public URL / Ingress
 
@@ -304,7 +304,7 @@ spec:
 
 #### Database
 
-By default, `spec.config.database.type` is `sqlite` and no further configuration is needed. To use PostgreSQL instead, set `spec.config.database.type: postgresql` and its connection fields directly on the `ThunderIDInstance`, plus a Secret holding just the password:
+`spec.config.database` mirrors ThunderID's own `database:` section 1:1 — four independent scopes (`config`, `runtimeTransient`, `entity`, `runtimePersistent`), each with its own `type`/`sqlite`/`postgres` block, rather than one connection reused everywhere. By default `spec.config.database` is unset and every scope uses the image's built-in sqlite files — no configuration needed. To use PostgreSQL instead, set every scope's `type: postgres` with its own connection block — ThunderID's own schema has no shortcut for "same connection everywhere," so neither does this, redundancy included — plus a Secret holding just the password:
 
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
@@ -315,14 +315,38 @@ spec:
   image: ghcr.io/thunder-id/thunderid:latest
   config:
     database:
-      type: postgresql
-      host: "postgres.example.com"
-      port: "5432"                          # optional, defaults to 5432
-      username: "thunderid"
-      sslmode: "require"                    # optional; require (default), verify-full, verify-ca, or disable
-      configDatabase: "thunderid_config"    # optional, default shown
-      runtimeDatabase: "thunderid_runtime"  # optional, default shown — shared by both the transient and
-                                             # persistent runtime stores (they differ by table set, not database)
+      config:
+        type: postgres
+        postgres:
+          hostname: "postgres.example.com"
+          port: "5432"               # optional, defaults to 5432
+          username: "thunderid"
+          name: "thunderid_config"
+          sslmode: "require"         # optional; require (default), verify-full, verify-ca, or disable
+      entity:
+        type: postgres
+        postgres:
+          hostname: "postgres.example.com"
+          port: "5432"
+          username: "thunderid"
+          name: "thunderid_config"   # same database as config: — see Manual setup below
+          sslmode: "require"
+      runtimeTransient:
+        type: postgres
+        postgres:
+          hostname: "postgres.example.com"
+          port: "5432"
+          username: "thunderid"
+          name: "thunderid_runtime"
+          sslmode: "require"
+      runtimePersistent:
+        type: postgres
+        postgres:
+          hostname: "postgres.example.com"
+          port: "5432"
+          username: "thunderid"
+          name: "thunderid_runtime"  # same database as runtimeTransient: — see Manual setup below
+          sslmode: "require"
       secretRef: thunderid-db
 ---
 apiVersion: v1
@@ -334,16 +358,17 @@ stringData:
   password: "secret"
 ```
 
-`spec.config.database.host/port/username/sslmode/configDatabase/runtimeDatabase` are inlined directly into the generated `deployment.yaml`; only `password` stays in the Secret, mounted into the pod as a file and referenced with a `file://` URI, the same way ThunderID resolves `direct_auth_secret` and `crypto.key`.
+Each scope's fields are inlined directly into the generated `deployment.yaml` almost verbatim; only `password` stays in the Secret, mounted into the pod as a file and referenced with a `file://` URI, the same way ThunderID resolves `direct_auth_secret` and `crypto.key`. A scope's `sqlite`/`postgres` sub-fields left unset fall back to the same defaults used when `spec.config.database` is omitted entirely.
 
 #### Manual database & schema setup (PostgreSQL)
 
 Unlike SQLite (whose schema is baked into the image's `.db` files at build time), the operator does **not** create databases or run migrations for PostgreSQL — it only tells the pod where to connect. You provision the databases and load the schema yourself, once, before pointing an instance at them. ThunderID's own official Helm chart takes the same approach (its `setup-job.yaml` only imports declarative resources into existing tables — it doesn't create schema either, and its docs point you at the Bitnami PostgreSQL chart for actually standing up postgres).
 
-ThunderID's 4 config sections map to only **2 physical databases** — `config` and `entity` share one (since `entity`'s lookups depend on `ENTITY_TYPES`, which only exists in the config schema), `runtime_transient` and `runtime_persistent` share the other:
+ThunderID's 4 scopes map to only **2 physical databases** in practice — `config` and `entity` share one (since `entity`'s lookups depend on `ENTITY_TYPES`, which only exists in the config schema), `runtimeTransient` and `runtimePersistent` share the other. Point their `name` fields at the same two database names, as in the example above:
 
 ```bash
-# 1. Create the two databases (names must match configDatabase/runtimeDatabase above)
+# 1. Create the two databases (names must match config.name/entity.name and
+#    runtimeTransient.name/runtimePersistent.name above)
 createdb -U postgres thunderid_config
 createdb -U postgres thunderid_runtime
 
@@ -366,7 +391,7 @@ Registers an OAuth2/OIDC application in ThunderID. The operator writes all appli
 
 | Field | Description |
 |-------|-------------|
-| `spec.instanceRef` | Name of the `ThunderIDInstance` to register with |
+| `metadata.labels['thunderid.io/instance']` | Name of the `ThunderIDInstance` to register with |
 | `spec.name` | Display name of the application |
 | `spec.ouId` / `spec.ouHandle` | Organizational Unit — use IDs from the live `thunderid-resources` ConfigMap |
 | `spec.authFlowHandle` / `spec.authFlowId` / `spec.authFlowRef` | Auth flow reference |
@@ -395,8 +420,9 @@ kind: Flow
 metadata:
   name: my-login-flow
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   handle: my-login-flow
   name: My Login Flow
   flowType: AUTHENTICATION   # or REGISTRATION
@@ -422,8 +448,9 @@ kind: Theme
 metadata:
   name: my-theme
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   displayName: My Theme
   description: Dark purple theme
   theme: '{"defaultColorScheme":"dark","colorSchemes":{"dark":{"palette":{"primary":{"main":"#5567d5"}}}}}'
@@ -441,8 +468,9 @@ kind: OrganizationUnit
 metadata:
   name: default-ou
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   handle: default
   name: Default
   description: Default organization unit
@@ -467,8 +495,9 @@ kind: ResourceServer
 metadata:
   name: system
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   name: System
   description: System resource server
   identifier: https://localhost:8090/mcp
@@ -509,8 +538,9 @@ kind: Role
 metadata:
   name: administrator
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   name: Administrator
   description: System administrator role with full permissions
   ouHandle: default   # or ouId for a literal ID
@@ -542,8 +572,9 @@ kind: UserType
 metadata:
   name: person
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   category: user
   name: Person
   ouHandle: default
@@ -576,8 +607,9 @@ kind: User
 metadata:
   name: admin
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   type: Person
   ouHandle: default
   attributes:
@@ -648,8 +680,9 @@ kind: Group
 metadata:
   name: administrators
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   name: Administrators
   description: System administrators group
   ouHandle: default
@@ -772,9 +805,9 @@ kubectl delete deployment <instance-name>
 
 ### Pod restarts are slow (SQLite mode)
 
-**Cause:** `setup.sh` runs on every pod restart to reinitialise the SQLite database. This can only happen if `spec.dataVolumeSize` is unset — the operator rejects `ThunderIDInstance` specs with neither `spec.dataVolumeSize` nor `spec.config.database.type: postgresql` set, precisely to avoid this.
+**Cause:** `setup.sh` runs on every pod restart to reinitialise the SQLite database. This can only happen if `spec.dataVolumeSize` is unset — the operator rejects `ThunderIDInstance` specs with neither `spec.dataVolumeSize` nor every `spec.config.database` scope set to `type: postgres`, precisely to avoid this.
 
-**Fix:** Set `spec.dataVolumeSize` (e.g. `"1Gi"`) on your `ThunderIDInstance`. This provisions a PVC for `repository/database` and gates `setup.sh` behind a marker file on it, so it only runs on the pod's first-ever start — every restart after that skips straight to `start.sh`. Only use this with `replicas: 1`. If you don't need SQLite at all, `spec.config.database.type: postgresql` avoids `setup.sh` entirely — see [Database](#database).
+**Fix:** Set `spec.dataVolumeSize` (e.g. `"1Gi"`) on your `ThunderIDInstance`. This provisions a PVC for `repository/database` and gates `setup.sh` behind a marker file on it, so it only runs on the pod's first-ever start — every restart after that skips straight to `start.sh`. Only use this with `replicas: 1`. If you don't need SQLite at all, setting every `spec.config.database` scope's `type: postgres` avoids `setup.sh` entirely — see [Database](#database).
 
 ---
 

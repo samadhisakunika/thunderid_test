@@ -59,12 +59,12 @@ func (r *GroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: group.Namespace, Name: group.Spec.InstanceRef}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: group.Namespace, Name: group.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", group.Spec.InstanceRef)
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", group.Labels[appsv1alpha1.InstanceRefLabel])
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", group.Spec.InstanceRef)
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", group.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
 	}
 
@@ -246,7 +246,7 @@ func (r *GroupReconciler) rebuildGroupsConfigMap(ctx context.Context, instance *
 
 	var buf bytes.Buffer
 	for _, g := range groupList.Items {
-		if g.Spec.InstanceRef != instance.Name {
+		if g.Labels[appsv1alpha1.InstanceRefLabel] != instance.Name {
 			continue
 		}
 		if excludeUID != "" && string(g.UID) == excludeUID {
@@ -373,7 +373,7 @@ func (r *GroupReconciler) groupsForDeployment(ctx context.Context, obj client.Ob
 	}
 	var reqs []reconcile.Request
 	for _, group := range groupList.Items {
-		if group.Spec.InstanceRef != dep.GetName() {
+		if group.Labels[appsv1alpha1.InstanceRefLabel] != dep.GetName() {
 			continue
 		}
 		switch group.Status.Phase {
@@ -399,7 +399,7 @@ func (r *GroupReconciler) groupsForInstance(ctx context.Context, obj client.Obje
 	}
 	var reqs []reconcile.Request
 	for _, group := range groupList.Items {
-		if group.Spec.InstanceRef == obj.GetName() {
+		if group.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: group.Name, Namespace: group.Namespace},
 			})

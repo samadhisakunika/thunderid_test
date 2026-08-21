@@ -15,7 +15,7 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.instanceRef
+    - jsonPath: .metadata.labels['thunderid\.io/instance']
       name: Instance
       type: string
     - jsonPath: .spec.type
@@ -59,8 +59,6 @@ spec:
                 type: object
               credentialsSecretRef:
                 type: string
-              instanceRef:
-                type: string
               ouHandle:
                 type: string
               ouId:
@@ -68,7 +66,6 @@ spec:
               type:
                 type: string
             required:
-            - instanceRef
             - type
             type: object
           status:

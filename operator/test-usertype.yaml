@@ -3,8 +3,9 @@ kind: UserType
 metadata:
   name: test-usertype
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   category: user
   name: Test User Type
   ouHandle: test-ou

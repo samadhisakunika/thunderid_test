@@ -61,12 +61,12 @@ func (r *FlowReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: flow.Namespace, Name: flow.Spec.InstanceRef}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: flow.Namespace, Name: flow.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", flow.Spec.InstanceRef)
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", flow.Labels[appsv1alpha1.InstanceRefLabel])
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", flow.Spec.InstanceRef)
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", flow.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
 	}
 
@@ -263,7 +263,7 @@ func (r *FlowReconciler) rebuildFlowsConfigMap(ctx context.Context, instance *ap
 
 	var buf bytes.Buffer
 	for _, f := range flowList.Items {
-		if f.Spec.InstanceRef != instance.Name {
+		if f.Labels[appsv1alpha1.InstanceRefLabel] != instance.Name {
 			continue
 		}
 		if excludeUID != "" && string(f.UID) == excludeUID {
@@ -403,7 +403,7 @@ func (r *FlowReconciler) flowsForDeployment(ctx context.Context, obj client.Obje
 	}
 	var reqs []reconcile.Request
 	for _, flow := range flowList.Items {
-		if flow.Spec.InstanceRef != dep.GetName() {
+		if flow.Labels[appsv1alpha1.InstanceRefLabel] != dep.GetName() {
 			continue
 		}
 		switch flow.Status.Phase {
@@ -429,7 +429,7 @@ func (r *FlowReconciler) flowsForInstance(ctx context.Context, obj client.Object
 	}
 	var reqs []reconcile.Request
 	for _, flow := range flowList.Items {
-		if flow.Spec.InstanceRef == obj.GetName() {
+		if flow.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: flow.Name, Namespace: flow.Namespace},
 			})

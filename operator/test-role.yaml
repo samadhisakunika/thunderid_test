@@ -3,8 +3,9 @@ kind: Role
 metadata:
   name: test-role
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   name: Test Role
   description: A simple test role for verifying the Role controller.
   ouHandle: test-ou  # matches spec.handle on the "test-ou" OrganizationUnit CR

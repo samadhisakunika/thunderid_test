@@ -7,9 +7,6 @@ import (
 
 type UserTypeSpec struct {
 	// +kubebuilder:validation:Required
-	InstanceRef string `json:"instanceRef"`
-
-	// +kubebuilder:validation:Required
 	Category string `json:"category"`
 
 	// +kubebuilder:validation:Required
@@ -52,7 +49,7 @@ type UserTypeStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".spec.instanceRef"
+// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
 // +kubebuilder:printcolumn:name="Category",type="string",JSONPath=".spec.category"
 // +kubebuilder:printcolumn:name="Name",type="string",JSONPath=".spec.name"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"

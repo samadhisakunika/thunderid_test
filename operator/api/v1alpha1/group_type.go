@@ -15,9 +15,6 @@ type GroupMemberSpec struct {
 
 type GroupSpec struct {
 	// +kubebuilder:validation:Required
-	InstanceRef string `json:"instanceRef"`
-
-	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 
 	// +optional
@@ -54,7 +51,7 @@ type GroupStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".spec.instanceRef"
+// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
 // +kubebuilder:printcolumn:name="Name",type="string",JSONPath=".spec.name"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"

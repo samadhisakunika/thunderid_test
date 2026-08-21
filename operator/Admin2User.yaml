@@ -3,8 +3,9 @@ kind: User
 metadata:
   name: admin2
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   type: Person
   ouHandle: test-ou
   attributes:

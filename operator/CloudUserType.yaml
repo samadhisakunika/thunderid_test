@@ -3,8 +3,9 @@ kind: UserType
 metadata:
   name: cloud-type
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   category: user
   name: Cloud User
   ouId: 81fbf6e2-9890-4108-bbae-ef61e6bedc3e

@@ -3,8 +3,9 @@ kind: Group
 metadata:
   name: test-group
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   name: Test Administrators 1
   description: A simple test group for verifying the Group controller.
   ouHandle: test-ou

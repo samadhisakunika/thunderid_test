@@ -3,8 +3,9 @@ kind: OrganizationUnit
 metadata:
   name: test-ou
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   handle: test-ou
   name: Test Organization Unit 2
   description: A simple test OU for verifying the OrganizationUnit controller.

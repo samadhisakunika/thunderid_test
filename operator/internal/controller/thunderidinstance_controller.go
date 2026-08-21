@@ -98,7 +98,7 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// a quick demo but not something to run for real. Require the operator to persist state one way
 	// or the other instead of silently defaulting to it.
 	if instance.Spec.DataVolumeSize == "" && !usingPostgres(instance) {
-		err := fmt.Errorf("spec.dataVolumeSize or spec.config.database.type=postgresql must be set")
+		err := fmt.Errorf("spec.dataVolumeSize must be set, or every spec.config.database scope's type set to postgres")
 		log.Error(err, "invalid ThunderIDInstance spec")
 		r.Recorder.Event(instance, corev1.EventTypeWarning, "InvalidSpec", err.Error())
 		return ctrl.Result{}, err
@@ -133,8 +133,8 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	configHash := func() string {
 		h := sha256.New()
 		h.Write([]byte(publicURL + strconv.Itoa(int(port)) + instance.Spec.ResourcesConfigMap + databaseBlock + emailBlock +
-			instance.Spec.Config.TLSMinVersion + instance.Spec.Config.JWTPreferredKeyID +
-			strings.Join(instance.Spec.Config.PasskeyExtraAllowedOrigins, ",") +
+			instance.Spec.Config.TLS.MinVersion + instance.Spec.Config.JWT.PreferredKeyID +
+			strings.Join(instance.Spec.Config.Passkey.ExtraAllowedOrigins, ",") +
 			instance.Annotations["thunderid.io/serverconfigs-version"] +
 			instance.Annotations["thunderid.io/organizationunits-version"] +
 			instance.Annotations["thunderid.io/resourceservers-version"] +
@@ -288,15 +288,17 @@ func (r *ThunderIDInstanceReconciler) mapServingPodToInstance(ctx context.Contex
 
 // Markers substituted into deploymentConfigTemplate by reconcileConfigMap. serverPortMarker/
 // publicURLMarker/tlsMinVersionMarker/jwtPreferredKeyIDMarker are plain strings.ReplaceAll
-// targets; the other two are whole-line markers (the full line, comment included) swapped out
-// via strings.Replace, the same convention databaseBlockMarker already established.
+// targets; passkeyExtraOriginsMarkerLine/emailBlockMarkerLine are whole-line markers (the full
+// line, comment included) swapped out via strings.Replace. The database: section has no marker
+// at all — deployment-config.yaml carries the real sqlite content directly; see
+// staticSQLiteDatabaseSection in database_config.go for how postgres overrides it.
 const (
 	serverPortMarker        = "__SERVER_PORT__"
 	publicURLMarker         = "__PUBLIC_URL__"
 	tlsMinVersionMarker     = "__TLS_MIN_VERSION__"
 	jwtPreferredKeyIDMarker = "__JWT_PREFERRED_KEY_ID__"
 
-	passkeyExtraOriginsMarkerLine = `    - "__PASSKEY_EXTRA_ORIGINS__" # replaced whole-line by reconcileConfigMap with 0+ additional "- \"origin\"" lines, or removed if spec.config.passkeyExtraAllowedOrigins is unset`
+	passkeyExtraOriginsMarkerLine = `    - "__PASSKEY_EXTRA_ORIGINS__" # replaced whole-line by reconcileConfigMap with 0+ additional "- \"origin\"" lines, or removed if spec.config.passkey.extraAllowedOrigins is unset`
 )
 
 // reconcileConfigMap returns resourcesContent (the full resources.yaml — base seed plus every
@@ -322,16 +324,16 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	if port == 0 {
 		port = 8090
 	}
-	tlsMinVersion := instance.Spec.Config.TLSMinVersion
+	tlsMinVersion := instance.Spec.Config.TLS.MinVersion
 	if tlsMinVersion == "" {
 		tlsMinVersion = "1.3"
 	}
-	jwtPreferredKeyID := instance.Spec.Config.JWTPreferredKeyID
+	jwtPreferredKeyID := instance.Spec.Config.JWT.PreferredKeyID
 	if jwtPreferredKeyID == "" {
 		jwtPreferredKeyID = "default-key"
 	}
-	passkeyExtraOriginLines := make([]string, len(instance.Spec.Config.PasskeyExtraAllowedOrigins))
-	for i, o := range instance.Spec.Config.PasskeyExtraAllowedOrigins {
+	passkeyExtraOriginLines := make([]string, len(instance.Spec.Config.Passkey.ExtraAllowedOrigins))
+	for i, o := range instance.Spec.Config.Passkey.ExtraAllowedOrigins {
 		passkeyExtraOriginLines[i] = fmt.Sprintf("    - %q", o)
 	}
 
@@ -343,7 +345,11 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	configContent = strings.Replace(configContent, passkeyExtraOriginsMarkerLine,
 		strings.Join(passkeyExtraOriginLines, "\n"), 1)
 	configContent = strings.Replace(configContent, emailBlockMarkerLine, emailBlock, 1)
-	configContent = strings.Replace(configContent, databaseBlockMarker, databaseBlock, 1)
+	if databaseBlock != "" {
+		// postgres: swap out the template's static sqlite section for the dynamic one. sqlite
+		// (databaseBlock == "") needs no substitution — the template already has the right content.
+		configContent = strings.Replace(configContent, staticSQLiteDatabaseSection, databaseBlock, 1)
+	}
 
 	// Load base resources from external ConfigMap.
 	if instance.Spec.ResourcesConfigMap != "" {
@@ -587,11 +593,11 @@ var bootstrapPermanentErrorPatterns = []struct {
 	pattern *regexp.Regexp
 	reason  string
 }{
-	{regexp.MustCompile(`password authentication failed`), "wrong spec.config.database.username or the Secret's password"},
-	{regexp.MustCompile(`no such host`), "spec.config.database.host does not resolve"},
-	{regexp.MustCompile(`database "[^"]*" does not exist`), "spec.config.database.configDatabase/runtimeDatabase does not exist on the server"},
-	{regexp.MustCompile(`role "[^"]*" does not exist`), "spec.config.database.username does not exist on the server"},
-	{regexp.MustCompile(`connection refused`), "spec.config.database.host/port is unreachable — nothing is listening there"},
+	{regexp.MustCompile(`password authentication failed`), "wrong spec.config.database.<scope>.postgres.username or the Secret's password"},
+	{regexp.MustCompile(`no such host`), "spec.config.database.<scope>.postgres.hostname does not resolve"},
+	{regexp.MustCompile(`database "[^"]*" does not exist`), "spec.config.database.<scope>.postgres.name does not exist on the server"},
+	{regexp.MustCompile(`role "[^"]*" does not exist`), "spec.config.database.<scope>.postgres.username does not exist on the server"},
+	{regexp.MustCompile(`connection refused`), "spec.config.database.<scope>.postgres.hostname/port is unreachable — nothing is listening there"},
 }
 
 // bootstrapPermanentFailureReason fetches the failed bootstrap pod's logs and checks them
@@ -670,7 +676,7 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 		SubPath:   "password",
 		ReadOnly:  true,
 	})
-	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.EnableAuthentication {
+	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "email",
 			MountPath: "/opt/thunderid/" + emailPasswordMountPath,
@@ -706,7 +712,7 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 			},
 		},
 	}
-	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.EnableAuthentication {
+	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumes = append(volumes, corev1.Volume{
 			Name: "email",
 			VolumeSource: corev1.VolumeSource{
@@ -957,7 +963,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			ReadOnly:  true,
 		})
 	}
-	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.EnableAuthentication {
+	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "email",
 			MountPath: "/opt/thunderid/" + emailPasswordMountPath,
@@ -1008,7 +1014,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			},
 		})
 	}
-	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.EnableAuthentication {
+	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumes = append(volumes, corev1.Volume{
 			Name: "email",
 			VolumeSource: corev1.VolumeSource{

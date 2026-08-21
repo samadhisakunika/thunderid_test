@@ -14,7 +14,6 @@ type LoginConsentSpec struct {
 }
 
 type ApplicationSpec struct {
-	InstanceRef               string            `json:"instanceRef"`
 	Name                      string            `json:"name"`
 	Description               string            `json:"description,omitempty"`
 	Template                  string            `json:"template,omitempty"`

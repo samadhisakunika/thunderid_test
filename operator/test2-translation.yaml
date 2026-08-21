@@ -3,8 +3,9 @@ kind: Translation
 metadata:
   name: thunderid-es
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   language: es
   translations:
     signin:

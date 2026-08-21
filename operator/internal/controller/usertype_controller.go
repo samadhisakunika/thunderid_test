@@ -59,12 +59,12 @@ func (r *UserTypeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: ut.Namespace, Name: ut.Spec.InstanceRef}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: ut.Namespace, Name: ut.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", ut.Spec.InstanceRef)
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", ut.Labels[appsv1alpha1.InstanceRefLabel])
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", ut.Spec.InstanceRef)
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", ut.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
 	}
 
@@ -246,7 +246,7 @@ func (r *UserTypeReconciler) rebuildUserTypesConfigMap(ctx context.Context, inst
 
 	var buf bytes.Buffer
 	for _, u := range utList.Items {
-		if u.Spec.InstanceRef != instance.Name {
+		if u.Labels[appsv1alpha1.InstanceRefLabel] != instance.Name {
 			continue
 		}
 		if excludeUID != "" && string(u.UID) == excludeUID {
@@ -384,7 +384,7 @@ func (r *UserTypeReconciler) userTypesForDeployment(ctx context.Context, obj cli
 	}
 	var reqs []reconcile.Request
 	for _, ut := range utList.Items {
-		if ut.Spec.InstanceRef != dep.GetName() {
+		if ut.Labels[appsv1alpha1.InstanceRefLabel] != dep.GetName() {
 			continue
 		}
 		switch ut.Status.Phase {
@@ -410,7 +410,7 @@ func (r *UserTypeReconciler) userTypesForInstance(ctx context.Context, obj clien
 	}
 	var reqs []reconcile.Request
 	for _, ut := range utList.Items {
-		if ut.Spec.InstanceRef == obj.GetName() {
+		if ut.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: ut.Name, Namespace: ut.Namespace},
 			})

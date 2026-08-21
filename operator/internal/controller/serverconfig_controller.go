@@ -58,12 +58,12 @@ func (r *ServerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: sc.Namespace, Name: sc.Spec.InstanceRef}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: sc.Namespace, Name: sc.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", sc.Spec.InstanceRef)
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", sc.Labels[appsv1alpha1.InstanceRefLabel])
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", sc.Spec.InstanceRef)
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", sc.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
 	}
 
@@ -241,7 +241,7 @@ func (r *ServerConfigReconciler) rebuildServerConfigsConfigMap(ctx context.Conte
 
 	var buf bytes.Buffer
 	for _, s := range list.Items {
-		if s.Spec.InstanceRef != instance.Name {
+		if s.Labels[appsv1alpha1.InstanceRefLabel] != instance.Name {
 			continue
 		}
 		if excludeUID != "" && string(s.UID) == excludeUID {
@@ -368,7 +368,7 @@ func (r *ServerConfigReconciler) serverConfigsForDeployment(ctx context.Context,
 	}
 	var reqs []reconcile.Request
 	for _, sc := range list.Items {
-		if sc.Spec.InstanceRef != dep.GetName() {
+		if sc.Labels[appsv1alpha1.InstanceRefLabel] != dep.GetName() {
 			continue
 		}
 		switch sc.Status.Phase {
@@ -394,7 +394,7 @@ func (r *ServerConfigReconciler) serverConfigsForInstance(ctx context.Context, o
 	}
 	var reqs []reconcile.Request
 	for _, sc := range list.Items {
-		if sc.Spec.InstanceRef == obj.GetName() {
+		if sc.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: sc.Name, Namespace: sc.Namespace},
 			})

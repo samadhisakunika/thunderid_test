@@ -61,12 +61,12 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: app.Spec.InstanceRef}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: app.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", app.Spec.InstanceRef)
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", app.Labels[appsv1alpha1.InstanceRefLabel])
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", app.Spec.InstanceRef)
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", app.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
 	}
 
@@ -257,7 +257,7 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 
 	var buf bytes.Buffer
 	for _, a := range appList.Items {
-		if a.Spec.InstanceRef != instance.Name {
+		if a.Labels[appsv1alpha1.InstanceRefLabel] != instance.Name {
 			continue
 		}
 		if excludeUID != "" && string(a.UID) == excludeUID {
@@ -464,7 +464,7 @@ func (r *ApplicationReconciler) appsForDeployment(ctx context.Context, obj clien
 	}
 	var reqs []reconcile.Request
 	for _, app := range appList.Items {
-		if app.Spec.InstanceRef != dep.GetName() {
+		if app.Labels[appsv1alpha1.InstanceRefLabel] != dep.GetName() {
 			continue
 		}
 		switch app.Status.Phase {
@@ -490,7 +490,7 @@ func (r *ApplicationReconciler) appsForInstance(ctx context.Context, obj client.
 	}
 	var reqs []reconcile.Request
 	for _, app := range appList.Items {
-		if app.Spec.InstanceRef == obj.GetName() {
+		if app.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: app.Name, Namespace: app.Namespace},
 			})

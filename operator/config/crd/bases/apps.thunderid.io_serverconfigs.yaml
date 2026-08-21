@@ -15,7 +15,7 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.instanceRef
+    - jsonPath: .metadata.labels['thunderid\.io/instance']
       name: Instance
       type: string
     - jsonPath: .spec.name
@@ -79,8 +79,6 @@ spec:
                 required:
                 - resourceServerId
                 type: object
-              instanceRef:
-                type: string
               name:
                 description: Which server configuration section this CR manages.
                 enum:
@@ -103,7 +101,6 @@ spec:
                     type: integer
                 type: object
             required:
-            - instanceRef
             - name
             type: object
           status:

@@ -106,7 +106,7 @@ func runAll(ctx context.Context, c client.Client, ns string) {
 	} else {
 		for _, obj := range apps.Items {
 			obj.Namespace = ns
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
+			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
 			errs = append(errs, checkApplication(ctx, c, obj, base)...)
 		}
 	}
@@ -117,7 +117,7 @@ func runAll(ctx context.Context, c client.Client, ns string) {
 		fmt.Fprintf(os.Stderr, "failed to list Flows: %v\n", err)
 	} else {
 		for _, obj := range flows.Items {
-			errs = append(errs, checkInstanceRef(ctx, c, "Flow", obj.Name, ns, obj.Spec.InstanceRef)...)
+			errs = append(errs, checkInstanceRef(ctx, c, "Flow", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 		}
 	}
 
@@ -127,7 +127,7 @@ func runAll(ctx context.Context, c client.Client, ns string) {
 		fmt.Fprintf(os.Stderr, "failed to list Themes: %v\n", err)
 	} else {
 		for _, obj := range themes.Items {
-			errs = append(errs, checkInstanceRef(ctx, c, "Theme", obj.Name, ns, obj.Spec.InstanceRef)...)
+			errs = append(errs, checkInstanceRef(ctx, c, "Theme", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 		}
 	}
 
@@ -137,8 +137,8 @@ func runAll(ctx context.Context, c client.Client, ns string) {
 		fmt.Fprintf(os.Stderr, "failed to list OrganizationUnits: %v\n", err)
 	} else {
 		for _, obj := range ous.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-			errs = append(errs, checkInstanceRef(ctx, c, "OrganizationUnit", obj.Name, ns, obj.Spec.InstanceRef)...)
+			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+			errs = append(errs, checkInstanceRef(ctx, c, "OrganizationUnit", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 			if obj.Spec.Parent != "" {
 				errs = append(errs, checkOUHandle(ctx, c, "OrganizationUnit", obj.Name, ns, "parentHandle", obj.Spec.Parent, base)...)
 			}
@@ -151,8 +151,8 @@ func runAll(ctx context.Context, c client.Client, ns string) {
 		fmt.Fprintf(os.Stderr, "failed to list ResourceServers: %v\n", err)
 	} else {
 		for _, obj := range rss.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-			errs = append(errs, checkInstanceRef(ctx, c, "ResourceServer", obj.Name, ns, obj.Spec.InstanceRef)...)
+			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+			errs = append(errs, checkInstanceRef(ctx, c, "ResourceServer", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 			if obj.Spec.OUHandle != "" {
 				errs = append(errs, checkOUHandle(ctx, c, "ResourceServer", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
 			}
@@ -165,8 +165,8 @@ func runAll(ctx context.Context, c client.Client, ns string) {
 		fmt.Fprintf(os.Stderr, "failed to list Roles: %v\n", err)
 	} else {
 		for _, obj := range roles.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-			errs = append(errs, checkInstanceRef(ctx, c, "Role", obj.Name, ns, obj.Spec.InstanceRef)...)
+			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+			errs = append(errs, checkInstanceRef(ctx, c, "Role", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 			if obj.Spec.OUHandle != "" {
 				errs = append(errs, checkOUHandle(ctx, c, "Role", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
 			}
@@ -179,8 +179,8 @@ func runAll(ctx context.Context, c client.Client, ns string) {
 		fmt.Fprintf(os.Stderr, "failed to list UserTypes: %v\n", err)
 	} else {
 		for _, obj := range uts.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-			errs = append(errs, checkInstanceRef(ctx, c, "UserType", obj.Name, ns, obj.Spec.InstanceRef)...)
+			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+			errs = append(errs, checkInstanceRef(ctx, c, "UserType", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 			if obj.Spec.OUHandle != "" {
 				errs = append(errs, checkOUHandle(ctx, c, "UserType", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
 			}
@@ -193,8 +193,8 @@ func runAll(ctx context.Context, c client.Client, ns string) {
 		fmt.Fprintf(os.Stderr, "failed to list Users: %v\n", err)
 	} else {
 		for _, obj := range users.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-			errs = append(errs, checkInstanceRef(ctx, c, "User", obj.Name, ns, obj.Spec.InstanceRef)...)
+			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+			errs = append(errs, checkInstanceRef(ctx, c, "User", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 			if obj.Spec.OUHandle != "" {
 				errs = append(errs, checkOUHandle(ctx, c, "User", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
 			}
@@ -207,8 +207,8 @@ func runAll(ctx context.Context, c client.Client, ns string) {
 		fmt.Fprintf(os.Stderr, "failed to list Groups: %v\n", err)
 	} else {
 		for _, obj := range groups.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-			errs = append(errs, checkInstanceRef(ctx, c, "Group", obj.Name, ns, obj.Spec.InstanceRef)...)
+			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+			errs = append(errs, checkInstanceRef(ctx, c, "Group", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 			if obj.Spec.OUHandle != "" {
 				errs = append(errs, checkOUHandle(ctx, c, "Group", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
 			}
@@ -282,24 +282,24 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 			var obj appsv1alpha1.Application
 			if err := yaml.Unmarshal(doc, &obj); err == nil {
 				obj.Namespace = ns
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
+				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
 				errs = append(errs, checkApplication(ctx, c, obj, base)...)
 			}
 		case "Flow":
 			var obj appsv1alpha1.Flow
 			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				errs = append(errs, checkInstanceRef(ctx, c, "Flow", obj.Name, ns, obj.Spec.InstanceRef)...)
+				errs = append(errs, checkInstanceRef(ctx, c, "Flow", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 			}
 		case "Theme":
 			var obj appsv1alpha1.Theme
 			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				errs = append(errs, checkInstanceRef(ctx, c, "Theme", obj.Name, ns, obj.Spec.InstanceRef)...)
+				errs = append(errs, checkInstanceRef(ctx, c, "Theme", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 			}
 		case "OrganizationUnit":
 			var obj appsv1alpha1.OrganizationUnit
 			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-				errs = append(errs, checkInstanceRef(ctx, c, "OrganizationUnit", obj.Name, ns, obj.Spec.InstanceRef)...)
+				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+				errs = append(errs, checkInstanceRef(ctx, c, "OrganizationUnit", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 				if obj.Spec.Parent != "" {
 					errs = append(errs, checkOUHandle(ctx, c, "OrganizationUnit", obj.Name, ns, "parentHandle", obj.Spec.Parent, base)...)
 				}
@@ -307,8 +307,8 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 		case "ResourceServer":
 			var obj appsv1alpha1.ResourceServer
 			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-				errs = append(errs, checkInstanceRef(ctx, c, "ResourceServer", obj.Name, ns, obj.Spec.InstanceRef)...)
+				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+				errs = append(errs, checkInstanceRef(ctx, c, "ResourceServer", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 				if obj.Spec.OUHandle != "" {
 					errs = append(errs, checkOUHandle(ctx, c, "ResourceServer", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
 				}
@@ -316,8 +316,8 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 		case "Role":
 			var obj appsv1alpha1.Role
 			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-				errs = append(errs, checkInstanceRef(ctx, c, "Role", obj.Name, ns, obj.Spec.InstanceRef)...)
+				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+				errs = append(errs, checkInstanceRef(ctx, c, "Role", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 				if obj.Spec.OUHandle != "" {
 					errs = append(errs, checkOUHandle(ctx, c, "Role", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
 				}
@@ -325,8 +325,8 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 		case "UserType":
 			var obj appsv1alpha1.UserType
 			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-				errs = append(errs, checkInstanceRef(ctx, c, "UserType", obj.Name, ns, obj.Spec.InstanceRef)...)
+				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+				errs = append(errs, checkInstanceRef(ctx, c, "UserType", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 				if obj.Spec.OUHandle != "" {
 					errs = append(errs, checkOUHandle(ctx, c, "UserType", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
 				}
@@ -334,8 +334,8 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 		case "User":
 			var obj appsv1alpha1.User
 			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-				errs = append(errs, checkInstanceRef(ctx, c, "User", obj.Name, ns, obj.Spec.InstanceRef)...)
+				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+				errs = append(errs, checkInstanceRef(ctx, c, "User", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 				if obj.Spec.OUHandle != "" {
 					errs = append(errs, checkOUHandle(ctx, c, "User", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
 				}
@@ -343,8 +343,8 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 		case "Group":
 			var obj appsv1alpha1.Group
 			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Spec.InstanceRef)
-				errs = append(errs, checkInstanceRef(ctx, c, "Group", obj.Name, ns, obj.Spec.InstanceRef)...)
+				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
+				errs = append(errs, checkInstanceRef(ctx, c, "Group", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
 				if obj.Spec.OUHandle != "" {
 					errs = append(errs, checkOUHandle(ctx, c, "Group", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
 				}
@@ -356,7 +356,7 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 
 func checkInstanceRef(ctx context.Context, c client.Client, kind, name, ns, ref string) []refError {
 	if ref == "" {
-		return []refError{{kind: kind, name: name, field: "instanceRef", ref: "(empty)", detail: "instanceRef is required"}}
+		return []refError{{kind: kind, name: name, field: "thunderid.io/instance", ref: "(empty)", detail: "thunderid.io/instance label is required"}}
 	}
 	target := &appsv1alpha1.ThunderIDInstance{}
 	err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: ref}, target)
@@ -364,15 +364,15 @@ func checkInstanceRef(ctx context.Context, c client.Client, kind, name, ns, ref 
 		return nil
 	}
 	if k8serrors.IsNotFound(err) {
-		return []refError{{kind: kind, name: name, field: "instanceRef", ref: ref}}
+		return []refError{{kind: kind, name: name, field: "thunderid.io/instance", ref: ref}}
 	}
-	return []refError{{kind: kind, name: name, field: "instanceRef", ref: ref, detail: err.Error()}}
+	return []refError{{kind: kind, name: name, field: "thunderid.io/instance", ref: ref, detail: err.Error()}}
 }
 
 func checkApplication(ctx context.Context, c client.Client, app appsv1alpha1.Application, base baseHandles) []refError {
 	ns := app.Namespace
 	var errs []refError
-	errs = append(errs, checkInstanceRef(ctx, c, "Application", app.Name, ns, app.Spec.InstanceRef)...)
+	errs = append(errs, checkInstanceRef(ctx, c, "Application", app.Name, ns, app.Labels[appsv1alpha1.InstanceRefLabel])...)
 	if app.Spec.OUHandle != "" {
 		errs = append(errs, checkOUHandle(ctx, c, "Application", app.Name, ns, "ouHandle", app.Spec.OUHandle, base)...)
 	}

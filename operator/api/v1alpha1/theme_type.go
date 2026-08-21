@@ -7,9 +7,6 @@ import (
 
 type ThemeSpec struct {
 	// +kubebuilder:validation:Required
-	InstanceRef string `json:"instanceRef"`
-
-	// +kubebuilder:validation:Required
 	DisplayName string `json:"displayName"`
 
 	// +optional
@@ -46,7 +43,7 @@ type ThemeStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".spec.instanceRef"
+// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
 // +kubebuilder:printcolumn:name="Display Name",type="string",JSONPath=".spec.displayName"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"

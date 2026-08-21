@@ -3,8 +3,9 @@ kind: Application
 metadata:
   name: my-console-app
   namespace: default
+  labels:
+    thunderid.io/instance: external-pg-instance
 spec:
-  instanceRef: external-pg-instance
   name: Test Web Application
   template: browser
   ouHandle: default

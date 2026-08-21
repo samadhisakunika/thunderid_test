@@ -8,9 +8,39 @@ spec:
   resourcesConfigMap: thunderid-resources
   config:
     database:
-      type: postgresql
-      host: postgres.default.svc.cluster.local
-      port: "5432"
-      username: postgres
-      sslmode: disable
+      # ThunderID has four independent scopes; config+entity share one physical database, and so
+      # do runtimeTransient+runtimePersistent (see README's Database section), but each is set
+      # explicitly here since ThunderID's own schema doesn't encode that pairing.
+      config:
+        type: postgres
+        postgres:
+          hostname: postgres.default.svc.cluster.local
+          port: "5432"
+          username: postgres
+          name: thunderid_config
+          sslmode: disable
+      entity:
+        type: postgres
+        postgres:
+          hostname: postgres.default.svc.cluster.local
+          port: "5432"
+          username: postgres
+          name: thunderid_config
+          sslmode: disable
+      runtimeTransient:
+        type: postgres
+        postgres:
+          hostname: postgres.default.svc.cluster.local
+          port: "5432"
+          username: postgres
+          name: thunderid_runtime
+          sslmode: disable
+      runtimePersistent:
+        type: postgres
+        postgres:
+          hostname: postgres.default.svc.cluster.local
+          port: "5432"
+          username: postgres
+          name: thunderid_runtime
+          sslmode: disable
       secretRef: my-postgres-db

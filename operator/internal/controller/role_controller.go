@@ -59,12 +59,12 @@ func (r *RoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: role.Namespace, Name: role.Spec.InstanceRef}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: role.Namespace, Name: role.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", role.Spec.InstanceRef)
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", role.Labels[appsv1alpha1.InstanceRefLabel])
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", role.Spec.InstanceRef)
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", role.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
 	}
 
@@ -246,7 +246,7 @@ func (r *RoleReconciler) rebuildRolesConfigMap(ctx context.Context, instance *ap
 
 	var buf bytes.Buffer
 	for _, ro := range roleList.Items {
-		if ro.Spec.InstanceRef != instance.Name {
+		if ro.Labels[appsv1alpha1.InstanceRefLabel] != instance.Name {
 			continue
 		}
 		if excludeUID != "" && string(ro.UID) == excludeUID {
@@ -384,7 +384,7 @@ func (r *RoleReconciler) rolesForDeployment(ctx context.Context, obj client.Obje
 	}
 	var reqs []reconcile.Request
 	for _, role := range roleList.Items {
-		if role.Spec.InstanceRef != dep.GetName() {
+		if role.Labels[appsv1alpha1.InstanceRefLabel] != dep.GetName() {
 			continue
 		}
 		switch role.Status.Phase {
@@ -410,7 +410,7 @@ func (r *RoleReconciler) rolesForInstance(ctx context.Context, obj client.Object
 	}
 	var reqs []reconcile.Request
 	for _, role := range roleList.Items {
-		if role.Spec.InstanceRef == obj.GetName() {
+		if role.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: role.Name, Namespace: role.Namespace},
 			})
