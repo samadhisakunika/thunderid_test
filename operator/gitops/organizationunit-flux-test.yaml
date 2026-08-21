@@ -3,8 +3,9 @@ kind: OrganizationUnit
 metadata:
   name: flux-gitops-test
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   handle: flux-gitops-test
   name: Flux GitOps Test OU (edited via Git)
   description: Proves that editing a CR file and pushing to GitHub auto-applies the change to the cluster via Flux.

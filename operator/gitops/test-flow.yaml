@@ -3,8 +3,9 @@ kind: Flow
 metadata:
   name: test-basic-flow
   namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
 spec:
-  instanceRef: thunderid-prod
   handle: test-basic-flow
   name: Test Basic Authentication Flow NEW1
   flowType: AUTHENTICATION
