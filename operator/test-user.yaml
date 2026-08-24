@@ -7,7 +7,7 @@ metadata:
     thunderid.io/instance: thunderid-prod
 spec:
   resource_type: user
-  type: Test User  # must match spec.config.name (not metadata.name) of an existing UserType — test-usertype.yaml's config.name is "Test User Type"
+  type: Test User  # must match spec.name (not metadata.name) of an existing UserType — test-usertype.yaml's name is "Test User Type"
   ouHandle: default
   attributes:
     username: testadmin3

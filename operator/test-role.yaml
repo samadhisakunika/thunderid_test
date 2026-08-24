@@ -9,7 +9,7 @@ spec:
   resource_type: role
   name: Test Role
   description: A simple test role for verifying the Role controller.
-  ouHandle: test-ou  # matches spec.config.handle on the "test-ou" OrganizationUnit CR
+  ouHandle: test-ou  # matches spec.handle on the "test-ou" OrganizationUnit CR
   permissions:
     - resourceServerId: "019f215e-1a55-72db-9743-ac25d839c72a"
       permissions:
