@@ -18,9 +18,6 @@ spec:
     - jsonPath: .metadata.labels['thunderid\.io/instance']
       name: Instance
       type: string
-    - jsonPath: .spec.type
-      name: Type
-      type: string
     - jsonPath: .status.synced
       name: Synced
       type: boolean
@@ -53,20 +50,21 @@ spec:
             type: object
           spec:
             properties:
-              attributes:
-                additionalProperties:
-                  type: string
+              config:
+                description: |-
+                  config is forwarded as-is into ThunderID's own user bootstrap schema
+                  (type, ouId, attributes, ...) — the operator does not interpret it, so ThunderID's
+                  own validation and error messages are what apply. Any "credentials" or "attributes"
+                  keys the resolved credentialsSecretRef Secret contributes are overlaid on top of
+                  whatever config sets, Secret winning.
                 type: object
+                x-kubernetes-preserve-unknown-fields: true
               credentialsSecretRef:
+                description: |-
+                  credentialsSecretRef is a k8s Secret reference, not a ThunderID schema field — it stays
+                  a typed field because the controller reads it directly to fetch (or auto-provision) the
+                  backing Secret. See UserStatus.CredentialsSecretRef for the Secret actually in effect.
                 type: string
-              ouHandle:
-                type: string
-              ouId:
-                type: string
-              type:
-                type: string
-            required:
-            - type
             type: object
           status:
             properties:

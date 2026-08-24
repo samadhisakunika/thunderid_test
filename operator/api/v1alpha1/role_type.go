@@ -5,40 +5,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-type RolePermissionSpec struct {
-	// +kubebuilder:validation:Required
-	ResourceServerID string `json:"resourceServerId"`
-
-	// +kubebuilder:validation:Required
-	Permissions []string `json:"permissions"`
-}
-
-type RoleAssignmentSpec struct {
-	// +kubebuilder:validation:Required
-	ID string `json:"id"`
-
-	// +kubebuilder:validation:Required
-	Type string `json:"type"`
-}
-
 type RoleSpec struct {
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
+	// config is forwarded as-is into ThunderID's own role bootstrap schema
+	// (name, description, ouId, permissions, assignments, ...) — the operator does not
+	// interpret it, so ThunderID's own validation and error messages are what apply.
 	// +optional
-	Description string `json:"description,omitempty"`
-
-	// +optional
-	OUID string `json:"ouId,omitempty"`
-
-	// +optional
-	OUHandle string `json:"ouHandle,omitempty"`
-
-	// +optional
-	Permissions []RolePermissionSpec `json:"permissions,omitempty"`
-
-	// +optional
-	Assignments []RoleAssignmentSpec `json:"assignments,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config runtime.RawExtension `json:"config,omitempty"`
 }
 
 type RoleStatus struct {
@@ -63,7 +36,6 @@ type RoleStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
-// +kubebuilder:printcolumn:name="Name",type="string",JSONPath=".spec.name"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 

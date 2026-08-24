@@ -236,7 +236,7 @@ func (r *ServerConfigReconciler) rebuildServerConfigsConfigMap(ctx context.Conte
 		return false, err
 	}
 	sort.Slice(list.Items, func(i, j int) bool {
-		return list.Items[i].Spec.Name < list.Items[j].Spec.Name
+		return list.Items[i].Name < list.Items[j].Name
 	})
 
 	var buf bytes.Buffer
@@ -310,41 +310,9 @@ func (r *ServerConfigReconciler) rebuildServerConfigsConfigMap(ctx context.Conte
 }
 
 func buildServerConfigYAML(s appsv1alpha1.ServerConfig) (string, error) {
-	var buf bytes.Buffer
-	buf.WriteString("resource_type: server_config\n")
-	fmt.Fprintf(&buf, "name: %s\n", s.Spec.Name)
-	buf.WriteString("value:\n")
-
-	switch s.Spec.Name {
-	case "cors":
-		if s.Spec.CORS != nil {
-			buf.WriteString("  allowedOrigins:\n")
-			for _, o := range s.Spec.CORS.AllowedOrigins {
-				if o.Regex != "" {
-					fmt.Fprintf(&buf, "    - regex: %s\n", yamlSingleQuote(o.Regex))
-				} else if o.URL != "" {
-					fmt.Fprintf(&buf, "    - %s\n", yamlSingleQuote(o.URL))
-				}
-			}
-		}
-	case "session":
-		if s.Spec.Session != nil {
-			if s.Spec.Session.IdleTimeoutSeconds > 0 {
-				fmt.Fprintf(&buf, "  idleTimeoutSeconds: %d\n", s.Spec.Session.IdleTimeoutSeconds)
-			}
-			if s.Spec.Session.AbsoluteTimeoutSeconds > 0 {
-				fmt.Fprintf(&buf, "  absoluteTimeoutSeconds: %d\n", s.Spec.Session.AbsoluteTimeoutSeconds)
-			}
-		}
-	case "defaultResourceServer":
-		if s.Spec.DefaultResourceServer != nil {
-			fmt.Fprintf(&buf, "  resourceServerId: %q\n", s.Spec.DefaultResourceServer.ResourceServerID)
-		}
-	default:
-		return "", fmt.Errorf("unknown server config name %q", s.Spec.Name)
-	}
-
-	return buf.String(), nil
+	return renderResourceYAML(s.Spec.Config, map[string]interface{}{
+		"resource_type": "server_config",
+	})
 }
 
 func (r *ServerConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {

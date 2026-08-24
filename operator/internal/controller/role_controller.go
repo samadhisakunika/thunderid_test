@@ -255,7 +255,7 @@ func (r *RoleReconciler) rebuildRolesConfigMap(ctx context.Context, instance *ap
 		if !ro.DeletionTimestamp.IsZero() {
 			continue
 		}
-		yamlDoc, err := r.buildRoleYAML(ctx, ro)
+		yamlDoc, err := buildRoleYAML(ro)
 		if err != nil {
 			return false, fmt.Errorf("failed to build YAML for role %s: %w", ro.Name, err)
 		}
@@ -316,45 +316,11 @@ func (r *RoleReconciler) rebuildRolesConfigMap(ctx context.Context, instance *ap
 
 // buildRoleYAML generates a YAML document for a single role in the format
 // ThunderID's declarative resource loader expects.
-func (r *RoleReconciler) buildRoleYAML(ctx context.Context, ro appsv1alpha1.Role) (string, error) {
-	var buf bytes.Buffer
-	buf.WriteString("resource_type: role\n")
-	fmt.Fprintf(&buf, "id: %q\n", string(ro.UID))
-	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(ro.Spec.Name))
-	if ro.Spec.Description != "" {
-		fmt.Fprintf(&buf, "description: %s\n", yamlSingleQuote(ro.Spec.Description))
-	}
-
-	if ro.Spec.OUID != "" {
-		fmt.Fprintf(&buf, "ouId: %q\n", ro.Spec.OUID)
-	} else if ro.Spec.OUHandle != "" {
-		if uid := resolveOUHandle(ctx, r.Client, ro.Namespace, ro.Spec.OUHandle); uid != "" {
-			fmt.Fprintf(&buf, "ouId: %q\n", uid)
-		} else {
-			fmt.Fprintf(&buf, "ouHandle: %s\n", yamlSingleQuote(ro.Spec.OUHandle))
-		}
-	}
-
-	if len(ro.Spec.Permissions) > 0 {
-		buf.WriteString("permissions:\n")
-		for _, p := range ro.Spec.Permissions {
-			fmt.Fprintf(&buf, "  - resourceServerId: %q\n", p.ResourceServerID)
-			buf.WriteString("    permissions:\n")
-			for _, perm := range p.Permissions {
-				fmt.Fprintf(&buf, "      - %s\n", perm)
-			}
-		}
-	}
-
-	if len(ro.Spec.Assignments) > 0 {
-		buf.WriteString("assignments:\n")
-		for _, a := range ro.Spec.Assignments {
-			fmt.Fprintf(&buf, "  - id: %q\n", a.ID)
-			fmt.Fprintf(&buf, "    type: %s\n", a.Type)
-		}
-	}
-
-	return buf.String(), nil
+func buildRoleYAML(ro appsv1alpha1.Role) (string, error) {
+	return renderResourceYAML(ro.Spec.Config, map[string]interface{}{
+		"resource_type": "role",
+		"id":            string(ro.UID),
+	})
 }
 
 func (r *RoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -363,9 +329,6 @@ func (r *RoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.rolesForDeployment), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.rolesForInstance),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Watches(&appsv1alpha1.OrganizationUnit{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexRoleOUHandle, func() client.ObjectList { return &appsv1alpha1.RoleList{} },
-				func(o client.Object) string { return o.(*appsv1alpha1.OrganizationUnit).Spec.Handle }))).
 		Named("role").
 		Complete(r)
 }

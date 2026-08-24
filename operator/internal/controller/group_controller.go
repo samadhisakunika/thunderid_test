@@ -255,7 +255,7 @@ func (r *GroupReconciler) rebuildGroupsConfigMap(ctx context.Context, instance *
 		if !g.DeletionTimestamp.IsZero() {
 			continue
 		}
-		yamlDoc, err := r.buildGroupYAML(ctx, g)
+		yamlDoc, err := buildGroupYAML(g)
 		if err != nil {
 			return false, fmt.Errorf("failed to build YAML for group %s: %w", g.Name, err)
 		}
@@ -316,34 +316,11 @@ func (r *GroupReconciler) rebuildGroupsConfigMap(ctx context.Context, instance *
 
 // buildGroupYAML generates a YAML document for a single group in the format
 // ThunderID's declarative resource loader expects.
-func (r *GroupReconciler) buildGroupYAML(ctx context.Context, g appsv1alpha1.Group) (string, error) {
-	var buf bytes.Buffer
-	buf.WriteString("resource_type: group\n")
-	fmt.Fprintf(&buf, "id: %q\n", string(g.UID))
-	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(g.Spec.Name))
-	if g.Spec.Description != "" {
-		fmt.Fprintf(&buf, "description: %s\n", yamlSingleQuote(g.Spec.Description))
-	}
-
-	if g.Spec.OUID != "" {
-		fmt.Fprintf(&buf, "ouId: %q\n", g.Spec.OUID)
-	} else if g.Spec.OUHandle != "" {
-		if uid := resolveOUHandle(ctx, r.Client, g.Namespace, g.Spec.OUHandle); uid != "" {
-			fmt.Fprintf(&buf, "ouId: %q\n", uid)
-		} else {
-			fmt.Fprintf(&buf, "ouHandle: %s\n", yamlSingleQuote(g.Spec.OUHandle))
-		}
-	}
-
-	if len(g.Spec.Members) > 0 {
-		buf.WriteString("members:\n")
-		for _, m := range g.Spec.Members {
-			fmt.Fprintf(&buf, "  - id: %q\n", m.ID)
-			fmt.Fprintf(&buf, "    type: %s\n", m.Type)
-		}
-	}
-
-	return buf.String(), nil
+func buildGroupYAML(g appsv1alpha1.Group) (string, error) {
+	return renderResourceYAML(g.Spec.Config, map[string]interface{}{
+		"resource_type": "group",
+		"id":            string(g.UID),
+	})
 }
 
 func (r *GroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -352,9 +329,6 @@ func (r *GroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.groupsForDeployment), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.groupsForInstance),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Watches(&appsv1alpha1.OrganizationUnit{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexGroupOUHandle, func() client.ObjectList { return &appsv1alpha1.GroupList{} },
-				func(o client.Object) string { return o.(*appsv1alpha1.OrganizationUnit).Spec.Handle }))).
 		Named("group").
 		Complete(r)
 }

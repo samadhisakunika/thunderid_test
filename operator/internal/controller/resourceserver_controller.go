@@ -255,10 +255,7 @@ func (r *ResourceServerReconciler) rebuildResourceServersConfigMap(ctx context.C
 		if !s.DeletionTimestamp.IsZero() {
 			continue
 		}
-		if s.Spec.OUID == "" && s.Spec.OUHandle == "" {
-			continue // ThunderID requires ou_id or ou_handle; skip incomplete resource servers
-		}
-		yamlDoc, err := r.buildResourceServerYAML(ctx, s)
+		yamlDoc, err := buildResourceServerYAML(s)
 		if err != nil {
 			return false, fmt.Errorf("failed to build YAML for resource server %s: %w", s.Name, err)
 		}
@@ -319,58 +316,11 @@ func (r *ResourceServerReconciler) rebuildResourceServersConfigMap(ctx context.C
 
 // buildResourceServerYAML generates a YAML document for a single resource server
 // in the format ThunderID's declarative resource loader expects.
-func (r *ResourceServerReconciler) buildResourceServerYAML(ctx context.Context, s appsv1alpha1.ResourceServer) (string, error) {
-	var buf bytes.Buffer
-	buf.WriteString("resource_type: resource_server\n")
-	fmt.Fprintf(&buf, "id: %q\n", string(s.UID))
-	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(s.Spec.Name))
-	if s.Spec.Description != "" {
-		fmt.Fprintf(&buf, "description: %s\n", yamlSingleQuote(s.Spec.Description))
-	}
-	if s.Spec.Handle != "" {
-		fmt.Fprintf(&buf, "handle: %s\n", yamlSingleQuote(s.Spec.Handle))
-	}
-	fmt.Fprintf(&buf, "identifier: %s\n", yamlSingleQuote(s.Spec.Identifier))
-
-	if s.Spec.OUID != "" {
-		fmt.Fprintf(&buf, "ouId: %q\n", s.Spec.OUID)
-	} else if s.Spec.OUHandle != "" {
-		if uid := resolveOUHandle(ctx, r.Client, s.Namespace, s.Spec.OUHandle); uid != "" {
-			fmt.Fprintf(&buf, "ouId: %q\n", uid)
-		} else {
-			fmt.Fprintf(&buf, "ouHandle: %s\n", yamlSingleQuote(s.Spec.OUHandle))
-		}
-	}
-
-	if s.Spec.Delimiter != "" {
-		fmt.Fprintf(&buf, "delimiter: %s\n", yamlSingleQuote(s.Spec.Delimiter))
-	}
-
-	if len(s.Spec.Resources) > 0 {
-		buf.WriteString("resources:\n")
-		for _, res := range s.Spec.Resources {
-			fmt.Fprintf(&buf, "  - name: %s\n", yamlSingleQuote(res.Name))
-			fmt.Fprintf(&buf, "    handle: %s\n", yamlSingleQuote(res.Handle))
-			if res.Description != "" {
-				fmt.Fprintf(&buf, "    description: %s\n", yamlSingleQuote(res.Description))
-			}
-			if res.Parent != "" {
-				fmt.Fprintf(&buf, "    parent: %s\n", yamlSingleQuote(res.Parent))
-			}
-			if len(res.Actions) > 0 {
-				buf.WriteString("    actions:\n")
-				for _, a := range res.Actions {
-					fmt.Fprintf(&buf, "      - name: %s\n", yamlSingleQuote(a.Name))
-					fmt.Fprintf(&buf, "        handle: %s\n", yamlSingleQuote(a.Handle))
-					if a.Description != "" {
-						fmt.Fprintf(&buf, "        description: %s\n", yamlSingleQuote(a.Description))
-					}
-				}
-			}
-		}
-	}
-
-	return buf.String(), nil
+func buildResourceServerYAML(s appsv1alpha1.ResourceServer) (string, error) {
+	return renderResourceYAML(s.Spec.Config, map[string]interface{}{
+		"resource_type": "resource_server",
+		"id":            string(s.UID),
+	})
 }
 
 func (r *ResourceServerReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -379,9 +329,6 @@ func (r *ResourceServerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.resourceServersForDeployment), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.resourceServersForInstance),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Watches(&appsv1alpha1.OrganizationUnit{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexResourceServerOUHandle, func() client.ObjectList { return &appsv1alpha1.ResourceServerList{} },
-				func(o client.Object) string { return o.(*appsv1alpha1.OrganizationUnit).Spec.Handle }))).
 		Named("resourceserver").
 		Complete(r)
 }

@@ -18,12 +18,6 @@ spec:
     - jsonPath: .metadata.labels['thunderid\.io/instance']
       name: Instance
       type: string
-    - jsonPath: .spec.handle
-      name: Handle
-      type: string
-    - jsonPath: .spec.name
-      name: Name
-      type: string
     - jsonPath: .status.synced
       name: Synced
       type: boolean
@@ -53,23 +47,13 @@ spec:
             type: object
           spec:
             properties:
-              createdAt:
-                type: string
-              description:
-                type: string
-              handle:
-                type: string
-              logoUrl:
-                type: string
-              name:
-                type: string
-              parentId:
-                type: string
-              updatedAt:
-                type: string
-            required:
-            - handle
-            - name
+              config:
+                description: |-
+                  config is forwarded as-is into ThunderID's own organization unit bootstrap schema
+                  (handle, name, description, parentId, logoUrl, ...) — the operator does not interpret
+                  it, so ThunderID's own validation and error messages are what apply.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
             type: object
           status:
             properties:

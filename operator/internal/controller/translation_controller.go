@@ -236,7 +236,7 @@ func (r *TranslationReconciler) rebuildTranslationsConfigMap(ctx context.Context
 		return false, err
 	}
 	sort.Slice(list.Items, func(i, j int) bool {
-		return list.Items[i].Spec.Language < list.Items[j].Spec.Language
+		return list.Items[i].Name < list.Items[j].Name
 	})
 
 	var buf bytes.Buffer
@@ -250,8 +250,12 @@ func (r *TranslationReconciler) rebuildTranslationsConfigMap(ctx context.Context
 		if !tr.DeletionTimestamp.IsZero() {
 			continue
 		}
+		yamlDoc, err := buildTranslationYAML(tr)
+		if err != nil {
+			return false, fmt.Errorf("failed to build YAML for translation %s: %w", tr.Name, err)
+		}
 		buf.WriteString("---\n")
-		buf.WriteString(buildTranslationYAML(tr))
+		buf.WriteString(yamlDoc)
 	}
 	content := buf.String()
 
@@ -305,33 +309,10 @@ func (r *TranslationReconciler) rebuildTranslationsConfigMap(ctx context.Context
 	return true, r.Patch(ctx, instance, patch)
 }
 
-func buildTranslationYAML(t appsv1alpha1.Translation) string {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "# File: %s.yaml\n", t.Spec.Language)
-	buf.WriteString("resource_type: translation\n")
-	fmt.Fprintf(&buf, "language: %s\n", yamlSingleQuote(t.Spec.Language))
-	buf.WriteString("translations:\n")
-
-	namespaces := make([]string, 0, len(t.Spec.Translations))
-	for ns := range t.Spec.Translations {
-		namespaces = append(namespaces, ns)
-	}
-	sort.Strings(namespaces)
-
-	for _, ns := range namespaces {
-		fmt.Fprintf(&buf, "  %s:\n", ns)
-		keyMap := t.Spec.Translations[ns]
-		keys := make([]string, 0, len(keyMap))
-		for k := range keyMap {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Fprintf(&buf, "    %s: %s\n", k, yamlSingleQuote(keyMap[k]))
-		}
-	}
-
-	return buf.String()
+func buildTranslationYAML(t appsv1alpha1.Translation) (string, error) {
+	return renderResourceYAML(t.Spec.Config, map[string]interface{}{
+		"resource_type": "translation",
+	})
 }
 
 func (r *TranslationReconciler) SetupWithManager(mgr ctrl.Manager) error {

@@ -6,25 +6,26 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  language: en-US
-  translations:
-    auth:
-      login: "Log in"
-      logout: "Log out"
-      register: "Create account"
-      forgotPassword: "Forgot password?"
-      resetPassword: "Reset password"
-      verifyEmail: "Verify your email"
-    errors:
-      generic: "Something went wrong. Please try again."
-      unauthorized: "You are not authorized to perform this action."
-      sessionExpired: "Your session has expired. Please log in again."
-      invalidCredentials: "Invalid username or password."
-    consent:
-      title: "Authorize Application"
-      approve: "Allow"
-      deny: "Deny"
-      scopeDescription: "This application is requesting access to:"
-    recovery:
-      emailSent: "A recovery link has been sent to your email address."
-      linkExpired: "This recovery link has expired. Please request a new one."
+  config:
+    language: en-US
+    translations:
+      auth:
+        login: "Log in"
+        logout: "Log out"
+        register: "Create account"
+        forgotPassword: "Forgot password?"
+        resetPassword: "Reset password"
+        verifyEmail: "Verify your email"
+      errors:
+        generic: "Something went wrong. Please try again."
+        unauthorized: "You are not authorized to perform this action."
+        sessionExpired: "Your session has expired. Please log in again."
+        invalidCredentials: "Invalid username or password."
+      consent:
+        title: "Authorize Application"
+        approve: "Allow"
+        deny: "Deny"
+        scopeDescription: "This application is requesting access to:"
+      recovery:
+        emailSent: "A recovery link has been sent to your email address."
+        linkExpired: "This recovery link has expired. Please request a new one."

@@ -6,88 +6,92 @@ metadata:
   labels:
     thunderid.io/instance: external-pg-instance
 spec:
-  name: Test Web Application
-  template: browser
-  ouHandle: default
-  authFlowHandle: console-app-flow
-  themeId: "01900000-0000-7000-8000-000000000071" # acrylic-orange
-  logoUrl: "emoji:👨‍💻"
-  isRegistrationFlowEnabled: true
-  isRecoveryFlowEnabled: false
-  isSignOutFlowEnabled: true
-  allowedUserTypes:
-    - "Person"
-  assertion:
-    validityPeriod: 3600
-  loginConsent:
-    validityPeriod: 0
-  inboundAuthConfig: |
-    - type: oauth2
-      config:
-        clientId: MY_CONSOLE_CLIENT
-        redirectUris:
-          - https://localhost:8090/console
-        postLogoutRedirectUris:
-          - https://localhost:8090/console
-        grantTypes:
-          - authorization_code
-          - refresh_token
-          - client_credentials
-       
-        responseTypes:
-          - code
-        tokenEndpointAuthMethod: client_secret_basic
-        pkceRequired: false
-        publicClient: false
-        requirePushedAuthorizationRequests: false
-        dpopBoundAccessTokens: false
-        includeActClaim: false
-        token:
-          accessToken:
-            validityPeriod: 3600
-            userAttributes:
-              - given_name
-              - family_name
-              - email
-              - groups
-              - ouId
-              - phone_number
-            responseType: JWT
-          idToken:
-            validityPeriod: 3600
+  # config is forwarded as-is into ThunderID's own application bootstrap schema — the
+  # operator no longer resolves ouHandle/authFlowHandle to IDs, but ThunderID's own
+  # bootstrap loader resolves them itself (confirmed live). themeHandle is the one
+  # confirmed exception — not supported by ThunderID at all; use themeId.
+  config:
+    name: Test Web Application
+    type: browser # ThunderID's own key is "type", not "template"
+    ouHandle: default
+    authFlowHandle: console-app-flow
+    themeId: "01900000-0000-7000-8000-000000000073" # acrylic-orange
+    logoUrl: "emoji:👨‍💻"
+    isRegistrationFlowEnabled: true
+    isRecoveryFlowEnabled: false
+    isSignOutFlowEnabled: true
+    allowedUserTypes:
+      - "Person"
+    assertion:
+      validityPeriod: 3600
+    loginConsent:
+      validityPeriod: 0
+    inboundAuthConfig:
+      - type: oauth2
+        config:
+          clientId: MY_CONSOLE_CLIENT
+          redirectUris:
+            - https://localhost:8090/console
+          postLogoutRedirectUris:
+            - https://localhost:8090/console
+          grantTypes:
+            - authorization_code
+            - refresh_token
+            - client_credentials
+          responseTypes:
+            - code
+          tokenEndpointAuthMethod: client_secret_basic
+          pkceRequired: false
+          publicClient: false
+          requirePushedAuthorizationRequests: false
+          dpopBoundAccessTokens: false
+          includeActClaim: false
+          token:
+            accessToken:
+              validityPeriod: 3600
+              userAttributes:
+                - given_name
+                - family_name
+                - email
+                - groups
+                - ouId
+                - phone_number
+              responseType: JWT
+            idToken:
+              validityPeriod: 3600
+              userAttributes:
+                - given_name
+                - family_name
+                - email
+                - groups
+                - name
+                - picture
+                - ouId
+              responseType: JWT
+            refreshToken:
+              validityPeriod: 86400
+          userInfo:
+            responseType: JSON
             userAttributes:
               - given_name
               - family_name
               - email
               - groups
               - name
-              - picture
               - ouId
-            responseType: JWT
-          refreshToken:
-            validityPeriod: 86400
-        userInfo:
-          responseType: JSON
-          userAttributes:
-            - given_name
-            - family_name
-            - email
-            - groups
-            - name
-            - ouId
-        scopeClaims:
-          group:
-            - groups
-          ou:
-            - ouId
-          phone:
-            - phone_number
-            - phone_number_verified
-          profile:
-            - name
-            - given_name
-            - family_name
-            - picture
-          email:
-            - email
-            - email_verified
+          scopeClaims:
+            group:
+              - groups
+            ou:
+              - ouId
+            phone:
+              - phone_number
+              - phone_number_verified
+            profile:
+              - name
+              - given_name
+              - family_name
+              - picture
+            email:
+              - email
+              - email_verified

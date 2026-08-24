@@ -14,7 +14,17 @@ spec:
     singular: application
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.labels['thunderid\.io/instance']
+      name: Instance
+      type: string
+    - jsonPath: .status.synced
+      name: Synced
+      type: boolean
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         properties:
@@ -37,64 +47,9 @@ spec:
             type: object
           spec:
             properties:
-              allowedUserTypeIds:
-                items:
-                  type: string
-                type: array
-              allowedUserTypes:
-                items:
-                  type: string
-                type: array
-              assertion:
-                properties:
-                  validityPeriod:
-                    format: int64
-                    type: integer
+              config:
                 type: object
-              authFlowHandle:
-                type: string
-              authFlowId:
-                type: string
-              description:
-                type: string
-              inboundAuthConfig:
-                type: string
-              isRecoveryFlowEnabled:
-                type: boolean
-              isRegistrationFlowEnabled:
-                type: boolean
-              isSignOutFlowEnabled:
-                type: boolean
-              loginConsent:
-                properties:
-                  validityPeriod:
-                    format: int64
-                    type: integer
-                type: object
-              logoUrl:
-                type: string
-              name:
-                type: string
-              ouHandle:
-                type: string
-              ouId:
-                type: string
-              recoveryFlowHandle:
-                type: string
-              registrationFlowHandle:
-                type: string
-              registrationFlowId:
-                type: string
-              template:
-                type: string
-              themeHandle:
-                type: string
-              themeId:
-                type: string
-              url:
-                type: string
-            required:
-            - name
+                x-kubernetes-preserve-unknown-fields: true
             type: object
           status:
             properties:

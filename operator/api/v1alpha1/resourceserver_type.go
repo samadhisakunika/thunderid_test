@@ -5,61 +5,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-type ResourceServerActionSpec struct {
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
-	// +kubebuilder:validation:Required
-	Handle string `json:"handle"`
-
-	// +optional
-	Description string `json:"description,omitempty"`
-}
-
-type ResourceServerResourceSpec struct {
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
-	// +kubebuilder:validation:Required
-	Handle string `json:"handle"`
-
-	// +optional
-	Description string `json:"description,omitempty"`
-
-	// +optional
-	Parent string `json:"parent,omitempty"`
-
-	// +optional
-	Actions []ResourceServerActionSpec `json:"actions,omitempty"`
-}
-
 type ResourceServerSpec struct {
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
+	// config is forwarded as-is into ThunderID's own resource server bootstrap schema
+	// (name, identifier, ouId, delimiter, resources, ...) — the operator does not interpret
+	// it, so ThunderID's own validation and error messages are what apply.
 	// +optional
-	Description string `json:"description,omitempty"`
-
-	// +optional
-	Handle string `json:"handle,omitempty"`
-
-	// +kubebuilder:validation:Required
-	Identifier string `json:"identifier"`
-
-	// +optional
-	Type string `json:"type,omitempty"`
-
-	// +optional
-	OUID string `json:"ouId,omitempty"`
-
-	// +optional
-	OUHandle string `json:"ouHandle,omitempty"`
-
-	// +optional
-	Delimiter string `json:"delimiter,omitempty"`
-
-	// +optional
-	Resources []ResourceServerResourceSpec `json:"resources,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config runtime.RawExtension `json:"config,omitempty"`
 }
 
 type ResourceServerStatus struct {
@@ -84,7 +36,6 @@ type ResourceServerStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
-// +kubebuilder:printcolumn:name="Name",type="string",JSONPath=".spec.name"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"

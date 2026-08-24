@@ -2,52 +2,183 @@ package controller
 
 import (
 	"bytes"
-	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
+	"strconv"
 	"strings"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // yamlSingleQuote formats s as a single-quoted YAML scalar. Go's %q escapes
-// non-BMP characters (e.g. emoji) as \Uxxxxxxxx, which ThunderID's YAML
-// parser doesn't support (see APP-1018). Single-quoting avoids escaping.
+// non-BMP characters (e.g. emoji) as \Uxxxxxxxx, and so does every YAML library
+// tried here (sigs.k8s.io/yaml, gopkg.in/yaml.v2, gopkg.in/yaml.v3 — even when
+// forced to SingleQuotedStyle) — ThunderID's YAML parser doesn't support that
+// escape form (see APP-1018). Hand-writing every scalar as a single-quoted
+// literal sidesteps all of them: single-quote style only ever needs to escape
+// the quote character itself, never the content.
 func yamlSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
-// resolveOUHandle looks up the OrganizationUnit CR whose spec.handle matches
-// handle and returns its Kubernetes UID, which is also its ThunderID internal
-// ID (buildOrganizationUnitYAML writes id: "<uid>"). ThunderID validates ouId
-// fields by direct DB lookup at startup, while ouHandle fields trigger an HTTP
-// API call that returns SSE-4030 Unauthorized before the auth layer is ready.
-// Returns "" if no matching CR is found (caller should fall back to ouHandle).
-func resolveOUHandle(ctx context.Context, c client.Client, ns, handle string) string {
-	list := &appsv1alpha1.OrganizationUnitList{}
-	if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
-		return ""
-	}
-	for _, ou := range list.Items {
-		if ou.Spec.Handle == handle {
-			return string(ou.UID)
+// yamlScalar renders v (a leaf value out of a decoded JSON document — so only
+// string/bool/nil/float64 ever reach here) as a YAML scalar.
+func yamlScalar(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return yamlSingleQuote(val)
+	case bool:
+		return fmt.Sprintf("%v", val)
+	case nil:
+		return "null"
+	case float64:
+		// encoding/json decodes every JSON number as float64; render whole numbers
+		// without a trailing ".0" so integer fields (e.g. maxOpenConns) round-trip clean.
+		if !math.IsInf(val, 0) && val == math.Trunc(val) {
+			return strconv.FormatInt(int64(val), 10)
 		}
+		return strconv.FormatFloat(val, 'g', -1, 64)
+	default:
+		return fmt.Sprintf("%v", val)
 	}
-	return ""
 }
 
-// writeYAMLBlock writes "key:\n" followed by every line of content indented
-// by 2 spaces, turning an arbitrary pasted-in multi-line YAML/JSON fragment
-// into a valid nested value. Gluing such content onto the same line as its
-// key (e.g. "key: <content>") breaks for block sequences ("- item" cannot
-// follow "key: " on the same line) — see the Flow.Spec.Nodes bug this fixed.
-func writeYAMLBlock(buf *bytes.Buffer, key, content string) {
-	if content == "" {
+// renderResourceYAML decodes spec.config — an arbitrary object ThunderID's own bootstrap
+// loader validates and owns the shape of, so a schema change on ThunderID's side never
+// needs an operator code change — and overlays the handful of values the operator itself
+// is responsible for (resource_type, id, and similar k8s-generated identifiers) on top,
+// then renders the merged document as YAML.
+func renderResourceYAML(raw runtime.RawExtension, overrides map[string]interface{}) (string, error) {
+	data := map[string]interface{}{}
+	if len(raw.Raw) > 0 {
+		if err := json.Unmarshal(raw.Raw, &data); err != nil {
+			return "", fmt.Errorf("spec.config: %w", err)
+		}
+	}
+	for k, v := range overrides {
+		data[k] = v
+	}
+
+	var buf bytes.Buffer
+	writeYAMLMapBody(&buf, "", data)
+	return buf.String(), nil
+}
+
+// mergeStringMap ensures data[key] is a map[string]interface{} and overlays values on top
+// of it, values winning over whatever spec.config already set for the same sub-key. Used
+// to fold k8s-Secret-derived material (e.g. a User's resolved credentials) into spec.config
+// without clobbering unrelated fields the user put alongside them.
+func mergeStringMap(data map[string]interface{}, key string, values map[string]string) {
+	if len(values) == 0 {
 		return
 	}
-	fmt.Fprintf(buf, "%s:\n", key)
-	for _, line := range strings.Split(content, "\n") {
-		fmt.Fprintf(buf, "  %s\n", line)
+	existing, _ := data[key].(map[string]interface{})
+	if existing == nil {
+		existing = map[string]interface{}{}
 	}
+	for k, v := range values {
+		existing[k] = v
+	}
+	data[key] = existing
+}
+
+// writeYAMLMapBody writes each of data's keys, sorted, as "<indent><key>: ...\n" lines.
+func writeYAMLMapBody(buf *bytes.Buffer, indent string, data map[string]interface{}) {
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		writeYAMLField(buf, indent, k, data[k])
+	}
+}
+
+// writeYAMLField writes one "<indent><key>: <scalar>\n" line, or "<indent><key>:\n"
+// followed by the nested map/list content for a composite value.
+func writeYAMLField(buf *bytes.Buffer, indent, key string, v interface{}) {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		if len(val) == 0 {
+			fmt.Fprintf(buf, "%s%s: {}\n", indent, key)
+			return
+		}
+		fmt.Fprintf(buf, "%s%s:\n", indent, key)
+		writeYAMLMapBody(buf, indent+"  ", val)
+	case []interface{}:
+		if len(val) == 0 {
+			fmt.Fprintf(buf, "%s%s: []\n", indent, key)
+			return
+		}
+		fmt.Fprintf(buf, "%s%s:\n", indent, key)
+		for _, item := range val {
+			writeYAMLListItem(buf, indent, item)
+		}
+	default:
+		fmt.Fprintf(buf, "%s%s: %s\n", indent, key, yamlScalar(val))
+	}
+}
+
+// writeYAMLListItem writes one "<indent>- ..." block-sequence entry. A map item's first
+// field shares the "- " line; the rest align two spaces past it, matching the style every
+// hand-written list in this package (permissions, members, resources, ...) already used.
+func writeYAMLListItem(buf *bytes.Buffer, indent string, v interface{}) {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		if len(val) == 0 {
+			fmt.Fprintf(buf, "%s- {}\n", indent)
+			return
+		}
+		var body bytes.Buffer
+		writeYAMLMapBody(&body, indent+"  ", val)
+		lines := strings.SplitAfter(body.String(), "\n")
+		for i, line := range lines {
+			if line == "" {
+				continue
+			}
+			if i == 0 {
+				buf.WriteString(indent + "- " + strings.TrimPrefix(line, indent+"  "))
+			} else {
+				buf.WriteString(line)
+			}
+		}
+	case []interface{}:
+		if len(val) == 0 {
+			fmt.Fprintf(buf, "%s- []\n", indent)
+			return
+		}
+		fmt.Fprintf(buf, "%s-\n", indent)
+		for _, item := range val {
+			writeYAMLListItem(buf, indent+"  ", item)
+		}
+	default:
+		fmt.Fprintf(buf, "%s- %s\n", indent, yamlScalar(val))
+	}
+}
+
+// deterministicUUIDv7 converts a Kubernetes object's identity (UID + creation time) into a
+// UUIDv7-shaped string. Kubernetes UIDs are already random (UUIDv4), but ThunderID requires
+// v7 (time-ordered) identifiers for some resource types; this derives one deterministically
+// so the same CR always maps to the same ThunderID id across reconciles.
+func deterministicUUIDv7(meta metav1.ObjectMeta) string {
+	tsMs := meta.CreationTimestamp.UnixMilli()
+	h := sha256.Sum256([]byte(string(meta.UID)))
+
+	var b [16]byte
+	b[0] = byte(tsMs >> 40)
+	b[1] = byte(tsMs >> 32)
+	b[2] = byte(tsMs >> 24)
+	b[3] = byte(tsMs >> 16)
+	b[4] = byte(tsMs >> 8)
+	b[5] = byte(tsMs)
+	b[6] = 0x70 | (h[0] & 0x0F) // version nibble = 7
+	b[7] = h[1]
+	b[8] = 0x80 | (h[2] & 0x3F) // variant = 10xx
+	copy(b[9:], h[3:10])
+
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

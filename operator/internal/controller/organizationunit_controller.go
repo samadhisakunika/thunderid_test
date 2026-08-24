@@ -254,7 +254,7 @@ func (r *OrganizationUnitReconciler) rebuildOrganizationUnitsConfigMap(ctx conte
 		if !o.DeletionTimestamp.IsZero() {
 			continue
 		}
-		yamlDoc, err := r.buildOrganizationUnitYAML(ctx, o)
+		yamlDoc, err := buildOrganizationUnitYAML(o)
 		if err != nil {
 			return false, fmt.Errorf("failed to build YAML for organization unit %s: %w", o.Name, err)
 		}
@@ -315,25 +315,11 @@ func (r *OrganizationUnitReconciler) rebuildOrganizationUnitsConfigMap(ctx conte
 
 // buildOrganizationUnitYAML generates a YAML document for a single organization unit in
 // the format ThunderID's declarative resource loader expects.
-func (r *OrganizationUnitReconciler) buildOrganizationUnitYAML(ctx context.Context, o appsv1alpha1.OrganizationUnit) (string, error) {
-	var buf bytes.Buffer
-	buf.WriteString("resource_type: organization_unit\n")
-	fmt.Fprintf(&buf, "id: %q\n", string(o.UID))
-	fmt.Fprintf(&buf, "handle: %s\n", yamlSingleQuote(o.Spec.Handle))
-	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(o.Spec.Name))
-	if o.Spec.Description != "" {
-		fmt.Fprintf(&buf, "description: %s\n", yamlSingleQuote(o.Spec.Description))
-	}
-
-	if o.Spec.Parent != "" {
-		fmt.Fprintf(&buf, "parent: %q\n", o.Spec.Parent)
-	}
-
-	if o.Spec.LogoURL != "" {
-		fmt.Fprintf(&buf, "logoUrl: %s\n", yamlSingleQuote(o.Spec.LogoURL))
-	}
-
-	return buf.String(), nil
+func buildOrganizationUnitYAML(o appsv1alpha1.OrganizationUnit) (string, error) {
+	return renderResourceYAML(o.Spec.Config, map[string]interface{}{
+		"resource_type": "organization_unit",
+		"id":            string(o.UID),
+	})
 }
 
 func (r *OrganizationUnitReconciler) SetupWithManager(mgr ctrl.Manager) error {

@@ -6,18 +6,18 @@ import (
 )
 
 type UserSpec struct {
-	// +kubebuilder:validation:Required
-	Type string `json:"type"`
-
+	// config is forwarded as-is into ThunderID's own user bootstrap schema
+	// (type, ouId, attributes, ...) — the operator does not interpret it, so ThunderID's
+	// own validation and error messages are what apply. Any "credentials" or "attributes"
+	// keys the resolved credentialsSecretRef Secret contributes are overlaid on top of
+	// whatever config sets, Secret winning.
 	// +optional
-	OUID string `json:"ouId,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config runtime.RawExtension `json:"config,omitempty"`
 
-	// +optional
-	OUHandle string `json:"ouHandle,omitempty"`
-
-	// +optional
-	Attributes map[string]string `json:"attributes,omitempty"`
-
+	// credentialsSecretRef is a k8s Secret reference, not a ThunderID schema field — it stays
+	// a typed field because the controller reads it directly to fetch (or auto-provision) the
+	// backing Secret. See UserStatus.CredentialsSecretRef for the Secret actually in effect.
 	// +optional
 	CredentialsSecretRef string `json:"credentialsSecretRef,omitempty"`
 }
@@ -50,7 +50,6 @@ type UserStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
-// +kubebuilder:printcolumn:name="Type",type="string",JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"

@@ -6,26 +6,12 @@ import (
 )
 
 type UserTypeSpec struct {
-	// +kubebuilder:validation:Required
-	Category string `json:"category"`
-
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
+	// config is forwarded as-is into ThunderID's own user type bootstrap schema
+	// (category, name, ouId, systemAttributes, schema, ...) — the operator does not
+	// interpret it, so ThunderID's own validation and error messages are what apply.
 	// +optional
-	OUID string `json:"ouId,omitempty"`
-
-	// +optional
-	OUHandle string `json:"ouHandle,omitempty"`
-
-	// +optional
-	AllowSelfRegistration bool `json:"allowSelfRegistration,omitempty"`
-
-	// +optional
-	SystemAttributes map[string]string `json:"systemAttributes,omitempty"`
-
-	// +optional
-	Schema string `json:"schema,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config runtime.RawExtension `json:"config,omitempty"`
 }
 
 type UserTypeStatus struct {
@@ -50,8 +36,6 @@ type UserTypeStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
-// +kubebuilder:printcolumn:name="Category",type="string",JSONPath=".spec.category"
-// +kubebuilder:printcolumn:name="Name",type="string",JSONPath=".spec.name"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 

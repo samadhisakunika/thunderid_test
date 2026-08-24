@@ -6,20 +6,12 @@ import (
 )
 
 type ThemeSpec struct {
-	// +kubebuilder:validation:Required
-	DisplayName string `json:"displayName"`
-
+	// config is forwarded as-is into ThunderID's own theme bootstrap schema
+	// (handle, displayName, description, theme, ...) — the operator does not interpret
+	// it, so ThunderID's own validation and error messages are what apply.
 	// +optional
-	Handle string `json:"handle,omitempty"`
-
-	// +optional
-	Description string `json:"description,omitempty"`
-
-	// +optional
-	Theme string `json:"theme,omitempty"`
-
-	// +optional
-	IsReadOnly bool `json:"isReadOnly,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config runtime.RawExtension `json:"config,omitempty"`
 }
 
 type ThemeStatus struct {
@@ -44,7 +36,6 @@ type ThemeStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
-// +kubebuilder:printcolumn:name="Display Name",type="string",JSONPath=".spec.displayName"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 

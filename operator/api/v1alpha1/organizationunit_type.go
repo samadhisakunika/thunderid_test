@@ -6,26 +6,12 @@ import (
 )
 
 type OrganizationUnitSpec struct {
-	// +kubebuilder:validation:Required
-	Handle string `json:"handle"`
-
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
+	// config is forwarded as-is into ThunderID's own organization unit bootstrap schema
+	// (handle, name, description, parentId, logoUrl, ...) — the operator does not interpret
+	// it, so ThunderID's own validation and error messages are what apply.
 	// +optional
-	Description string `json:"description,omitempty"`
-
-	// +optional
-	Parent string `json:"parentId,omitempty"`
-
-	// +optional
-	LogoURL string `json:"logoUrl,omitempty"`
-
-	// +optional
-	CreatedAt string `json:"createdAt,omitempty"`
-
-	// +optional
-	UpdatedAt string `json:"updatedAt,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config runtime.RawExtension `json:"config,omitempty"`
 }
 
 type OrganizationUnitStatus struct {
@@ -50,8 +36,6 @@ type OrganizationUnitStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
-// +kubebuilder:printcolumn:name="Handle",type="string",JSONPath=".spec.handle"
-// +kubebuilder:printcolumn:name="Name",type="string",JSONPath=".spec.name"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 

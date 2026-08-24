@@ -18,12 +18,6 @@ spec:
     - jsonPath: .metadata.labels['thunderid\.io/instance']
       name: Instance
       type: string
-    - jsonPath: .spec.handle
-      name: Handle
-      type: string
-    - jsonPath: .spec.flowType
-      name: Flow Type
-      type: string
     - jsonPath: .status.synced
       name: Synced
       type: boolean
@@ -53,26 +47,13 @@ spec:
             type: object
           spec:
             properties:
-              flowType:
-                enum:
-                - AUTHENTICATION
-                - REGISTRATION
-                type: string
-              handle:
-                type: string
-              isReadOnly:
-                type: boolean
-              name:
-                type: string
-              nodes:
-                items:
-                  type: object
-                  x-kubernetes-preserve-unknown-fields: true
-                type: array
-            required:
-            - flowType
-            - handle
-            - name
+              config:
+                description: |-
+                  config is forwarded as-is into ThunderID's own flow bootstrap schema
+                  (handle, name, flowType, nodes, ...) — the operator does not interpret it, so
+                  ThunderID's own validation and error messages are what apply.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
             type: object
           status:
             properties:

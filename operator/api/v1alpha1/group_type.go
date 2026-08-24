@@ -5,29 +5,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-type GroupMemberSpec struct {
-	// +kubebuilder:validation:Required
-	ID string `json:"id"`
-
-	// +kubebuilder:validation:Required
-	Type string `json:"type"`
-}
-
 type GroupSpec struct {
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
+	// config is forwarded as-is into ThunderID's own group bootstrap schema
+	// (name, description, ouId, members, ...) — the operator does not interpret it, so
+	// ThunderID's own validation and error messages are what apply.
 	// +optional
-	Description string `json:"description,omitempty"`
-
-	// +optional
-	OUID string `json:"ouId,omitempty"`
-
-	// +optional
-	OUHandle string `json:"ouHandle,omitempty"`
-
-	// +optional
-	Members []GroupMemberSpec `json:"members,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config runtime.RawExtension `json:"config,omitempty"`
 }
 
 type GroupStatus struct {
@@ -52,7 +36,6 @@ type GroupStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
-// +kubebuilder:printcolumn:name="Name",type="string",JSONPath=".spec.name"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"

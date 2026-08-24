@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,14 +25,6 @@ func init() {
 	utilruntime.Must(corev1.AddToScheme(scheme))
 }
 
-type typeMeta struct {
-	Kind     string `json:"kind"`
-	Metadata struct {
-		Name      string `json:"name"`
-		Namespace string `json:"namespace"`
-	} `json:"metadata"`
-}
-
 type refError struct {
 	kind   string
 	name   string
@@ -49,11 +40,14 @@ func (e refError) String() string {
 	return fmt.Sprintf("  [%s/%s] %s %q not found", e.kind, e.name, e.field, e.ref)
 }
 
-// baseHandles caches handles seeded from the thunderid-resources ConfigMap.
-type baseHandles struct {
-	flows  map[string]bool
-	ous    map[string]bool
-	themes map[string]bool
+// entityKinds is every CRD kind bound to a ThunderIDInstance via the thunderid.io/instance
+// label. Their spec.config content is opaque to the operator (see CLAUDE.md's decoupling
+// note) — ThunderID's own bootstrap loader validates it, and errors surface as k8s Events
+// read from the pod's logs, not here. This tool only catches the one thing that IS a k8s-level
+// mistake: a thunderid.io/instance label that doesn't name a real ThunderIDInstance.
+var entityKinds = []string{
+	"Application", "Flow", "Theme", "OrganizationUnit", "Role", "UserType",
+	"User", "ResourceServer", "Group", "ServerConfig", "Translation",
 }
 
 func main() {
@@ -94,124 +88,21 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  validate <file.yaml> [file2.yaml…]  validate YAML files before applying")
 }
 
-// runAll lists every CR from the cluster and validates handle references.
+// runAll lists every entity CR from the cluster and checks its thunderid.io/instance label.
 func runAll(ctx context.Context, c client.Client, ns string) {
-	baseCache := map[string]baseHandles{}
 	var errs []refError
-
-	// Applications
-	var apps appsv1alpha1.ApplicationList
-	if err := c.List(ctx, &apps, client.InNamespace(ns)); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list Applications: %v\n", err)
-	} else {
-		for _, obj := range apps.Items {
-			obj.Namespace = ns
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-			errs = append(errs, checkApplication(ctx, c, obj, base)...)
+	for _, kind := range entityKinds {
+		list, err := newListForKind(kind)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			continue
 		}
-	}
-
-	// Flows
-	var flows appsv1alpha1.FlowList
-	if err := c.List(ctx, &flows, client.InNamespace(ns)); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list Flows: %v\n", err)
-	} else {
-		for _, obj := range flows.Items {
-			errs = append(errs, checkInstanceRef(ctx, c, "Flow", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
+		if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to list %ss: %v\n", kind, err)
+			continue
 		}
-	}
-
-	// Themes
-	var themes appsv1alpha1.ThemeList
-	if err := c.List(ctx, &themes, client.InNamespace(ns)); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list Themes: %v\n", err)
-	} else {
-		for _, obj := range themes.Items {
-			errs = append(errs, checkInstanceRef(ctx, c, "Theme", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-		}
-	}
-
-	// OrganizationUnits
-	var ous appsv1alpha1.OrganizationUnitList
-	if err := c.List(ctx, &ous, client.InNamespace(ns)); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list OrganizationUnits: %v\n", err)
-	} else {
-		for _, obj := range ous.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-			errs = append(errs, checkInstanceRef(ctx, c, "OrganizationUnit", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-			if obj.Spec.Parent != "" {
-				errs = append(errs, checkOUHandle(ctx, c, "OrganizationUnit", obj.Name, ns, "parentHandle", obj.Spec.Parent, base)...)
-			}
-		}
-	}
-
-	// ResourceServers
-	var rss appsv1alpha1.ResourceServerList
-	if err := c.List(ctx, &rss, client.InNamespace(ns)); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list ResourceServers: %v\n", err)
-	} else {
-		for _, obj := range rss.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-			errs = append(errs, checkInstanceRef(ctx, c, "ResourceServer", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-			if obj.Spec.OUHandle != "" {
-				errs = append(errs, checkOUHandle(ctx, c, "ResourceServer", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
-			}
-		}
-	}
-
-	// Roles
-	var roles appsv1alpha1.RoleList
-	if err := c.List(ctx, &roles, client.InNamespace(ns)); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list Roles: %v\n", err)
-	} else {
-		for _, obj := range roles.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-			errs = append(errs, checkInstanceRef(ctx, c, "Role", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-			if obj.Spec.OUHandle != "" {
-				errs = append(errs, checkOUHandle(ctx, c, "Role", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
-			}
-		}
-	}
-
-	// UserTypes
-	var uts appsv1alpha1.UserTypeList
-	if err := c.List(ctx, &uts, client.InNamespace(ns)); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list UserTypes: %v\n", err)
-	} else {
-		for _, obj := range uts.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-			errs = append(errs, checkInstanceRef(ctx, c, "UserType", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-			if obj.Spec.OUHandle != "" {
-				errs = append(errs, checkOUHandle(ctx, c, "UserType", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
-			}
-		}
-	}
-
-	// Users
-	var users appsv1alpha1.UserList
-	if err := c.List(ctx, &users, client.InNamespace(ns)); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list Users: %v\n", err)
-	} else {
-		for _, obj := range users.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-			errs = append(errs, checkInstanceRef(ctx, c, "User", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-			if obj.Spec.OUHandle != "" {
-				errs = append(errs, checkOUHandle(ctx, c, "User", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
-			}
-		}
-	}
-
-	// Groups
-	var groups appsv1alpha1.GroupList
-	if err := c.List(ctx, &groups, client.InNamespace(ns)); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list Groups: %v\n", err)
-	} else {
-		for _, obj := range groups.Items {
-			base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-			errs = append(errs, checkInstanceRef(ctx, c, "Group", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-			if obj.Spec.OUHandle != "" {
-				errs = append(errs, checkOUHandle(ctx, c, "Group", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
-			}
+		for _, obj := range eachObject(list) {
+			errs = append(errs, checkInstanceRef(ctx, c, kind, obj.GetName(), ns, obj.GetLabels()[appsv1alpha1.InstanceRefLabel])...)
 		}
 	}
 
@@ -259,97 +150,38 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 		return []refError{{kind: "file", name: path, field: "read", detail: err.Error()}}
 	}
 
-	// base handle cache keyed by "ns/instanceRef", loaded lazily per instance
-	baseCache := map[string]baseHandles{}
-
 	var errs []refError
 	for _, doc := range bytes.Split(data, []byte("\n---")) {
 		doc = bytes.TrimSpace(doc)
 		if len(doc) == 0 {
 			continue
 		}
-		var tm typeMeta
-		if err := yaml.Unmarshal(doc, &tm); err != nil || tm.Kind == "" {
+		var obj struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Name      string            `json:"name"`
+				Namespace string            `json:"namespace"`
+				Labels    map[string]string `json:"labels"`
+			} `json:"metadata"`
+		}
+		if err := yaml.Unmarshal(doc, &obj); err != nil || obj.Kind == "" {
 			continue
 		}
-		ns := tm.Metadata.Namespace
+		isEntity := false
+		for _, k := range entityKinds {
+			if obj.Kind == k {
+				isEntity = true
+				break
+			}
+		}
+		if !isEntity {
+			continue
+		}
+		ns := obj.Metadata.Namespace
 		if ns == "" {
 			ns = "default"
 		}
-
-		switch tm.Kind {
-		case "Application":
-			var obj appsv1alpha1.Application
-			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				obj.Namespace = ns
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-				errs = append(errs, checkApplication(ctx, c, obj, base)...)
-			}
-		case "Flow":
-			var obj appsv1alpha1.Flow
-			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				errs = append(errs, checkInstanceRef(ctx, c, "Flow", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-			}
-		case "Theme":
-			var obj appsv1alpha1.Theme
-			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				errs = append(errs, checkInstanceRef(ctx, c, "Theme", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-			}
-		case "OrganizationUnit":
-			var obj appsv1alpha1.OrganizationUnit
-			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-				errs = append(errs, checkInstanceRef(ctx, c, "OrganizationUnit", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-				if obj.Spec.Parent != "" {
-					errs = append(errs, checkOUHandle(ctx, c, "OrganizationUnit", obj.Name, ns, "parentHandle", obj.Spec.Parent, base)...)
-				}
-			}
-		case "ResourceServer":
-			var obj appsv1alpha1.ResourceServer
-			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-				errs = append(errs, checkInstanceRef(ctx, c, "ResourceServer", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-				if obj.Spec.OUHandle != "" {
-					errs = append(errs, checkOUHandle(ctx, c, "ResourceServer", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
-				}
-			}
-		case "Role":
-			var obj appsv1alpha1.Role
-			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-				errs = append(errs, checkInstanceRef(ctx, c, "Role", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-				if obj.Spec.OUHandle != "" {
-					errs = append(errs, checkOUHandle(ctx, c, "Role", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
-				}
-			}
-		case "UserType":
-			var obj appsv1alpha1.UserType
-			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-				errs = append(errs, checkInstanceRef(ctx, c, "UserType", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-				if obj.Spec.OUHandle != "" {
-					errs = append(errs, checkOUHandle(ctx, c, "UserType", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
-				}
-			}
-		case "User":
-			var obj appsv1alpha1.User
-			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-				errs = append(errs, checkInstanceRef(ctx, c, "User", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-				if obj.Spec.OUHandle != "" {
-					errs = append(errs, checkOUHandle(ctx, c, "User", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
-				}
-			}
-		case "Group":
-			var obj appsv1alpha1.Group
-			if err := yaml.Unmarshal(doc, &obj); err == nil {
-				base := getBaseHandles(ctx, c, baseCache, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])
-				errs = append(errs, checkInstanceRef(ctx, c, "Group", obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel])...)
-				if obj.Spec.OUHandle != "" {
-					errs = append(errs, checkOUHandle(ctx, c, "Group", obj.Name, ns, "ouHandle", obj.Spec.OUHandle, base)...)
-				}
-			}
-		}
+		errs = append(errs, checkInstanceRef(ctx, c, obj.Kind, obj.Metadata.Name, ns, obj.Metadata.Labels[appsv1alpha1.InstanceRefLabel])...)
 	}
 	return errs
 }
@@ -369,139 +201,85 @@ func checkInstanceRef(ctx context.Context, c client.Client, kind, name, ns, ref 
 	return []refError{{kind: kind, name: name, field: "thunderid.io/instance", ref: ref, detail: err.Error()}}
 }
 
-func checkApplication(ctx context.Context, c client.Client, app appsv1alpha1.Application, base baseHandles) []refError {
-	ns := app.Namespace
-	var errs []refError
-	errs = append(errs, checkInstanceRef(ctx, c, "Application", app.Name, ns, app.Labels[appsv1alpha1.InstanceRefLabel])...)
-	if app.Spec.OUHandle != "" {
-		errs = append(errs, checkOUHandle(ctx, c, "Application", app.Name, ns, "ouHandle", app.Spec.OUHandle, base)...)
+// newListForKind returns an empty typed List object for one of entityKinds.
+func newListForKind(kind string) (client.ObjectList, error) {
+	switch kind {
+	case "Application":
+		return &appsv1alpha1.ApplicationList{}, nil
+	case "Flow":
+		return &appsv1alpha1.FlowList{}, nil
+	case "Theme":
+		return &appsv1alpha1.ThemeList{}, nil
+	case "OrganizationUnit":
+		return &appsv1alpha1.OrganizationUnitList{}, nil
+	case "Role":
+		return &appsv1alpha1.RoleList{}, nil
+	case "UserType":
+		return &appsv1alpha1.UserTypeList{}, nil
+	case "User":
+		return &appsv1alpha1.UserList{}, nil
+	case "ResourceServer":
+		return &appsv1alpha1.ResourceServerList{}, nil
+	case "Group":
+		return &appsv1alpha1.GroupList{}, nil
+	case "ServerConfig":
+		return &appsv1alpha1.ServerConfigList{}, nil
+	case "Translation":
+		return &appsv1alpha1.TranslationList{}, nil
+	default:
+		return nil, fmt.Errorf("unknown kind %q", kind)
 	}
-	if app.Spec.AuthFlowHandle != "" {
-		errs = append(errs, checkFlowHandle(ctx, c, "Application", app.Name, ns, "authFlowHandle", app.Spec.AuthFlowHandle, base)...)
-	}
-	if app.Spec.RegistrationFlowHandle != "" {
-		errs = append(errs, checkFlowHandle(ctx, c, "Application", app.Name, ns, "registrationFlowHandle", app.Spec.RegistrationFlowHandle, base)...)
-	}
-	if app.Spec.RecoveryFlowHandle != "" {
-		errs = append(errs, checkFlowHandle(ctx, c, "Application", app.Name, ns, "recoveryFlowHandle", app.Spec.RecoveryFlowHandle, base)...)
-	}
-	if app.Spec.ThemeHandle != "" {
-		errs = append(errs, checkThemeHandle(ctx, c, "Application", app.Name, ns, "themeHandle", app.Spec.ThemeHandle, base)...)
-	}
-	return errs
 }
 
-func checkFlowHandle(ctx context.Context, c client.Client, kind, name, ns, field, handle string, base baseHandles) []refError {
-	if base.flows[handle] {
-		return nil
-	}
-	list := &appsv1alpha1.FlowList{}
-	if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
-		return []refError{{kind: kind, name: name, field: field, ref: handle, detail: err.Error()}}
-	}
-	for _, f := range list.Items {
-		if f.Spec.Handle == handle {
-			return nil
+// eachObject extracts the individual client.Object items out of a typed List, via the
+// meta.ExtractList-equivalent minimal switch needed for entityKinds.
+func eachObject(list client.ObjectList) []client.Object {
+	var out []client.Object
+	switch l := list.(type) {
+	case *appsv1alpha1.ApplicationList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
+		}
+	case *appsv1alpha1.FlowList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
+		}
+	case *appsv1alpha1.ThemeList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
+		}
+	case *appsv1alpha1.OrganizationUnitList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
+		}
+	case *appsv1alpha1.RoleList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
+		}
+	case *appsv1alpha1.UserTypeList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
+		}
+	case *appsv1alpha1.UserList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
+		}
+	case *appsv1alpha1.ResourceServerList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
+		}
+	case *appsv1alpha1.GroupList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
+		}
+	case *appsv1alpha1.ServerConfigList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
+		}
+	case *appsv1alpha1.TranslationList:
+		for i := range l.Items {
+			out = append(out, &l.Items[i])
 		}
 	}
-	return []refError{{kind: kind, name: name, field: field, ref: handle}}
-}
-
-func checkOUHandle(ctx context.Context, c client.Client, kind, name, ns, field, handle string, base baseHandles) []refError {
-	if base.ous[handle] {
-		return nil
-	}
-	list := &appsv1alpha1.OrganizationUnitList{}
-	if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
-		return []refError{{kind: kind, name: name, field: field, ref: handle, detail: err.Error()}}
-	}
-	for _, ou := range list.Items {
-		if ou.Spec.Handle == handle {
-			return nil
-		}
-	}
-	return []refError{{kind: kind, name: name, field: field, ref: handle}}
-}
-
-func checkThemeHandle(ctx context.Context, c client.Client, kind, name, ns, field, handle string, base baseHandles) []refError {
-	if base.themes[handle] {
-		return nil
-	}
-	// theme handle == CR metadata.name (set by buildThemeYAML as t.Name)
-	target := &appsv1alpha1.Theme{}
-	err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: handle}, target)
-	if err == nil {
-		return nil
-	}
-	if k8serrors.IsNotFound(err) {
-		return []refError{{kind: kind, name: name, field: field, ref: handle}}
-	}
-	return []refError{{kind: kind, name: name, field: field, ref: handle, detail: err.Error()}}
-}
-
-// getBaseHandles returns cached base handles for the given instance, loading lazily.
-func getBaseHandles(ctx context.Context, c client.Client, cache map[string]baseHandles, ns, instanceRef string) baseHandles {
-	key := ns + "/" + instanceRef
-	if bh, ok := cache[key]; ok {
-		return bh
-	}
-	bh := loadBaseHandles(ctx, c, ns, instanceRef)
-	cache[key] = bh
-	return bh
-}
-
-func loadBaseHandles(ctx context.Context, c client.Client, ns, instanceRef string) baseHandles {
-	empty := baseHandles{flows: map[string]bool{}, ous: map[string]bool{}, themes: map[string]bool{}}
-	if instanceRef == "" {
-		return empty
-	}
-	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: instanceRef}, instance); err != nil {
-		return empty
-	}
-	if instance.Spec.ResourcesConfigMap == "" {
-		return empty
-	}
-	cm := &corev1.ConfigMap{}
-	if err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: instance.Spec.ResourcesConfigMap}, cm); err != nil {
-		return empty
-	}
-	return parseBaseHandles(cm.Data["resources.yaml"])
-}
-
-// parseBaseHandles reads YAML documents from the thunderid-resources ConfigMap.
-// Each document starts with a comment "# resource_type: <type>" header that identifies what kind of resource the document describes.
-func parseBaseHandles(content string) baseHandles {
-	bh := baseHandles{flows: map[string]bool{}, ous: map[string]bool{}, themes: map[string]bool{}}
-	var currentType string
-	for _, doc := range bytes.Split([]byte(content), []byte("\n---")) {
-		doc = bytes.TrimSpace(doc)
-		if len(doc) == 0 {
-			continue
-		}
-		for _, line := range bytes.Split(doc, []byte("\n")) {
-			l := strings.TrimSpace(string(line))
-			if strings.HasPrefix(l, "# resource_type:") {
-				currentType = strings.TrimSpace(strings.TrimPrefix(l, "# resource_type:"))
-				break
-			}
-		}
-		var obj map[string]interface{}
-		if err := yaml.Unmarshal(doc, &obj); err != nil {
-			continue
-		}
-		handle, _ := obj["handle"].(string)
-		if handle == "" {
-			continue
-		}
-		switch currentType {
-		case "flow":
-			bh.flows[handle] = true
-		case "organization_unit":
-			bh.ous[handle] = true
-		case "theme":
-			bh.themes[handle] = true
-		}
-	}
-	return bh
+	return out
 }

@@ -18,9 +18,6 @@ spec:
     - jsonPath: .metadata.labels['thunderid\.io/instance']
       name: Instance
       type: string
-    - jsonPath: .spec.language
-      name: Language
-      type: string
     - jsonPath: .status.synced
       name: Synced
       type: boolean
@@ -50,22 +47,13 @@ spec:
             type: object
           spec:
             properties:
-              language:
+              config:
                 description: |-
-                  BCP 47 language tag (e.g. "en-US", "es", "fr-CA"). This is the unique identifier
-                  for this translation set within the instance.
-                type: string
-              translations:
-                additionalProperties:
-                  additionalProperties:
-                    type: string
-                  type: object
-                description: Namespace → key → translated string. Namespaces group
-                  related keys (e.g. "auth", "errors").
+                  config is forwarded as-is into ThunderID's own translation bootstrap schema
+                  (language, translations, ...) — the operator does not interpret it, so ThunderID's
+                  own validation and error messages are what apply.
                 type: object
-            required:
-            - language
-            - translations
+                x-kubernetes-preserve-unknown-fields: true
             type: object
           status:
             properties:

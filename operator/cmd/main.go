@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -181,11 +180,6 @@ func main() {
 		setupLog.Error(err, "Failed to start manager")
 		os.Exit(1)
 	}
-	if err := controller.SetupReferenceIndexes(context.Background(), mgr); err != nil {
-		setupLog.Error(err, "Failed to set up reference indexes")
-		os.Exit(1)
-	}
-
 	kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		setupLog.Error(err, "Failed to create Kubernetes client")

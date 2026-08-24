@@ -18,9 +18,6 @@ spec:
     - jsonPath: .metadata.labels['thunderid\.io/instance']
       name: Instance
       type: string
-    - jsonPath: .spec.name
-      name: Name
-      type: string
     - jsonPath: .status.synced
       name: Synced
       type: boolean
@@ -53,28 +50,9 @@ spec:
             type: object
           spec:
             properties:
-              description:
-                type: string
-              members:
-                items:
-                  properties:
-                    id:
-                      type: string
-                    type:
-                      type: string
-                  required:
-                  - id
-                  - type
-                  type: object
-                type: array
-              name:
-                type: string
-              ouHandle:
-                type: string
-              ouId:
-                type: string
-            required:
-            - name
+              config:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
             type: object
           status:
             properties:

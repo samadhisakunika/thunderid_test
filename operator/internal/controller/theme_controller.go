@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	sigsyaml "sigs.k8s.io/yaml"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -274,11 +272,12 @@ func (r *ThemeReconciler) rebuildThemesConfigMap(ctx context.Context, instance *
 		if !t.DeletionTimestamp.IsZero() {
 			continue
 		}
-		if t.Spec.Theme == "" {
-			continue // ThunderID requires theme JSON; skip incomplete themes
+		yamlDoc, err := buildThemeYAML(t)
+		if err != nil {
+			return false, fmt.Errorf("failed to build YAML for theme %s: %w", t.Name, err)
 		}
 		buf.WriteString("---\n")
-		buf.WriteString(buildThemeYAML(t))
+		buf.WriteString(yamlDoc)
 	}
 	themesContent := buf.String()
 
@@ -337,30 +336,11 @@ func (r *ThemeReconciler) rebuildThemesConfigMap(ctx context.Context, instance *
 
 // buildThemeYAML generates a YAML document for a single theme in bootstrap
 // format (resource_type: as a YAML key).
-func buildThemeYAML(t appsv1alpha1.Theme) string {
-	var buf bytes.Buffer
-	buf.WriteString("resource_type: theme\n")
-	fmt.Fprintf(&buf, "id: %s\n", deterministicUUIDv7(t.ObjectMeta))
-	handle := t.Name
-	if t.Spec.Handle != "" {
-		handle = t.Spec.Handle
-	}
-	fmt.Fprintf(&buf, "handle: %s\n", yamlSingleQuote(handle))
-	fmt.Fprintf(&buf, "displayName: %s\n", yamlSingleQuote(t.Spec.DisplayName))
-	if t.Spec.Description != "" {
-		fmt.Fprintf(&buf, "description: %s\n", yamlSingleQuote(t.Spec.Description))
-	}
-	if t.Spec.Theme != "" {
-		if yamlBytes, err := sigsyaml.JSONToYAML([]byte(t.Spec.Theme)); err == nil {
-			buf.WriteString("theme:\n")
-			for _, line := range strings.Split(strings.TrimRight(string(yamlBytes), "\n"), "\n") {
-				fmt.Fprintf(&buf, "  %s\n", line)
-			}
-		} else {
-			fmt.Fprintf(&buf, "theme: %s\n", t.Spec.Theme)
-		}
-	}
-	return buf.String()
+func buildThemeYAML(t appsv1alpha1.Theme) (string, error) {
+	return renderResourceYAML(t.Spec.Config, map[string]interface{}{
+		"resource_type": "theme",
+		"id":            deterministicUUIDv7(t.ObjectMeta),
+	})
 }
 
 func containsString(slice []string, s string) bool {

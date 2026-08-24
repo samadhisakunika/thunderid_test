@@ -18,9 +18,6 @@ spec:
     - jsonPath: .metadata.labels['thunderid\.io/instance']
       name: Instance
       type: string
-    - jsonPath: .spec.name
-      name: Name
-      type: string
     - jsonPath: .status.synced
       name: Synced
       type: boolean
@@ -50,58 +47,13 @@ spec:
             type: object
           spec:
             properties:
-              cors:
-                description: Set when name == "cors".
-                properties:
-                  allowedOrigins:
-                    items:
-                      description: |-
-                        CORSOrigin is a single CORS origin entry — either a literal URL or a regex pattern.
-                        Exactly one of URL or Regex should be set.
-                      properties:
-                        regex:
-                          description: |-
-                            RE2 regular expression matching allowed origins
-                            (e.g. "\\Ahttps://.*\\.preview\\.example\\.com\\z").
-                          type: string
-                        url:
-                          description: Literal origin URL (e.g. "https://app.example.com").
-                          type: string
-                      type: object
-                    type: array
+              config:
+                description: |-
+                  config is forwarded as-is into ThunderID's own server_config bootstrap schema
+                  (name: cors|session|defaultResourceServer, value: {...}) — the operator does not
+                  interpret it, so ThunderID's own validation and error messages are what apply.
                 type: object
-              defaultResourceServer:
-                description: Set when name == "defaultResourceServer".
-                properties:
-                  resourceServerId:
-                    description: UUID of the ResourceServer to use as the default.
-                    type: string
-                required:
-                - resourceServerId
-                type: object
-              name:
-                description: Which server configuration section this CR manages.
-                enum:
-                - cors
-                - defaultResourceServer
-                - session
-                type: string
-              session:
-                description: Set when name == "session".
-                properties:
-                  absoluteTimeoutSeconds:
-                    description: Absolute timeout in seconds. Zero uses the ThunderID
-                      built-in default.
-                    format: int64
-                    type: integer
-                  idleTimeoutSeconds:
-                    description: Idle timeout in seconds. Zero uses the ThunderID
-                      built-in default.
-                    format: int64
-                    type: integer
-                type: object
-            required:
-            - name
+                x-kubernetes-preserve-unknown-fields: true
             type: object
           status:
             properties:

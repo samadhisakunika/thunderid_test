@@ -6,21 +6,12 @@ import (
 )
 
 type FlowSpec struct {
-	// +kubebuilder:validation:Required
-	Handle string `json:"handle"`
-
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=AUTHENTICATION;REGISTRATION
-	FlowType string `json:"flowType"`
-
+	// config is forwarded as-is into ThunderID's own flow bootstrap schema
+	// (handle, name, flowType, nodes, ...) — the operator does not interpret it, so
+	// ThunderID's own validation and error messages are what apply.
 	// +optional
-	Nodes []runtime.RawExtension `json:"nodes,omitempty"`
-
-	// +optional
-	IsReadOnly bool `json:"isReadOnly,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config runtime.RawExtension `json:"config,omitempty"`
 }
 
 type FlowStatus struct {
@@ -45,8 +36,6 @@ type FlowStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
-// +kubebuilder:printcolumn:name="Handle",type="string",JSONPath=".spec.handle"
-// +kubebuilder:printcolumn:name="Flow Type",type="string",JSONPath=".spec.flowType"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 

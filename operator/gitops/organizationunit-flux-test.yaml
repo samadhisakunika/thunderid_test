@@ -6,6 +6,7 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  handle: flux-gitops-test
-  name: Flux GitOps Test OU (edited via Git)
-  description: Proves that editing a CR file and pushing to GitHub auto-applies the change to the cluster via Flux.
+  config:
+    handle: flux-gitops-test
+    name: Flux GitOps Test OU (edited via Git)
+    description: Proves that editing a CR file and pushing to GitHub auto-applies the change to the cluster via Flux.

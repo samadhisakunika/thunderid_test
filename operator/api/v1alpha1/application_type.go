@@ -5,37 +5,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-type AssertionSpec struct {
-	ValidityPeriod int64 `json:"validityPeriod,omitempty"`
-}
-
-type LoginConsentSpec struct {
-	ValidityPeriod int64 `json:"validityPeriod,omitempty"`
-}
-
 type ApplicationSpec struct {
-	Name                      string            `json:"name"`
-	Description               string            `json:"description,omitempty"`
-	Template                  string            `json:"template,omitempty"`
-	URL                       string            `json:"url,omitempty"`
-	LogoURL                   string            `json:"logoUrl,omitempty"`
-	OUHandle                  string            `json:"ouHandle,omitempty"`
-	OUID                      string            `json:"ouId,omitempty"`
-	AuthFlowHandle            string            `json:"authFlowHandle,omitempty"`
-	AuthFlowID                string            `json:"authFlowId,omitempty"`
-	RegistrationFlowHandle    string            `json:"registrationFlowHandle,omitempty"`
-	RegistrationFlowID        string            `json:"registrationFlowId,omitempty"`
-	IsRegistrationFlowEnabled bool              `json:"isRegistrationFlowEnabled,omitempty"`
-	RecoveryFlowHandle        string            `json:"recoveryFlowHandle,omitempty"`
-	IsRecoveryFlowEnabled     bool              `json:"isRecoveryFlowEnabled,omitempty"`
-	IsSignOutFlowEnabled      bool              `json:"isSignOutFlowEnabled,omitempty"`
-	Assertion                 *AssertionSpec    `json:"assertion,omitempty"`
-	LoginConsent              *LoginConsentSpec `json:"loginConsent,omitempty"`
-	AllowedUserTypes          []string          `json:"allowedUserTypes,omitempty"`
-	AllowedUserTypeIDs        []string          `json:"allowedUserTypeIds,omitempty"`
-	ThemeHandle               string            `json:"themeHandle,omitempty"`
-	ThemeID                   string            `json:"themeId,omitempty"`
-	InboundAuthConfig         string            `json:"inboundAuthConfig,omitempty"`
+	// config is forwarded as-is into ThunderID's own application bootstrap schema
+	// (name, description, url, authFlowId, inboundAuthConfig, ...) — the operator does not
+	// interpret it, so ThunderID's own validation and error messages are what apply. See
+	// resource_type/id below for the two keys the operator itself injects.
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config runtime.RawExtension `json:"config,omitempty"`
 }
 
 type ApplicationStatus struct {
@@ -47,6 +24,10 @@ type ApplicationStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
+// +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
+// +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
+
 type Application struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

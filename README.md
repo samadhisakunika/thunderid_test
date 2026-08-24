@@ -151,7 +151,7 @@ or install the [Helm chart](charts/thunderid-operator) instead — see its own R
 
 ### 4. Register an application
 
-Create an `Application` resource. The `thunderid.io/instance` label must match the name of your `ThunderIDInstance`. `ouHandle`/`authFlowHandle` resolve against the image's baked-in defaults, so no ID lookup is needed (to reference a theme, `themeId` is the confirmed-working field — see [Application](#application) below):
+Create an `Application` resource. The `thunderid.io/instance` label must match the name of your `ThunderIDInstance`. `spec.config` is forwarded into ThunderID's own application schema essentially as-is (see the [design note](#custom-resources) above) — this example uses literal IDs for the org unit and auth flow, both of which exist in the image's own baked-in defaults (get them with the `kubectl exec ... 01-default-resources.yaml` trick in [Troubleshooting](#troubleshooting) if you're using a different image):
 
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
@@ -162,31 +162,32 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  name: My Console App
-  ouHandle: default
-  authFlowHandle: console-app-flow
-  isRegistrationFlowEnabled: true
-  isRecoveryFlowEnabled: false
-  allowedUserTypes:
-    - Person
-  assertion:
-    validityPeriod: 3600
-  loginConsent:
-    validityPeriod: 0
-  inboundAuthConfig: |
-    - type: oauth2
-      config:
-        clientId: MY_APP_CLIENT
-        redirectUris:
-          - https://localhost:8090/callback
-        grantTypes:
-          - authorization_code
-          - refresh_token
-        responseTypes:
-          - code
-        tokenEndpointAuthMethod: none
-        pkceRequired: true
-        publicClient: true
+  config:
+    name: My Console App
+    ouId: "<id of the 'default' OrganizationUnit>"
+    authFlowId: "<id of the 'console-app-flow' Flow>"
+    isRegistrationFlowEnabled: true
+    isRecoveryFlowEnabled: false
+    allowedUserTypes:
+      - Person
+    assertion:
+      validityPeriod: 3600
+    loginConsent:
+      validityPeriod: 0
+    inboundAuthConfig:
+      - type: oauth2
+        config:
+          clientId: MY_APP_CLIENT
+          redirectUris:
+            - https://localhost:8090/callback
+          grantTypes:
+            - authorization_code
+            - refresh_token
+          responseTypes:
+            - code
+          tokenEndpointAuthMethod: none
+          pkceRequired: true
+          publicClient: true
 ```
 
 ```bash
@@ -229,6 +230,11 @@ An alternative to steps 1 and 3 above for a packaged, in-cluster operator deploy
 ---
 
 ## Custom Resources
+
+**Design note — `spec.config` on every entity kind:** Every kind below *except* `ThunderIDInstance` has a spec shaped as just `config: {...}` (plus, on `User`, a `credentialsSecretRef` string field — see [User](#user)). `spec.config` is forwarded into ThunderID's own resource-bootstrap schema for that kind essentially as-is; the operator injects only `resource_type` and `id` (its own k8s-generated identifiers) on top. It does **not** resolve handles to IDs, validate required fields, or otherwise interpret the content — that's ThunderID's own bootstrap loader's job. This means:
+- The field names inside `spec.config` are ThunderID's own field names (e.g. `type`, not `template` — see [Application](#application)), not an operator-invented schema. When ThunderID adds or renames a field, it just works without an operator code change.
+- A mistake (missing required field, a `*Handle` value ThunderID can't resolve, bad JSON) is **not** caught at `kubectl apply` time — it's caught at ThunderID's own bootstrap time, surfaced as a `ThunderIDError`/`ThunderIDCrashed` Event on the CR (see [Checking Status](#checking-status)).
+- Cross-references (`ouId`, `authFlowId`, `themeId`, `resourceServerId`, member/assignment IDs, ...) can be literal ThunderID IDs, the same as if you were editing ThunderID's own `resources.yaml` by hand. The operator no longer resolves `*Handle`-style fields (`ouHandle`, `authFlowHandle`, `registrationFlowHandle`, `recoveryFlowHandle`) for you, but ThunderID's own bootstrap loader resolves them itself — confirmed live against `ghcr.io/thunder-id/thunderid:latest` (a plain `ouHandle`/`authFlowHandle` Application reached `Ready` with no ID at all). `themeHandle` is the one confirmed exception — not supported by ThunderID at all; use `themeId`.
 
 ### ThunderIDInstance
 
@@ -392,16 +398,18 @@ Registers an OAuth2/OIDC application in ThunderID. The operator writes all appli
 | Field | Description |
 |-------|-------------|
 | `metadata.labels['thunderid.io/instance']` | Name of the `ThunderIDInstance` to register with |
-| `spec.name` | Display name of the application |
-| `spec.ouId` / `spec.ouHandle` | Organizational Unit — use IDs from the live `thunderid-resources` ConfigMap |
-| `spec.authFlowHandle` / `spec.authFlowId` / `spec.authFlowRef` | Auth flow reference |
-| `spec.themeId` / `spec.themeRef` | UI theme reference |
-| `spec.logoUrl` | Logo (`emoji:👨‍💻` or a URL) |
-| `spec.template` | ThunderID application type — one of `browser`, `fullstack`, `mobile`, `m2m`, `custom`. **Required by ThunderID's own bootstrap validation** — omitting it fails with `APP-1042` |
-| `spec.allowedUserTypes` / `spec.allowedUserTypeIds` | User types allowed to log in — by name (must match an existing `UserType`'s `spec.name`) or by the `UserType` CR's UID |
-| `spec.inboundAuthConfig` | Raw YAML block defining OAuth2 client configuration |
-| `spec.isRegistrationFlowEnabled` | Enable user self-registration |
-| `spec.isRecoveryFlowEnabled` | Enable password recovery |
+| `spec.config.name` | Display name of the application |
+| `spec.config.ouId` | Organizational Unit ID |
+| `spec.config.authFlowId` | Auth flow ID |
+| `spec.config.themeId` | UI theme ID |
+| `spec.config.logoUrl` | Logo (`emoji:👨‍💻` or a URL) |
+| `spec.config.type` | ThunderID application type — one of `browser`, `fullstack`, `mobile`, `m2m`, `custom`. **Required by ThunderID's own bootstrap validation** — omitting it fails with `APP-1042`. Note the key is `type`, not `template` — this used to be an operator-side rename, now it's just ThunderID's own field name |
+| `spec.config.allowedUserTypes` | List of `UserType` names (e.g. `Person`) allowed to log in — a literal string list, not a Kubernetes reference |
+| `spec.config.inboundAuthConfig` | Nested YAML/JSON defining OAuth2 client configuration |
+| `spec.config.isRegistrationFlowEnabled` | Enable user self-registration |
+| `spec.config.isRecoveryFlowEnabled` | Enable password recovery |
+
+All of the above are ThunderID's own field names under `spec.config`, forwarded as-is — see the [design note](#custom-resources). None of them are enforced or validated by the operator or the CRD schema; get the exact set ThunderID's bootstrap loader accepts from its own docs/schema, not this table, when in doubt.
 
 **OAuth2 configuration notes:**
 - Public client (browser app, SPA): use `publicClient: true`, `tokenEndpointAuthMethod: none`, `pkceRequired: true`
@@ -423,18 +431,19 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  handle: my-login-flow
-  name: My Login Flow
-  flowType: AUTHENTICATION   # or REGISTRATION
-  nodes: |
-    - id: start
-      type: START
-      onSuccess: end
-    - id: end
-      type: END
+  config:
+    handle: my-login-flow
+    name: My Login Flow
+    flowType: AUTHENTICATION   # or REGISTRATION
+    nodes:
+      - id: start
+        type: START
+        onSuccess: end
+      - id: end
+        type: END
 ```
 
-`spec.nodes` is the flow's node graph as raw YAML (the same shape ThunderID exports/imports natively), pasted verbatim — not a JSON string.
+`spec.config.nodes` is the flow's node graph — nested YAML matching the shape ThunderID exports/imports natively, pasted directly (not a string).
 
 ---
 
@@ -451,10 +460,14 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  displayName: My Theme
-  description: Dark purple theme
-  theme: '{"defaultColorScheme":"dark","colorSchemes":{"dark":{"palette":{"primary":{"main":"#5567d5"}}}}}'
+  config:
+    handle: my-theme
+    displayName: My Theme
+    description: Dark purple theme
+    theme: {"defaultColorScheme":"dark","colorSchemes":{"dark":{"palette":{"primary":{"main":"#5567d5"}}}}}
 ```
+
+`spec.config.theme` is nested YAML/JSON, not a string — a bare `{...}` value is valid YAML flow-mapping syntax (JSON is a YAML subset), which keeps a pasted-in JSON theme export usable verbatim without re-indenting it into block style.
 
 ---
 
@@ -471,17 +484,18 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  handle: default
-  name: Default
-  description: Default organization unit
-  logoUrl: "https://example.com/logo.png"
+  config:
+    handle: default
+    name: Default
+    description: Default organization unit
+    logoUrl: "https://example.com/logo.png"
 ```
 
 | Field | Description |
 |-------|--------------|
-| `spec.handle` / `spec.name` | Required. Handle is the machine-readable slug, name is the display name |
-| `spec.parentId` | Optional parent organization unit — a literal ThunderID ID only; there's no handle-based resolution for this field (unlike `ouId`/`ouHandle` elsewhere) |
-| `spec.logoUrl` | Optional. Free text — quoted safely for values that may contain emoji |
+| `spec.config.handle` / `spec.config.name` | Required by ThunderID. Handle is the machine-readable slug, name is the display name |
+| `spec.config.parentId` | Optional parent organization unit — a literal ThunderID ID |
+| `spec.config.logoUrl` | Optional. Free text |
 
 ---
 
@@ -498,33 +512,34 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  name: System
-  description: System resource server
-  identifier: https://localhost:8090/mcp
-  ouHandle: default
-  delimiter: ":"
-  resources:
-    - name: System
-      handle: system
-      description: System resource
-    - name: Organization Unit
-      handle: ou
-      description: Organization unit resource
-      parent: system
-      actions:
-        - name: View
-          handle: view
-          description: Read-only access to organization units
+  config:
+    name: System
+    description: System resource server
+    identifier: https://localhost:8090/mcp
+    ouId: "<id of the 'default' OrganizationUnit>"
+    delimiter: ":"
+    resources:
+      - name: System
+        handle: system
+        description: System resource
+      - name: Organization Unit
+        handle: ou
+        description: Organization unit resource
+        parent: system
+        actions:
+          - name: View
+            handle: view
+            description: Read-only access to organization units
 ```
 
 | Field | Description |
 |-------|--------------|
-| `spec.name` / `spec.identifier` | Required. ThunderID rejects a resource server with no identifier, crash-looping the whole pod on next restart — the CRD now enforces this too |
-| `spec.handle` / `spec.delimiter` | Optional. `delimiter` joins a resource and action handle into a permission string (e.g. `ou:view`) |
-| `spec.ouId` / `spec.ouHandle` | Owning organization unit — literal ID, or a handle that's resolved live against a matching `OrganizationUnit` CR's `spec.handle` (see [OrganizationUnit](#organizationunit)). One of the two must resolve to a real org unit, or the operator skips syncing this resource server rather than writing an incomplete entry |
-| `spec.resources[].name` / `.handle` / `.description` | Required name/handle per resource, optional description |
-| `spec.resources[].parent` | Optional — the `handle` of another entry in the same `resources` list (not a Kubernetes reference) |
-| `spec.resources[].actions[]` | Optional list of `{name, handle, description}` actions available on that resource |
+| `spec.config.name` / `spec.config.identifier` | Required. ThunderID rejects a resource server with no identifier at bootstrap, crash-looping the whole pod on next restart — surfaced as a `ThunderIDError` Event, not a `kubectl apply`-time rejection (see the [design note](#custom-resources)) |
+| `spec.config.handle` / `spec.config.delimiter` | Optional. `delimiter` joins a resource and action handle into a permission string (e.g. `ou:view`) |
+| `spec.config.ouId` | Owning organization unit ID |
+| `spec.config.resources[].name` / `.handle` / `.description` | Required name/handle per resource, optional description |
+| `spec.config.resources[].parent` | Optional — the `handle` of another entry in the same `resources` list (not a Kubernetes reference) |
+| `spec.config.resources[].actions[]` | Optional list of `{name, handle, description}` actions available on that resource |
 
 ---
 
@@ -541,24 +556,25 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  name: Administrator
-  description: System administrator role with full permissions
-  ouHandle: default   # or ouId for a literal ID
-  permissions:
-    - resourceServerId: "019f215e-1a55-72db-9743-ac25d839c72a"
-      permissions:
-        - system
-  assignments:
-    - id: "019f215e-1bc0-773b-a202-04fbcee09eeb"
-      type: group
+  config:
+    name: Administrator
+    description: System administrator role with full permissions
+    ouId: "<id of the 'default' OrganizationUnit>"
+    permissions:
+      - resourceServerId: "019f215e-1a55-72db-9743-ac25d839c72a"
+        permissions:
+          - system
+    assignments:
+      - id: "019f215e-1bc0-773b-a202-04fbcee09eeb"
+        type: group
 ```
 
 | Field | Description |
 |-------|-------------|
-| `spec.name` | Required |
-| `spec.ouId` / `spec.ouHandle` | Owning organization unit — literal ID, or a handle resolved live against a matching `OrganizationUnit` CR's `spec.handle` |
-| `spec.permissions[].resourceServerId` / `.permissions` | The resource server this grant applies to, and which permission names are granted on it |
-| `spec.assignments[].id` / `.type` | Who the role is assigned to (e.g. a group ID) and the assignment type |
+| `spec.config.name` | Required |
+| `spec.config.ouId` | Owning organization unit ID |
+| `spec.config.permissions[].resourceServerId` / `.permissions` | The resource server this grant applies to, and which permission names are granted on it |
+| `spec.config.assignments[].id` / `.type` | Who the role is assigned to (e.g. a group ID) and the assignment type |
 
 ---
 
@@ -575,25 +591,24 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  category: user
-  name: Person
-  ouHandle: default
-  systemAttributes:
-    display: username
-  schema: |
-    {
-      "username": {"type": "string", "displayName": "Username", "required": true, "unique": true},
-      "email": {"type": "string", "displayName": "Email", "required": true, "unique": true},
-      "password": {"type": "string", "displayName": "Password", "required": false, "credential": true}
-    }
+  config:
+    category: user
+    name: Person
+    ouId: "<id of the 'default' OrganizationUnit>"
+    systemAttributes:
+      display: username
+    schema:
+      username: {"type": "string", "displayName": "Username", "required": true, "unique": true}
+      email: {"type": "string", "displayName": "Email", "required": true, "unique": true}
+      password: {"type": "string", "displayName": "Password", "required": false, "credential": true}
 ```
 
 | Field | Description |
 |-------|-------------|
-| `spec.category` / `spec.name` | Required. Category is a free-form string (e.g. `user`) |
-| `spec.ouId` / `spec.ouHandle` | Owning organization unit, same as Role |
-| `spec.systemAttributes` | Small key/value map, e.g. which attribute is used as the display name |
-| `spec.schema` | Required. The attribute schema as raw JSON — pasted verbatim, single or multi-line |
+| `spec.config.category` / `spec.config.name` | Required. Category is a free-form string (e.g. `user`) |
+| `spec.config.ouId` | Owning organization unit ID |
+| `spec.config.systemAttributes` | Small key/value map, e.g. which attribute is used as the display name |
+| `spec.config.schema` | Required. The attribute schema, nested YAML/JSON |
 
 ---
 
@@ -610,30 +625,31 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  type: Person
-  ouHandle: default
-  attributes:
-    email: admin@example.com
-    given_name: Admin
-    family_name: User
-    name: Administrator
-    phone_number: "+12345678920"
-    picture: "https://example.com/avatar.jpg"
+  config:
+    type: Person
+    ouId: "<id of the 'default' OrganizationUnit>"
+    attributes:
+      email: admin@example.com
+      given_name: Admin
+      family_name: User
+      name: Administrator
+      phone_number: "+12345678920"
+      picture: "https://example.com/avatar.jpg"
   credentialsSecretRef: admin-credentials
 ```
 
 | Field | Description |
 |-------|-------------|
-| `spec.type` | Required. The **name** of a `UserType` (e.g. `Person`) — a literal string, not a Kubernetes reference, same convention as `Application.allowedUserTypes` |
-| `spec.ouId` / `spec.ouHandle` | Owning organization unit, same as Role/UserType/ResourceServer |
-| `spec.attributes` | Free-form key/value map — the keys should match the attributes defined in the referenced `UserType`'s `schema` |
-| `spec.credentialsSecretRef` | Name of a Secret (same namespace) holding this user's credentials — see below |
+| `spec.config.type` | Required. The **name** of a `UserType` (e.g. `Person`) — a literal string, not a Kubernetes reference, same convention as `Application.allowedUserTypes` |
+| `spec.config.ouId` | Owning organization unit ID |
+| `spec.config.attributes` | Free-form key/value map — the keys should match the attributes defined in the referenced `UserType`'s `schema` |
+| `spec.credentialsSecretRef` | Name of a Secret (same namespace) holding this user's credentials — see below. Unlike every other field on this page, this one stays a typed field *outside* `spec.config`: it's k8s-native Secret plumbing, not a ThunderID schema field |
 
 #### Credentials (`spec.credentialsSecretRef`)
 
 A user's credentials (and, if present, `username`) come from a Kubernetes Secret rather than plaintext CR fields, so they never sit in the CR spec or etcd unencrypted.
 
-- **You supply the Secret** (`spec.credentialsSecretRef: admin-credentials`) — every key in the Secret's `data`/`stringData` is passed through as a credential type (e.g. `password`, or any other type name a UserType's `schema` marks `"credential": true`), **except** `username`, which is special-cased: it overrides `spec.attributes.username` instead, since ThunderID treats username as an identifying attribute, not a credential. If both are set, the Secret wins — you don't need `username` in `spec.attributes` at all once it's in the Secret.
+- **You supply the Secret** (`spec.credentialsSecretRef: admin-credentials`) — every key in the Secret's `data`/`stringData` is passed through as a credential type (e.g. `password`, or any other type name a UserType's `schema` marks `"credential": true`), **except** `username`, which is special-cased: it overrides `spec.config.attributes.username` instead, since ThunderID treats username as an identifying attribute, not a credential. If both are set, the Secret wins — you don't need `username` in `spec.config.attributes` at all once it's in the Secret.
 
   ```yaml
   apiVersion: v1
@@ -683,19 +699,20 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  name: Administrators
-  description: System administrators group
-  ouHandle: default
-  members:
-    - id: "<user-or-group-id>"
-      type: user
+  config:
+    name: Administrators
+    description: System administrators group
+    ouId: "<id of the 'default' OrganizationUnit>"
+    members:
+      - id: "<user-or-group-id>"
+        type: user
 ```
 
 | Field | Description |
 |-------|-------------|
-| `spec.name` | Required |
-| `spec.ouId` / `spec.ouHandle` | Owning organization unit, same as Role/UserType/User |
-| `spec.members[].id` / `.type` | Literal member ID (a `User` or `Group`'s ID) and type (e.g. `user`, `group`) — literal, not a Kubernetes reference, same convention as `Role.assignments` |
+| `spec.config.name` | Required |
+| `spec.config.ouId` | Owning organization unit ID |
+| `spec.config.members[].id` / `.type` | Literal member ID (a `User` or `Group`'s ID) and type (e.g. `user`, `group`) — literal, not a Kubernetes reference, same convention as `Role.assignments` |
 
 ---
 
@@ -759,11 +776,11 @@ kubectl run inspect-image --image=<image tag in use> --restart=Never --command -
 kubectl exec inspect-image -- cat /opt/thunderid/bootstrap/01-default-resources.yaml
 kubectl delete pod inspect-image --wait=false
 ```
-Or just use the `*Handle` field (`ouHandle`, `authFlowHandle`) instead of an ID — it doesn't require knowing the exact ID scheme at all.
+`ouHandle`/`authFlowHandle` resolve fine at bootstrap on the current image (confirmed live) — if you'd rather not chase down IDs at all, use the handle instead.
 
 ### APP-1024 — Invalid OAuth configuration
 
-**Cause:** Incompatible OAuth2 settings in `spec.inboundAuthConfig`. Common examples:
+**Cause:** Incompatible OAuth2 settings in `spec.config.inboundAuthConfig`. Common examples:
 
 - `client_credentials` grant type with `tokenEndpointAuthMethod: none`
 - `client_credentials` with `publicClient: true`
@@ -772,9 +789,9 @@ Or just use the `*Handle` field (`ouHandle`, `authFlowHandle`) instead of an ID 
 
 ### APP-1042 — Application type is required
 
-**Cause:** `spec.template` is unset on the Application. ThunderID's own bootstrap validation requires an application type — one of `browser`, `fullstack`, `mobile`, `m2m`, `custom`.
+**Cause:** `spec.config.type` is unset on the Application. ThunderID's own bootstrap validation requires an application type — one of `browser`, `fullstack`, `mobile`, `m2m`, `custom`.
 
-**Fix:** Set `spec.template` on the Application.
+**Fix:** Set `spec.config.type` on the Application.
 
 ### Phase: Error but no ThunderIDError event
 

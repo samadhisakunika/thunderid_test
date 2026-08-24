@@ -255,10 +255,7 @@ func (r *UserTypeReconciler) rebuildUserTypesConfigMap(ctx context.Context, inst
 		if !u.DeletionTimestamp.IsZero() {
 			continue
 		}
-		if u.Spec.Schema == "" {
-			continue // ThunderID requires an attribute schema; skip incomplete user types
-		}
-		yamlDoc, err := r.buildUserTypeYAML(ctx, u)
+		yamlDoc, err := buildUserTypeYAML(u)
 		if err != nil {
 			return false, fmt.Errorf("failed to build YAML for user type %s: %w", u.Name, err)
 		}
@@ -319,42 +316,11 @@ func (r *UserTypeReconciler) rebuildUserTypesConfigMap(ctx context.Context, inst
 
 // buildUserTypeYAML generates a YAML document for a single user type in the format
 // ThunderID's declarative resource loader expects.
-func (r *UserTypeReconciler) buildUserTypeYAML(ctx context.Context, u appsv1alpha1.UserType) (string, error) {
-	var buf bytes.Buffer
-	buf.WriteString("resource_type: user_type\n")
-	fmt.Fprintf(&buf, "id: %q\n", string(u.UID))
-	fmt.Fprintf(&buf, "category: %s\n", yamlSingleQuote(u.Spec.Category))
-	fmt.Fprintf(&buf, "name: %s\n", yamlSingleQuote(u.Spec.Name))
-
-	if u.Spec.OUID != "" {
-		fmt.Fprintf(&buf, "ouId: %q\n", u.Spec.OUID)
-	} else if u.Spec.OUHandle != "" {
-		if uid := resolveOUHandle(ctx, r.Client, u.Namespace, u.Spec.OUHandle); uid != "" {
-			fmt.Fprintf(&buf, "ouId: %q\n", uid)
-		} else {
-			fmt.Fprintf(&buf, "ouHandle: %s\n", yamlSingleQuote(u.Spec.OUHandle))
-		}
-	}
-
-	if u.Spec.AllowSelfRegistration {
-		fmt.Fprintf(&buf, "allowSelfRegistration: %v\n", u.Spec.AllowSelfRegistration)
-	}
-
-	if len(u.Spec.SystemAttributes) > 0 {
-		buf.WriteString("systemAttributes:\n")
-		keys := make([]string, 0, len(u.Spec.SystemAttributes))
-		for k := range u.Spec.SystemAttributes {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlSingleQuote(u.Spec.SystemAttributes[k]))
-		}
-	}
-
-	writeYAMLBlock(&buf, "schema", u.Spec.Schema)
-
-	return buf.String(), nil
+func buildUserTypeYAML(u appsv1alpha1.UserType) (string, error) {
+	return renderResourceYAML(u.Spec.Config, map[string]interface{}{
+		"resource_type": "user_type",
+		"id":            string(u.UID),
+	})
 }
 
 func (r *UserTypeReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -363,9 +329,6 @@ func (r *UserTypeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.userTypesForDeployment), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.userTypesForInstance),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Watches(&appsv1alpha1.OrganizationUnit{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexUserTypeOUHandle, func() client.ObjectList { return &appsv1alpha1.UserTypeList{} },
-				func(o client.Object) string { return o.(*appsv1alpha1.OrganizationUnit).Spec.Handle }))).
 		Named("usertype").
 		Complete(r)
 }

@@ -6,8 +6,8 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  name: cors
-  cors:
-    allowedOrigins:
-      - url: "http://localhost:5173"
-
+  config:
+    name: cors
+    value:
+      allowedOrigins:
+        - "http://localhost:5173"

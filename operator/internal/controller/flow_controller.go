@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -30,7 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
-	"gopkg.in/yaml.v3"
 )
 
 const flowFinalizer = "thunderid.io/flow-cleanup"
@@ -272,9 +270,6 @@ func (r *FlowReconciler) rebuildFlowsConfigMap(ctx context.Context, instance *ap
 		if !f.DeletionTimestamp.IsZero() {
 			continue
 		}
-		if len(f.Spec.Nodes) == 0 {
-			continue // Skip incomplete flows without nodes
-		}
 
 		flowYAML, err := buildFlowYAML(f)
 		if err != nil {
@@ -341,42 +336,12 @@ func (r *FlowReconciler) rebuildFlowsConfigMap(ctx context.Context, instance *ap
 	return true, r.Patch(ctx, instance, patch)
 }
 
-// Struct to represent the bootstrap JSON/YAML payload for ThunderID
-type thunderIDFlowPayload struct {
-	ResourceType string        `yaml:"resource_type"`
-	ID           string        `yaml:"id"`
-	Handle       string        `yaml:"handle"`
-	Name         string        `yaml:"name"`
-	FlowType     string        `yaml:"flowType"`
-	Nodes        []interface{} `yaml:"nodes,omitempty"`
-}
-
 // buildFlowYAML generates a YAML document for a single flow in bootstrap format
 func buildFlowYAML(f appsv1alpha1.Flow) (string, error) {
-	var parsedNodes []interface{}
-	for _, rawNode := range f.Spec.Nodes {
-		var nodeObj interface{}
-		if err := json.Unmarshal(rawNode.Raw, &nodeObj); err != nil {
-			return "", fmt.Errorf("failed to parse node raw JSON for flow %s: %w", f.Name, err)
-		}
-		parsedNodes = append(parsedNodes, nodeObj)
-	}
-
-	payload := thunderIDFlowPayload{
-		ResourceType: "flow",
-		ID:           deterministicUUIDv7(f.ObjectMeta),
-		Handle:       f.Spec.Handle,
-		Name:         f.Spec.Name,
-		FlowType:     f.Spec.FlowType,
-		Nodes:        parsedNodes,
-	}
-
-	out, err := yaml.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal flow payload to yaml: %w", err)
-	}
-
-	return string(out), nil
+	return renderResourceYAML(f.Spec.Config, map[string]interface{}{
+		"resource_type": "flow",
+		"id":            deterministicUUIDv7(f.ObjectMeta),
+	})
 }
 
 func (r *FlowReconciler) SetupWithManager(mgr ctrl.Manager) error {

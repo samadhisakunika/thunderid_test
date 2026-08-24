@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -341,25 +342,8 @@ func (r *UserReconciler) rebuildUsersConfigMap(ctx context.Context, instance *ap
 // buildUserYAML generates a YAML document for a single user in the format
 // ThunderID's declarative resource loader expects.
 func (r *UserReconciler) buildUserYAML(ctx context.Context, u appsv1alpha1.User) (string, error) {
-	var buf bytes.Buffer
-	buf.WriteString("resource_type: user\n")
-	fmt.Fprintf(&buf, "id: %q\n", string(u.UID))
-	fmt.Fprintf(&buf, "type: %s\n", yamlSingleQuote(u.Spec.Type))
-
-	if u.Spec.OUID != "" {
-		fmt.Fprintf(&buf, "ouId: %q\n", u.Spec.OUID)
-	} else if u.Spec.OUHandle != "" {
-		if uid := resolveOUHandle(ctx, r.Client, u.Namespace, u.Spec.OUHandle); uid != "" {
-			fmt.Fprintf(&buf, "ouId: %q\n", uid)
-		} else {
-			fmt.Fprintf(&buf, "ouHandle: %s\n", yamlSingleQuote(u.Spec.OUHandle))
-		}
-	}
-
-	attributes := make(map[string]string, len(u.Spec.Attributes))
-	for k, v := range u.Spec.Attributes {
-		attributes[k] = v
-	}
+	attributes := map[string]string{}
+	credentials := map[string]string{}
 
 	credSecretName, _, err := r.ensureCredentialsSecret(ctx, u)
 	if err != nil {
@@ -369,10 +353,9 @@ func (r *UserReconciler) buildUserYAML(ctx context.Context, u appsv1alpha1.User)
 	if err := r.Get(ctx, client.ObjectKey{Namespace: u.Namespace, Name: credSecretName}, credSecret); err != nil {
 		return "", fmt.Errorf("credentials secret %q: %w", credSecretName, err)
 	}
-	credentials := make(map[string]string, len(credSecret.Data))
 	for k, v := range credSecret.Data {
 		// username identifies the user, not a credential — ThunderID expects it under
-		// attributes. The Secret's value wins over any inline spec.attributes.username.
+		// attributes. The Secret's value wins over any inline spec.config.attributes.username.
 		if k == "username" {
 			attributes["username"] = string(v)
 			continue
@@ -380,30 +363,19 @@ func (r *UserReconciler) buildUserYAML(ctx context.Context, u appsv1alpha1.User)
 		credentials[k] = string(v)
 	}
 
-	if len(attributes) > 0 {
-		buf.WriteString("attributes:\n")
-		keys := make([]string, 0, len(attributes))
-		for k := range attributes {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlSingleQuote(attributes[k]))
+	data := map[string]interface{}{}
+	if len(u.Spec.Config.Raw) > 0 {
+		if err := json.Unmarshal(u.Spec.Config.Raw, &data); err != nil {
+			return "", fmt.Errorf("spec.config: %w", err)
 		}
 	}
+	data["resource_type"] = "user"
+	data["id"] = string(u.UID)
+	mergeStringMap(data, "attributes", attributes)
+	mergeStringMap(data, "credentials", credentials)
 
-	if len(credentials) > 0 {
-		buf.WriteString("credentials:\n")
-		keys := make([]string, 0, len(credentials))
-		for k := range credentials {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Fprintf(&buf, "  %s: %s\n", k, yamlSingleQuote(credentials[k]))
-		}
-	}
-
+	var buf bytes.Buffer
+	writeYAMLMapBody(&buf, "", data)
 	return buf.String(), nil
 }
 
@@ -413,12 +385,7 @@ func (r *UserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.usersForDeployment), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.usersForInstance),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Watches(&appsv1alpha1.OrganizationUnit{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexUserOUHandle, func() client.ObjectList { return &appsv1alpha1.UserList{} },
-				func(o client.Object) string { return o.(*appsv1alpha1.OrganizationUnit).Spec.Handle }))).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexUserCredentialsSecretRef, func() client.ObjectList { return &appsv1alpha1.UserList{} },
-				func(o client.Object) string { return o.(*corev1.Secret).Name }))).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.usersForSecret)).
 		Named("user").
 		Complete(r)
 }
@@ -451,6 +418,23 @@ func (r *UserReconciler) usersForDeployment(ctx context.Context, obj client.Obje
 					NamespacedName: types.NamespacedName{Name: user.Name, Namespace: user.Namespace},
 				})
 			}
+		}
+	}
+	return reqs
+}
+
+// usersForSecret maps a Secret change to Users whose spec.credentialsSecretRef names it.
+func (r *UserReconciler) usersForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	userList := &appsv1alpha1.UserList{}
+	if err := r.List(ctx, userList, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for _, user := range userList.Items {
+		if user.Spec.CredentialsSecretRef == obj.GetName() {
+			reqs = append(reqs, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: user.Name, Namespace: user.Namespace},
+			})
 		}
 	}
 	return reqs

@@ -6,14 +6,12 @@ import (
 )
 
 type TranslationSpec struct {
-	// BCP 47 language tag (e.g. "en-US", "es", "fr-CA"). This is the unique identifier
-	// for this translation set within the instance.
-	// +kubebuilder:validation:Required
-	Language string `json:"language"`
-
-	// Namespace → key → translated string. Namespaces group related keys (e.g. "auth", "errors").
-	// +kubebuilder:validation:Required
-	Translations map[string]map[string]string `json:"translations"`
+	// config is forwarded as-is into ThunderID's own translation bootstrap schema
+	// (language, translations, ...) — the operator does not interpret it, so ThunderID's
+	// own validation and error messages are what apply.
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config runtime.RawExtension `json:"config,omitempty"`
 }
 
 type TranslationStatus struct {
@@ -35,7 +33,6 @@ type TranslationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".metadata.labels['thunderid\\.io/instance']"
-// +kubebuilder:printcolumn:name="Language",type="string",JSONPath=".spec.language"
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 

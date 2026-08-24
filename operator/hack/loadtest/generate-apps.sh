@@ -20,18 +20,19 @@ metadata:
     loadtest: "true"
     thunderid.io/instance: $INSTANCE_REF
 spec:
-  name: "Load Test App $i"
-  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
-  authFlowHandle: console-app-flow
-  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
-  isRegistrationFlowEnabled: true
-  isRecoveryFlowEnabled: false
-  allowedUserTypes:
-    - Person
-  assertion:
-    validityPeriod: 3600
-  loginConsent:
-    validityPeriod: 0
+  config:
+    name: "Load Test App $i"
+    ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+    authFlowHandle: console-app-flow
+    themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+    isRegistrationFlowEnabled: true
+    isRecoveryFlowEnabled: false
+    allowedUserTypes:
+      - Person
+    assertion:
+      validityPeriod: 3600
+    loginConsent:
+      validityPeriod: 0
 ---
 EOF
 done

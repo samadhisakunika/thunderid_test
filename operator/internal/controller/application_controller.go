@@ -266,7 +266,7 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 		if !a.DeletionTimestamp.IsZero() {
 			continue
 		}
-		yamlDoc, err := r.buildApplicationYAML(ctx, a)
+		yamlDoc, err := buildApplicationYAML(a)
 		if err != nil {
 			return false, fmt.Errorf("failed to build YAML for application %s: %w", a.Name, err)
 		}
@@ -328,101 +328,11 @@ func (r *ApplicationReconciler) rebuildApplicationsConfigMap(ctx context.Context
 	return true, r.Patch(ctx, instance, patch)
 }
 
-func (r *ApplicationReconciler) buildApplicationYAML(ctx context.Context, a appsv1alpha1.Application) (string, error) {
-	var buf bytes.Buffer
-	buf.WriteString("resource_type: application\n")
-	fmt.Fprintf(&buf, "id: %q\n", string(a.UID))
-	fmt.Fprintf(&buf, "name: %q\n", a.Spec.Name)
-	if a.Spec.Description != "" {
-		fmt.Fprintf(&buf, "description: %q\n", a.Spec.Description)
-	}
-	if a.Spec.Template != "" {
-		// ThunderID's own resources.yaml schema calls this field "type" (see
-		// /opt/thunderid/bootstrap/01-default-resources.yaml in the image, e.g. the built-in
-		// "Console" application: "type: browser") — not "template". The CRD field is kept named
-		// spec.template for clarity to operator users (it selects one of browser/fullstack/mobile/
-		// m2m/custom), but must be rendered under ThunderID's actual key or it's silently ignored
-		// as an unrecognized field, then rejected at bootstrap as APP-1042 "Application type is
-		// required".
-		fmt.Fprintf(&buf, "type: %s\n", a.Spec.Template)
-	}
-	if a.Spec.OUID != "" {
-		fmt.Fprintf(&buf, "ouId: %q\n", a.Spec.OUID)
-	} else if a.Spec.OUHandle != "" {
-		if uid := resolveOUHandle(ctx, r.Client, a.Namespace, a.Spec.OUHandle); uid != "" {
-			fmt.Fprintf(&buf, "ouId: %q\n", uid)
-		} else {
-			fmt.Fprintf(&buf, "ouHandle: %q\n", a.Spec.OUHandle)
-		}
-	}
-	if a.Spec.URL != "" {
-		fmt.Fprintf(&buf, "url: %q\n", a.Spec.URL)
-	}
-	if a.Spec.LogoURL != "" {
-		fmt.Fprintf(&buf, "logoUrl: %s\n", yamlSingleQuote(a.Spec.LogoURL))
-	}
-
-	if a.Spec.AuthFlowID != "" {
-		fmt.Fprintf(&buf, "authFlowId: %q\n", a.Spec.AuthFlowID)
-	} else if a.Spec.AuthFlowHandle != "" {
-		fmt.Fprintf(&buf, "authFlowHandle: %q\n", a.Spec.AuthFlowHandle)
-	}
-	if a.Spec.RegistrationFlowID != "" {
-		fmt.Fprintf(&buf, "registrationFlowId: %q\n", a.Spec.RegistrationFlowID)
-	} else if a.Spec.RegistrationFlowHandle != "" {
-		fmt.Fprintf(&buf, "registrationFlowHandle: %q\n", a.Spec.RegistrationFlowHandle)
-	}
-	fmt.Fprintf(&buf, "isRegistrationFlowEnabled: %v\n", a.Spec.IsRegistrationFlowEnabled)
-
-	if a.Spec.RecoveryFlowHandle != "" {
-		fmt.Fprintf(&buf, "recoveryFlowHandle: %q\n", a.Spec.RecoveryFlowHandle)
-	}
-	fmt.Fprintf(&buf, "isRecoveryFlowEnabled: %v\n", a.Spec.IsRecoveryFlowEnabled)
-	fmt.Fprintf(&buf, "isSignOutFlowEnabled: %v\n", a.Spec.IsSignOutFlowEnabled)
-
-	allowedUserTypes := append([]string{}, a.Spec.AllowedUserTypes...)
-	if len(a.Spec.AllowedUserTypeIDs) > 0 {
-		userTypeList := &appsv1alpha1.UserTypeList{}
-		if err := r.List(ctx, userTypeList, client.InNamespace(a.Namespace)); err != nil {
-			return "", err
-		}
-		names := make(map[string]string, len(userTypeList.Items))
-		for _, ut := range userTypeList.Items {
-			names[string(ut.UID)] = ut.Spec.Name
-		}
-		for _, id := range a.Spec.AllowedUserTypeIDs {
-			name, ok := names[id]
-			if !ok {
-				return "", fmt.Errorf("allowedUserTypeIds: no UserType with id %q found", id)
-			}
-			allowedUserTypes = append(allowedUserTypes, name)
-		}
-	}
-	if len(allowedUserTypes) > 0 {
-		buf.WriteString("allowedUserTypes:\n")
-		for _, t := range allowedUserTypes {
-			fmt.Fprintf(&buf, "  - %s\n", t)
-		}
-	}
-
-	if a.Spec.Assertion != nil {
-		fmt.Fprintf(&buf, "assertion:\n  validityPeriod: %d\n", a.Spec.Assertion.ValidityPeriod)
-
-	}
-
-	if a.Spec.LoginConsent != nil {
-		fmt.Fprintf(&buf, "loginConsent:\n  validityPeriod: %d\n", a.Spec.LoginConsent.ValidityPeriod)
-	}
-
-	if a.Spec.ThemeHandle != "" {
-		fmt.Fprintf(&buf, "themeHandle: %q\n", a.Spec.ThemeHandle)
-	} else if a.Spec.ThemeID != "" {
-		fmt.Fprintf(&buf, "themeId: %q\n", a.Spec.ThemeID)
-	}
-
-	writeYAMLBlock(&buf, "inboundAuthConfig", a.Spec.InboundAuthConfig)
-
-	return buf.String(), nil
+func buildApplicationYAML(a appsv1alpha1.Application) (string, error) {
+	return renderResourceYAML(a.Spec.Config, map[string]interface{}{
+		"resource_type": "application",
+		"id":            string(a.UID),
+	})
 }
 
 func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -431,21 +341,6 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.appsForDeployment), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.appsForInstance),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Watches(&appsv1alpha1.Flow{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexApplicationAuthFlowHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
-				func(o client.Object) string { return o.(*appsv1alpha1.Flow).Spec.Handle }))).
-		Watches(&appsv1alpha1.Flow{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexApplicationRegistrationFlowHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
-				func(o client.Object) string { return o.(*appsv1alpha1.Flow).Spec.Handle }))).
-		Watches(&appsv1alpha1.Flow{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexApplicationRecoveryFlowHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
-				func(o client.Object) string { return o.(*appsv1alpha1.Flow).Spec.Handle }))).
-		Watches(&appsv1alpha1.Theme{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexApplicationThemeHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
-				func(o client.Object) string { return o.(*appsv1alpha1.Theme).Spec.Handle }))).
-		Watches(&appsv1alpha1.OrganizationUnit{}, handler.EnqueueRequestsFromMapFunc(
-			enqueueReferencing(mgr.GetClient(), indexApplicationOUHandle, func() client.ObjectList { return &appsv1alpha1.ApplicationList{} },
-				func(o client.Object) string { return o.(*appsv1alpha1.OrganizationUnit).Spec.Handle }))).
 		Named("application").
 		Complete(r)
 }
