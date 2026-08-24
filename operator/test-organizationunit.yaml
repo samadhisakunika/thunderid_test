@@ -1,15 +1,15 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: OrganizationUnit
+kind: Resource
 metadata:
   name: test-ou
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    handle: test-ou
-    name: Test Organization Unit 2
-    description: A simple test OU for verifying the OrganizationUnit controller.
-    createdAt: "2026-01-01T00:00:00Z"
-    updatedAt: "2026-01-01T00:00:00Z"
-    parentId: "01900000-0000-7000-8000-000000000001"
+  resource_type: organization_unit
+  handle: test-ou
+  name: Test Organization Unit 2
+  description: A simple test OU for verifying the OrganizationUnit controller.
+  createdAt: "2026-01-01T00:00:00Z"
+  updatedAt: "2026-01-01T00:00:00Z"
+  parentId: "01900000-0000-7000-8000-000000000001"

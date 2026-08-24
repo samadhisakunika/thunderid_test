@@ -118,9 +118,9 @@ also live in `operator/gitops/`, applied by the same `flux-system`
 Kustomization as step 2 — nothing further to run. Confirm they landed:
 
 ```bash
-kubectl get application demo-partner-app
-kubectl get serverconfig thunderid-prod-cors
-kubectl get flow test-basic-flow
+kubectl get resource demo-partner-app
+kubectl get resource thunderid-prod-cors
+kubectl get resource test-basic-flow
 ```
 
 All three should reach `Ready` once the operator (step 3) has reconciled
@@ -140,13 +140,13 @@ kubectl apply -f operator/gitops/test-flow.yaml
 
 ## 5. Point the frontend at your instance
 
-The React app needs to know this `Application` CR's actual ID, which
+The React app needs to know this `Resource` CR's actual ID, which
 Kubernetes assigns randomly per cluster — the value already in
 `src/main.jsx` belongs to whoever's cluster last set this up, not yours.
 Get your own:
 
 ```bash
-kubectl get application demo-partner-app -o jsonpath='{.metadata.uid}'
+kubectl get resource demo-partner-app -o jsonpath='{.metadata.uid}'
 ```
 
 Paste that into `src/main.jsx`:

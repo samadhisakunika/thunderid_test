@@ -1,21 +1,21 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: User
+kind: Resource
 metadata:
   name: admin2
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    type: Person
-    ouHandle: test-ou
-    attributes:
-      given_name: "Admin"
-      name: "Administrator"
-      phone_number: "+12345678920"
-      picture: "https://example.com/avatar.jpg"
-      sub: "admin"
-      username: "admin"
-      email: "admin@example.com"
-      family_name: "User"
+  resource_type: user
+  type: Person
+  ouHandle: test-ou
+  attributes:
+    given_name: "Admin"
+    name: "Administrator"
+    phone_number: "+12345678920"
+    picture: "https://example.com/avatar.jpg"
+    sub: "admin"
+    username: "admin"
+    email: "admin@example.com"
+    family_name: "User"
   credentialsSecretRef: admin2-credentials

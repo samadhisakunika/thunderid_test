@@ -1,15 +1,15 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: Group
+kind: Resource
 metadata:
   name: test-group
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    name: Test Administrators 1
-    description: A simple test group for verifying the Group controller.
-    ouHandle: test-ou
-    members:
-      - id: "01900000-0000-7000-8000-000000000030"   # members[].id is a literal ID, not a Kubernetes ref (see README) —
-        type: user                            # get the real value with: kubectl get user test-user -o jsonpath='{.metadata.uid}'
+  resource_type: group
+  name: Test Administrators 1
+  description: A simple test group for verifying the Group controller.
+  ouHandle: test-ou
+  members:
+    - id: "01900000-0000-7000-8000-000000000030"   # members[].id is a literal ID, not a Kubernetes ref (see README) —
+      type: user                            # get the real value with: kubectl get user test-user -o jsonpath='{.metadata.uid}'

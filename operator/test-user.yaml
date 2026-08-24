@@ -1,18 +1,18 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: User
+kind: Resource
 metadata:
   name: test-user
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    type: Test User  # must match spec.config.name (not metadata.name) of an existing UserType — test-usertype.yaml's config.name is "Test User Type"
-    ouHandle: default
-    attributes:
-      username: testadmin3
-      email: testadmin@example34.com
-      given_name: Test
-      family_name: Admin
-      name: Test Administrator
-      phone_number: "+12345678920"
+  resource_type: user
+  type: Test User  # must match spec.config.name (not metadata.name) of an existing UserType — test-usertype.yaml's config.name is "Test User Type"
+  ouHandle: default
+  attributes:
+    username: testadmin3
+    email: testadmin@example34.com
+    given_name: Test
+    family_name: Admin
+    name: Test Administrator
+    phone_number: "+12345678920"

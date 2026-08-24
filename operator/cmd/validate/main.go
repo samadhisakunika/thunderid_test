@@ -40,16 +40,6 @@ func (e refError) String() string {
 	return fmt.Sprintf("  [%s/%s] %s %q not found", e.kind, e.name, e.field, e.ref)
 }
 
-// entityKinds is every CRD kind bound to a ThunderIDInstance via the thunderid.io/instance
-// label. Their spec.config content is opaque to the operator (see CLAUDE.md's decoupling
-// note) — ThunderID's own bootstrap loader validates it, and errors surface as k8s Events
-// read from the pod's logs, not here. This tool only catches the one thing that IS a k8s-level
-// mistake: a thunderid.io/instance label that doesn't name a real ThunderIDInstance.
-var entityKinds = []string{
-	"Application", "Flow", "Theme", "OrganizationUnit", "Role", "UserType",
-	"User", "ResourceServer", "Group", "ServerConfig", "Translation",
-}
-
 func main() {
 	allCmd := flag.NewFlagSet("all", flag.ExitOnError)
 	allNS := allCmd.String("n", "default", "namespace to validate")
@@ -84,29 +74,27 @@ func main() {
 
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "Usage:")
-	fmt.Fprintln(os.Stderr, "  validate all [-n <namespace>]       validate all applied CRDs in the cluster")
+	fmt.Fprintln(os.Stderr, "  validate all [-n <namespace>]       validate all applied Resource CRs in the cluster")
 	fmt.Fprintln(os.Stderr, "  validate <file.yaml> [file2.yaml…]  validate YAML files before applying")
 }
 
-// runAll lists every entity CR from the cluster and checks its thunderid.io/instance label.
+// runAll lists every Resource CR from the cluster and checks its thunderid.io/instance label
+// and spec.resource_type. Resource's own body (everything else under spec) is opaque to the
+// operator (see CLAUDE.md's decoupling note) — ThunderID's own bootstrap loader validates it,
+// and errors surface as k8s Events read from the pod's logs, not here.
 func runAll(ctx context.Context, c client.Client, ns string) {
 	var errs []refError
-	for _, kind := range entityKinds {
-		list, err := newListForKind(kind)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-			continue
-		}
-		if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to list %ss: %v\n", kind, err)
-			continue
-		}
-		for _, obj := range eachObject(list) {
-			errs = append(errs, checkInstanceRef(ctx, c, kind, obj.GetName(), ns, obj.GetLabels()[appsv1alpha1.InstanceRefLabel])...)
+
+	list := &appsv1alpha1.ResourceList{}
+	if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to list Resources: %v\n", err)
+	} else {
+		for _, obj := range list.Items {
+			errs = append(errs, checkResource(ctx, c, obj.Name, ns, obj.Labels[appsv1alpha1.InstanceRefLabel], obj.Spec)...)
 		}
 	}
 
-	fmt.Printf("Validating all CRDs in namespace %q ...\n", ns)
+	fmt.Printf("Validating all Resource CRs in namespace %q ...\n", ns)
 	if len(errs) == 0 {
 		fmt.Println("  OK")
 	} else {
@@ -163,32 +151,41 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 				Namespace string            `json:"namespace"`
 				Labels    map[string]string `json:"labels"`
 			} `json:"metadata"`
+			Spec runtime.RawExtension `json:"spec"`
 		}
-		if err := yaml.Unmarshal(doc, &obj); err != nil || obj.Kind == "" {
-			continue
-		}
-		isEntity := false
-		for _, k := range entityKinds {
-			if obj.Kind == k {
-				isEntity = true
-				break
-			}
-		}
-		if !isEntity {
+		if err := yaml.Unmarshal(doc, &obj); err != nil || obj.Kind != "Resource" {
 			continue
 		}
 		ns := obj.Metadata.Namespace
 		if ns == "" {
 			ns = "default"
 		}
-		errs = append(errs, checkInstanceRef(ctx, c, obj.Kind, obj.Metadata.Name, ns, obj.Metadata.Labels[appsv1alpha1.InstanceRefLabel])...)
+		errs = append(errs, checkResource(ctx, c, obj.Metadata.Name, ns, obj.Metadata.Labels[appsv1alpha1.InstanceRefLabel], obj.Spec)...)
 	}
 	return errs
 }
 
-func checkInstanceRef(ctx context.Context, c client.Client, kind, name, ns, ref string) []refError {
+// checkResource validates the two k8s-level things the operator itself relies on: the
+// thunderid.io/instance label names a real ThunderIDInstance, and spec.resource_type is set.
+func checkResource(ctx context.Context, c client.Client, name, ns, instanceRef string, spec runtime.RawExtension) []refError {
+	var errs []refError
+	errs = append(errs, checkInstanceRef(ctx, c, name, ns, instanceRef)...)
+
+	var body struct {
+		ResourceType string `json:"resource_type"`
+	}
+	if len(spec.Raw) > 0 {
+		_ = yaml.Unmarshal(spec.Raw, &body)
+	}
+	if body.ResourceType == "" {
+		errs = append(errs, refError{kind: "Resource", name: name, field: "spec.resource_type", ref: "(empty)", detail: "spec.resource_type is required"})
+	}
+	return errs
+}
+
+func checkInstanceRef(ctx context.Context, c client.Client, name, ns, ref string) []refError {
 	if ref == "" {
-		return []refError{{kind: kind, name: name, field: "thunderid.io/instance", ref: "(empty)", detail: "thunderid.io/instance label is required"}}
+		return []refError{{kind: "Resource", name: name, field: "thunderid.io/instance", ref: "(empty)", detail: "thunderid.io/instance label is required"}}
 	}
 	target := &appsv1alpha1.ThunderIDInstance{}
 	err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: ref}, target)
@@ -196,90 +193,7 @@ func checkInstanceRef(ctx context.Context, c client.Client, kind, name, ns, ref 
 		return nil
 	}
 	if k8serrors.IsNotFound(err) {
-		return []refError{{kind: kind, name: name, field: "thunderid.io/instance", ref: ref}}
+		return []refError{{kind: "Resource", name: name, field: "thunderid.io/instance", ref: ref}}
 	}
-	return []refError{{kind: kind, name: name, field: "thunderid.io/instance", ref: ref, detail: err.Error()}}
-}
-
-// newListForKind returns an empty typed List object for one of entityKinds.
-func newListForKind(kind string) (client.ObjectList, error) {
-	switch kind {
-	case "Application":
-		return &appsv1alpha1.ApplicationList{}, nil
-	case "Flow":
-		return &appsv1alpha1.FlowList{}, nil
-	case "Theme":
-		return &appsv1alpha1.ThemeList{}, nil
-	case "OrganizationUnit":
-		return &appsv1alpha1.OrganizationUnitList{}, nil
-	case "Role":
-		return &appsv1alpha1.RoleList{}, nil
-	case "UserType":
-		return &appsv1alpha1.UserTypeList{}, nil
-	case "User":
-		return &appsv1alpha1.UserList{}, nil
-	case "ResourceServer":
-		return &appsv1alpha1.ResourceServerList{}, nil
-	case "Group":
-		return &appsv1alpha1.GroupList{}, nil
-	case "ServerConfig":
-		return &appsv1alpha1.ServerConfigList{}, nil
-	case "Translation":
-		return &appsv1alpha1.TranslationList{}, nil
-	default:
-		return nil, fmt.Errorf("unknown kind %q", kind)
-	}
-}
-
-// eachObject extracts the individual client.Object items out of a typed List, via the
-// meta.ExtractList-equivalent minimal switch needed for entityKinds.
-func eachObject(list client.ObjectList) []client.Object {
-	var out []client.Object
-	switch l := list.(type) {
-	case *appsv1alpha1.ApplicationList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	case *appsv1alpha1.FlowList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	case *appsv1alpha1.ThemeList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	case *appsv1alpha1.OrganizationUnitList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	case *appsv1alpha1.RoleList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	case *appsv1alpha1.UserTypeList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	case *appsv1alpha1.UserList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	case *appsv1alpha1.ResourceServerList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	case *appsv1alpha1.GroupList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	case *appsv1alpha1.ServerConfigList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	case *appsv1alpha1.TranslationList:
-		for i := range l.Items {
-			out = append(out, &l.Items[i])
-		}
-	}
-	return out
+	return []refError{{kind: "Resource", name: name, field: "thunderid.io/instance", ref: ref, detail: err.Error()}}
 }

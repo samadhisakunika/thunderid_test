@@ -1,0 +1,87 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Resource
+metadata:
+  name: test-resource-application
+  namespace: default
+  labels:
+    thunderid.io/instance: external-pg-instance
+spec:
+  resource_type: application
+  ouId: 01900000-0000-7000-8000-000000000001
+  name: Test Resource Application
+  type: browser
+  url: https://localhost:8090/console
+  logoUrl: avatar:shape=rounded,variant=anonymous_entity,content=cube,colors=0
+  authFlowId: 01900000-0000-7000-8000-000000000068
+  isRegistrationFlowEnabled: false
+  isRecoveryFlowEnabled: false
+  signOutFlowId: 01900000-0000-7000-8000-00000000006a
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+  allowedUserTypes:
+    - Person
+  inboundAuthConfig:
+    - type: oauth2
+      config:
+        clientId: TEST_RESOURCE_APP
+        redirectUris:
+          - https://localhost:3000
+        postLogoutRedirectUris:
+          - https://localhost:8090/console
+        grantTypes:
+          - authorization_code
+          - refresh_token
+        responseTypes:
+          - code
+        tokenEndpointAuthMethod: none
+        pkceRequired: true
+        publicClient: true
+        requirePushedAuthorizationRequests: false
+        dpopBoundAccessTokens: false
+        includeActClaim: false
+        token:
+          accessToken:
+            userConfig:
+              validityPeriod: 3600
+              attributes:
+                - given_name
+                - family_name
+                - email
+                - groups
+                - name
+                - ouId
+          idToken:
+            validityPeriod: 3600
+            userAttributes:
+              - given_name
+              - family_name
+              - email
+              - groups
+              - name
+              - ouId
+            responseType: JWT
+          refreshToken:
+            validityPeriod: 86400
+        userInfo:
+          responseType: JSON
+          userAttributes:
+            - given_name
+            - family_name
+            - email
+            - groups
+            - name
+            - ouId
+        scopeClaims:
+          email:
+            - email
+          group:
+            - groups
+          profile:
+            - name
+            - given_name
+            - family_name
+            - picture
+          ou:
+            - ouId

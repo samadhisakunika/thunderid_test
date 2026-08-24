@@ -1,42 +1,42 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: ServerConfig
+kind: Resource
 metadata:
   name: thunderid-cors
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    name: cors
-    value:
-      allowedOrigins:
-        - "https://console.example.com"
-        - "https://portal.example.com"
-        - regex: "\\Ahttps://.*\\.preview\\.example\\.com\\z"
+  resource_type: server_config
+  name: cors
+  value:
+    allowedOrigins:
+      - "https://console.example.com"
+      - "https://portal.example.com"
+      - regex: "\\Ahttps://.*\\.preview\\.example\\.com\\z"
 ---
 apiVersion: apps.thunderid.io/v1alpha1
-kind: ServerConfig
+kind: Resource
 metadata:
   name: thunderid-session
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    name: session
-    value:
-      idleTimeoutSeconds: 1800
-      absoluteTimeoutSeconds: 28800
+  resource_type: server_config
+  name: session
+  value:
+    idleTimeoutSeconds: 1800
+    absoluteTimeoutSeconds: 28800
 ---
 apiVersion: apps.thunderid.io/v1alpha1
-kind: ServerConfig
+kind: Resource
 metadata:
   name: thunderid-default-rs
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    name: defaultResourceServer
-    value:
-      resourceServerId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8d"
+  resource_type: server_config
+  name: defaultResourceServer
+  value:
+    resourceServerId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8d"

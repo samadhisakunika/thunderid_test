@@ -1,0 +1,16 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Resource
+metadata:
+  name: test-resource-user
+  namespace: default
+  labels:
+    thunderid.io/instance: external-pg-instance
+spec:
+  resource_type: user
+  credentialsSecretRef: test-resource-user-creds
+  type: Person
+  ouId: 01900000-0000-7000-8000-000000000001
+  attributes:
+    email: "User1@gmail.com"
+    family_name: "User_last_name"
+    given_name: "User_first_name"

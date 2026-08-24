@@ -17,15 +17,7 @@ A Kubernetes operator that manages [ThunderID](https://github.com/thunder-id/thu
 - [Helm Chart](#helm-chart)
 - [Custom Resources](#custom-resources)
   - [ThunderIDInstance](#thunderidinstance)
-  - [Application](#application)
-  - [Flow](#flow)
-  - [Theme](#theme)
-  - [OrganizationUnit](#organizationunit)
-  - [ResourceServer](#resourceserver)
-  - [Role](#role)
-  - [UserType](#usertype)
-  - [User](#user)
-  - [Group](#group)
+  - [Resource](#resource)
 - [Checking Status](#checking-status)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
@@ -50,22 +42,17 @@ ThunderIDInstance  ──creates──►  Deployment / Service
       ├──creates──► Ingress (only if spec.domain is set)
       └──creates──► HPA
 
-OrganizationUnit CRD  ──writes──►  <instance>-organizationunits ConfigMap
-ResourceServer CRD    ──writes──►  <instance>-resourceservers ConfigMap
-Theme CRD             ──writes──►  <instance>-themes ConfigMap
-Flow CRD              ──writes──►  <instance>-flows ConfigMap
-UserType CRD          ──writes──►  <instance>-usertypes ConfigMap
-User CRD              ──writes──►  <instance>-users ConfigMap
-Group CRD             ──writes──►  <instance>-groups ConfigMap
-Role CRD              ──writes──►  <instance>-roles ConfigMap
-Application CRD       ──writes──►  <instance>-applications ConfigMap
+Resource CRD (spec.resource_type: application|flow|theme|organization_unit|
+              role|user_type|user|resource_server|group|server_config|
+              translation|...)
+                       ──writes──►  <instance>-<resource_type-plural> ConfigMap
                                     └── all mounted into ThunderID pod at startup
 ```
 
 **Key facts:**
 - Every `ThunderIDInstance` must pick a persistent backend: either `spec.dataVolumeSize` (PVC-backed SQLite — `repository/database` persists, `setup.sh` runs once on the pod's first-ever start and is skipped on every restart after that) or every `spec.config.database` scope set to `type: postgres` with `spec.config.database.secretRef` (external PostgreSQL — see [Database](#database) below; every restart re-syncs `resources.yaml` into the database via `start.sh --bootstrap-and-serve`, and `spec.dataVolumeSize` is ignored since there's no local state to persist). Setting neither is rejected — ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
 - The ThunderID image bakes in its own default organization unit, user types, and flows (`default` OU, `Person` user type, `console-app-flow`, `cloud-login-flow`, etc.) — `spec.resourcesConfigMap` is **optional**, only needed if you want to seed additional base resources beyond those defaults.
-- All twelve resource kinds are loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each CRD's controller reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified, the same way Application does.
+- Every `resource_type` is loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each `Resource` reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified.
 - `spec.domain` is **optional** and unset by default — every local/dev workflow in this repo reaches ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead, which is what the operator assumes when no domain is set. Setting `spec.domain` creates a real `Ingress` for external access (a real deployment with real DNS), but the `public_url` value it feeds into ThunderID's own config isn't actually a field ThunderID's schema recognizes — confirmed against the image's own `config/default.json`, which has no `public_url` anywhere. ThunderID silently ignores it either way, so this only matters for the `Ingress` routing itself, not anything ThunderID does internally.
 
 ---
@@ -88,18 +75,8 @@ kubectl get crd | grep thunderid
 
 Expected output:
 ```
-applications.apps.thunderid.io
-flows.apps.thunderid.io
-groups.apps.thunderid.io
-organizationunits.apps.thunderid.io
-resourceservers.apps.thunderid.io
-roles.apps.thunderid.io
-serverconfigs.apps.thunderid.io
-themes.apps.thunderid.io
+resources.apps.thunderid.io
 thunderidinstances.apps.thunderid.io
-translations.apps.thunderid.io
-users.apps.thunderid.io
-usertypes.apps.thunderid.io
 ```
 
 ---
@@ -151,43 +128,43 @@ or install the [Helm chart](charts/thunderid-operator) instead — see its own R
 
 ### 4. Register an application
 
-Create an `Application` resource. The `thunderid.io/instance` label must match the name of your `ThunderIDInstance`. `spec.config` is forwarded into ThunderID's own application schema essentially as-is (see the [design note](#custom-resources) above) — this example uses literal IDs for the org unit and auth flow, both of which exist in the image's own baked-in defaults (get them with the `kubectl exec ... 01-default-resources.yaml` trick in [Troubleshooting](#troubleshooting) if you're using a different image):
+Create a `Resource` with `spec.resource_type: application`. The `thunderid.io/instance` label must match the name of your `ThunderIDInstance`. Everything else under `spec` is forwarded into ThunderID's own application schema essentially as-is (see the [design note](#custom-resources) below) — this example uses literal IDs for the org unit and auth flow, both of which exist in the image's own baked-in defaults (get them with the `kubectl exec ... 01-default-resources.yaml` trick in [Troubleshooting](#troubleshooting) if you're using a different image):
 
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
-kind: Application
+kind: Resource
 metadata:
   name: my-console-app
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    name: My Console App
-    ouId: "<id of the 'default' OrganizationUnit>"
-    authFlowId: "<id of the 'console-app-flow' Flow>"
-    isRegistrationFlowEnabled: true
-    isRecoveryFlowEnabled: false
-    allowedUserTypes:
-      - Person
-    assertion:
-      validityPeriod: 3600
-    loginConsent:
-      validityPeriod: 0
-    inboundAuthConfig:
-      - type: oauth2
-        config:
-          clientId: MY_APP_CLIENT
-          redirectUris:
-            - https://localhost:8090/callback
-          grantTypes:
-            - authorization_code
-            - refresh_token
-          responseTypes:
-            - code
-          tokenEndpointAuthMethod: none
-          pkceRequired: true
-          publicClient: true
+  resource_type: application
+  name: My Console App
+  ouId: "<id of the 'default' OrganizationUnit>"
+  authFlowId: "<id of the 'console-app-flow' Flow>"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+  inboundAuthConfig:
+    - type: oauth2
+      config:
+        clientId: MY_APP_CLIENT
+        redirectUris:
+          - https://localhost:8090/callback
+        grantTypes:
+          - authorization_code
+          - refresh_token
+        responseTypes:
+          - code
+        tokenEndpointAuthMethod: none
+        pkceRequired: true
+        publicClient: true
 ```
 
 ```bash
@@ -197,15 +174,15 @@ kubectl apply -f my-app.yaml
 Check status:
 
 ```bash
-kubectl get applications
-kubectl describe applications my-console-app
+kubectl get resources
+kubectl describe resource my-console-app
 ```
 
 ---
 
 ## GitOps (Flux)
 
-`operator/gitops/` is watched by [Flux](https://fluxcd.io): a `CustomResourceDefinition`-first `crds` Kustomization applies `operator/config/crd/bases/`, and a `flux-system` Kustomization (which `dependsOn: crds` for correct ordering) applies everything else in that directory — including `thunderidConfig.yaml` and any `Application`/`Flow`/etc. CRs placed there. Edit a file, `git commit`, `git push`, and it's live on the cluster with no `kubectl apply` at all.
+`operator/gitops/` is watched by [Flux](https://fluxcd.io): a `CustomResourceDefinition`-first `crds` Kustomization applies `operator/config/crd/bases/`, and a `flux-system` Kustomization (which `dependsOn: crds` for correct ordering) applies everything else in that directory — including `thunderidConfig.yaml` and any `Resource` CRs placed there. Edit a file, `git commit`, `git push`, and it's live on the cluster with no `kubectl apply` at all.
 
 This is optional — steps 1–4 above work standalone with plain `kubectl apply`. To set up your own Flux instance against a fork of this repo, install the [Flux CLI](https://fluxcd.io/flux/installation/) and run:
 
@@ -230,11 +207,6 @@ An alternative to steps 1 and 3 above for a packaged, in-cluster operator deploy
 ---
 
 ## Custom Resources
-
-**Design note — `spec.config` on every entity kind:** Every kind below *except* `ThunderIDInstance` has a spec shaped as just `config: {...}` (plus, on `User`, a `credentialsSecretRef` string field — see [User](#user)). `spec.config` is forwarded into ThunderID's own resource-bootstrap schema for that kind essentially as-is; the operator injects only `resource_type` and `id` (its own k8s-generated identifiers) on top. It does **not** resolve handles to IDs, validate required fields, or otherwise interpret the content — that's ThunderID's own bootstrap loader's job. This means:
-- The field names inside `spec.config` are ThunderID's own field names (e.g. `type`, not `template` — see [Application](#application)), not an operator-invented schema. When ThunderID adds or renames a field, it just works without an operator code change.
-- A mistake (missing required field, a `*Handle` value ThunderID can't resolve, bad JSON) is **not** caught at `kubectl apply` time — it's caught at ThunderID's own bootstrap time, surfaced as a `ThunderIDError`/`ThunderIDCrashed` Event on the CR (see [Checking Status](#checking-status)).
-- Cross-references (`ouId`, `authFlowId`, `themeId`, `resourceServerId`, member/assignment IDs, ...) can be literal ThunderID IDs, the same as if you were editing ThunderID's own `resources.yaml` by hand. The operator no longer resolves `*Handle`-style fields (`ouHandle`, `authFlowHandle`, `registrationFlowHandle`, `recoveryFlowHandle`) for you, but ThunderID's own bootstrap loader resolves them itself — confirmed live against `ghcr.io/thunder-id/thunderid:latest` (a plain `ouHandle`/`authFlowHandle` Application reached `Ready` with no ID at all). `themeHandle` is the one confirmed exception — not supported by ThunderID at all; use `themeId`.
 
 ### ThunderIDInstance
 
@@ -391,265 +363,81 @@ Re-running `psql -f` against an already-initialized database will error on `CREA
 
 ---
 
-### Application
+### Resource
 
-Registers an OAuth2/OIDC application in ThunderID. The operator writes all applications for an instance into a single ConfigMap (`<instance-name>-applications`) which is mounted into the ThunderID pod. Changes trigger a rolling restart.
+The generic ThunderID resource kind. Every ThunderID resource — application, flow, theme, organization unit, role, user type, user, resource server, group, server config, translation, and any future kind ThunderID adds — is the same Kubernetes `kind: Resource`, distinguished only by `spec.resource_type`. There's one CRD, one controller; adding a ThunderID resource kind never needs an operator code change.
+
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Resource
+metadata:
+  name: my-console-app
+  namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
+spec:
+  resource_type: application
+  name: My Console App
+  ouId: "<id of the 'default' OrganizationUnit>"
+  authFlowId: "<id of the 'console-app-flow' Flow>"
+  type: browser
+  isRegistrationFlowEnabled: true
+  allowedUserTypes:
+    - Person
+  inboundAuthConfig:
+    - type: oauth2
+      config:
+        clientId: MY_APP_CLIENT
+        redirectUris:
+          - https://localhost:8090/callback
+        grantTypes:
+          - authorization_code
+          - refresh_token
+        responseTypes:
+          - code
+        tokenEndpointAuthMethod: none
+        pkceRequired: true
+        publicClient: true
+```
 
 | Field | Description |
 |-------|-------------|
 | `metadata.labels['thunderid.io/instance']` | Name of the `ThunderIDInstance` to register with |
-| `spec.config.name` | Display name of the application |
-| `spec.config.ouId` | Organizational Unit ID |
-| `spec.config.authFlowId` | Auth flow ID |
-| `spec.config.themeId` | UI theme ID |
-| `spec.config.logoUrl` | Logo (`emoji:👨‍💻` or a URL) |
-| `spec.config.type` | ThunderID application type — one of `browser`, `fullstack`, `mobile`, `m2m`, `custom`. **Required by ThunderID's own bootstrap validation** — omitting it fails with `APP-1042`. Note the key is `type`, not `template` — this used to be an operator-side rename, now it's just ThunderID's own field name |
-| `spec.config.allowedUserTypes` | List of `UserType` names (e.g. `Person`) allowed to log in — a literal string list, not a Kubernetes reference |
-| `spec.config.inboundAuthConfig` | Nested YAML/JSON defining OAuth2 client configuration |
-| `spec.config.isRegistrationFlowEnabled` | Enable user self-registration |
-| `spec.config.isRecoveryFlowEnabled` | Enable password recovery |
+| `spec.resource_type` | **Required.** Which ThunderID resource this is — see the table below for the ConfigMap each one lands in |
+| `spec.credentialsSecretRef` | Only meaningful when `resource_type: user` — see [Credentials](#credentials-speccredentialssecretref-resource_type-user-only) below. Unlike everything else under `spec`, this one is k8s-native Secret plumbing, not a ThunderID schema field |
+| everything else under `spec` | ThunderID's own field names for that `resource_type` (`name`, `ouId`, `handle`, `type`, ...) — copy-paste ThunderID's own exported YAML in directly (dropping its `id:` line, which the operator generates itself) |
 
-All of the above are ThunderID's own field names under `spec.config`, forwarded as-is — see the [design note](#custom-resources). None of them are enforced or validated by the operator or the CRD schema; get the exact set ThunderID's bootstrap loader accepts from its own docs/schema, not this table, when in doubt.
+**Design note:** Everything under `spec` except `resource_type` and `credentialsSecretRef` is forwarded into ThunderID's own bootstrap schema for that resource type essentially as-is. The operator does **not** resolve handles, validate required fields, or otherwise interpret the content — that's ThunderID's own bootstrap loader's job. This means:
+- A mistake (missing required field, a bad ID, malformed JSON) is **not** caught at `kubectl apply` time — it's caught at ThunderID's own bootstrap time, surfaced as a `ThunderIDError`/`ThunderIDCrashed` Event on the CR (see [Checking Status](#checking-status)).
+- Cross-references (`ouId`, `authFlowId`, `themeId`, `resourceServerId`, member/assignment IDs, ...) can be literal ThunderID IDs, the same as if you were editing ThunderID's own `resources.yaml` by hand. Or use `*Handle`-style fields (`ouHandle`, `authFlowHandle`, `registrationFlowHandle`, `recoveryFlowHandle`) — ThunderID's own bootstrap loader resolves them itself, confirmed live against `ghcr.io/thunder-id/thunderid:latest` (a plain `ouHandle`/`authFlowHandle` application reached `Ready` with no ID at all). `themeHandle` is the one confirmed exception — not supported by ThunderID at all; use `themeId`.
+- None of the field names in the table below are enforced by the operator or the CRD schema; get the exact set ThunderID's bootstrap loader accepts from its own docs/schema when in doubt.
 
-**OAuth2 configuration notes:**
+#### `resource_type` values
+
+| `resource_type` | ConfigMap | Notes |
+|---|---|---|
+| `application` | `<instance>-applications` | OAuth2/OIDC application. `type` (not `template`) is required — one of `browser`, `fullstack`, `mobile`, `m2m`, `custom`, or omitting it fails with `APP-1042`. `inboundAuthConfig` is nested YAML/JSON defining the OAuth2 client |
+| `flow` | `<instance>-flows` | Auth/registration/recovery/signout flow. `handle`/`name`/`flowType` (`AUTHENTICATION`\|`REGISTRATION`\|`RECOVERY`\|`SIGNOUT`) required. `nodes` is the flow graph — nested YAML matching what ThunderID exports/imports natively, pasted directly (not a string) |
+| `theme` | `<instance>-themes` | UI theme. `displayName` required. `theme` is nested YAML/JSON, not a string — a bare `{...}` value is valid YAML flow-mapping syntax (JSON is a YAML subset), so a pasted-in JSON theme export works verbatim without re-indenting |
+| `organization_unit` | `<instance>-organizationunits` | Container for users, roles, applications. `handle`/`name` required. `parentId` is an optional literal parent-OU ID |
+| `role` | `<instance>-roles` | `name` required. `permissions[].resourceServerId` + `.permissions`, `assignments[].id` + `.type` — literal IDs, not Kubernetes references |
+| `user_type` | `<instance>-usertypes` | `category`/`name` required. `schema` (required) is the attribute schema, nested YAML/JSON |
+| `user` | `<instance>-users` | `type` (the owning `UserType`'s **name**, e.g. `Person` — a literal string, not a Kubernetes reference) required. `attributes` is a free-form key/value map matching the `UserType`'s `schema`. See [Credentials](#credentials-speccredentialssecretref-resource_type-user-only) |
+| `resource_server` | `<instance>-resourceservers` | `name`/`identifier` required — ThunderID rejects one with no identifier at bootstrap, crash-looping the pod. `delimiter` joins a resource/action handle into a permission string (e.g. `ou:view`). `resources[].actions[]` nested |
+| `group` | `<instance>-groups` | `name` required. `members[].id` + `.type` — literal IDs, not Kubernetes references |
+| `server_config` | `<instance>-serverconfigs` | `name: cors\|session\|defaultResourceServer` + `value: {...}` holding that section's own fields |
+| `translation` | `<instance>-translations` | `language` (BCP47, e.g. `en-US`) + `translations` (namespace → key → string) required |
+
+**OAuth2 configuration notes** (`resource_type: application`):
 - Public client (browser app, SPA): use `publicClient: true`, `tokenEndpointAuthMethod: none`, `pkceRequired: true`
 - Confidential client (server-side): use `publicClient: false`, `tokenEndpointAuthMethod: client_secret_basic`
 - `client_credentials` grant type requires a confidential client (`publicClient: false`) with a real auth method — it cannot use `tokenEndpointAuthMethod: none`
 
----
-
-### Flow
-
-Registers a custom authentication or registration flow. Loaded via the `<instance>-flows` ConfigMap at pod startup, like Application.
-
-```yaml
-apiVersion: apps.thunderid.io/v1alpha1
-kind: Flow
-metadata:
-  name: my-login-flow
-  namespace: default
-  labels:
-    thunderid.io/instance: thunderid-prod
-spec:
-  config:
-    handle: my-login-flow
-    name: My Login Flow
-    flowType: AUTHENTICATION   # or REGISTRATION
-    nodes:
-      - id: start
-        type: START
-        onSuccess: end
-      - id: end
-        type: END
-```
-
-`spec.config.nodes` is the flow's node graph — nested YAML matching the shape ThunderID exports/imports natively, pasted directly (not a string).
-
----
-
-### Theme
-
-Registers a custom UI theme. Loaded via the `<instance>-themes` ConfigMap at pod startup, like Application.
-
-```yaml
-apiVersion: apps.thunderid.io/v1alpha1
-kind: Theme
-metadata:
-  name: my-theme
-  namespace: default
-  labels:
-    thunderid.io/instance: thunderid-prod
-spec:
-  config:
-    handle: my-theme
-    displayName: My Theme
-    description: Dark purple theme
-    theme: {"defaultColorScheme":"dark","colorSchemes":{"dark":{"palette":{"primary":{"main":"#5567d5"}}}}}
-```
-
-`spec.config.theme` is nested YAML/JSON, not a string — a bare `{...}` value is valid YAML flow-mapping syntax (JSON is a YAML subset), which keeps a pasted-in JSON theme export usable verbatim without re-indenting it into block style.
-
----
-
-### OrganizationUnit
-
-Registers an organization unit (a container for users, roles, and applications). Loaded via the `<instance>-organizationunits` ConfigMap — first, before any other resource kind, since everything else can reference `ouId`.
-
-```yaml
-apiVersion: apps.thunderid.io/v1alpha1
-kind: OrganizationUnit
-metadata:
-  name: default-ou
-  namespace: default
-  labels:
-    thunderid.io/instance: thunderid-prod
-spec:
-  config:
-    handle: default
-    name: Default
-    description: Default organization unit
-    logoUrl: "https://example.com/logo.png"
-```
-
-| Field | Description |
-|-------|--------------|
-| `spec.config.handle` / `spec.config.name` | Required by ThunderID. Handle is the machine-readable slug, name is the display name |
-| `spec.config.parentId` | Optional parent organization unit — a literal ThunderID ID |
-| `spec.config.logoUrl` | Optional. Free text |
-
----
-
-### ResourceServer
-
-Registers a resource server and the resources/actions it exposes, for use in Role permission grants. Loaded via the `<instance>-resourceservers` ConfigMap.
-
-```yaml
-apiVersion: apps.thunderid.io/v1alpha1
-kind: ResourceServer
-metadata:
-  name: system
-  namespace: default
-  labels:
-    thunderid.io/instance: thunderid-prod
-spec:
-  config:
-    name: System
-    description: System resource server
-    identifier: https://localhost:8090/mcp
-    ouId: "<id of the 'default' OrganizationUnit>"
-    delimiter: ":"
-    resources:
-      - name: System
-        handle: system
-        description: System resource
-      - name: Organization Unit
-        handle: ou
-        description: Organization unit resource
-        parent: system
-        actions:
-          - name: View
-            handle: view
-            description: Read-only access to organization units
-```
-
-| Field | Description |
-|-------|--------------|
-| `spec.config.name` / `spec.config.identifier` | Required. ThunderID rejects a resource server with no identifier at bootstrap, crash-looping the whole pod on next restart — surfaced as a `ThunderIDError` Event, not a `kubectl apply`-time rejection (see the [design note](#custom-resources)) |
-| `spec.config.handle` / `spec.config.delimiter` | Optional. `delimiter` joins a resource and action handle into a permission string (e.g. `ou:view`) |
-| `spec.config.ouId` | Owning organization unit ID |
-| `spec.config.resources[].name` / `.handle` / `.description` | Required name/handle per resource, optional description |
-| `spec.config.resources[].parent` | Optional — the `handle` of another entry in the same `resources` list (not a Kubernetes reference) |
-| `spec.config.resources[].actions[]` | Optional list of `{name, handle, description}` actions available on that resource |
-
----
-
-### Role
-
-Registers a role and its permission/assignment grants. Loaded via the `<instance>-roles` ConfigMap.
-
-```yaml
-apiVersion: apps.thunderid.io/v1alpha1
-kind: Role
-metadata:
-  name: administrator
-  namespace: default
-  labels:
-    thunderid.io/instance: thunderid-prod
-spec:
-  config:
-    name: Administrator
-    description: System administrator role with full permissions
-    ouId: "<id of the 'default' OrganizationUnit>"
-    permissions:
-      - resourceServerId: "019f215e-1a55-72db-9743-ac25d839c72a"
-        permissions:
-          - system
-    assignments:
-      - id: "019f215e-1bc0-773b-a202-04fbcee09eeb"
-        type: group
-```
-
-| Field | Description |
-|-------|-------------|
-| `spec.config.name` | Required |
-| `spec.config.ouId` | Owning organization unit ID |
-| `spec.config.permissions[].resourceServerId` / `.permissions` | The resource server this grant applies to, and which permission names are granted on it |
-| `spec.config.assignments[].id` / `.type` | Who the role is assigned to (e.g. a group ID) and the assignment type |
-
----
-
-### UserType
-
-Registers a user type and its attribute schema. Loaded via the `<instance>-usertypes` ConfigMap.
-
-```yaml
-apiVersion: apps.thunderid.io/v1alpha1
-kind: UserType
-metadata:
-  name: person
-  namespace: default
-  labels:
-    thunderid.io/instance: thunderid-prod
-spec:
-  config:
-    category: user
-    name: Person
-    ouId: "<id of the 'default' OrganizationUnit>"
-    systemAttributes:
-      display: username
-    schema:
-      username: {"type": "string", "displayName": "Username", "required": true, "unique": true}
-      email: {"type": "string", "displayName": "Email", "required": true, "unique": true}
-      password: {"type": "string", "displayName": "Password", "required": false, "credential": true}
-```
-
-| Field | Description |
-|-------|-------------|
-| `spec.config.category` / `spec.config.name` | Required. Category is a free-form string (e.g. `user`) |
-| `spec.config.ouId` | Owning organization unit ID |
-| `spec.config.systemAttributes` | Small key/value map, e.g. which attribute is used as the display name |
-| `spec.config.schema` | Required. The attribute schema, nested YAML/JSON |
-
----
-
-### User
-
-Registers a user. Loaded via the `<instance>-users` ConfigMap.
-
-```yaml
-apiVersion: apps.thunderid.io/v1alpha1
-kind: User
-metadata:
-  name: admin
-  namespace: default
-  labels:
-    thunderid.io/instance: thunderid-prod
-spec:
-  config:
-    type: Person
-    ouId: "<id of the 'default' OrganizationUnit>"
-    attributes:
-      email: admin@example.com
-      given_name: Admin
-      family_name: User
-      name: Administrator
-      phone_number: "+12345678920"
-      picture: "https://example.com/avatar.jpg"
-  credentialsSecretRef: admin-credentials
-```
-
-| Field | Description |
-|-------|-------------|
-| `spec.config.type` | Required. The **name** of a `UserType` (e.g. `Person`) — a literal string, not a Kubernetes reference, same convention as `Application.allowedUserTypes` |
-| `spec.config.ouId` | Owning organization unit ID |
-| `spec.config.attributes` | Free-form key/value map — the keys should match the attributes defined in the referenced `UserType`'s `schema` |
-| `spec.credentialsSecretRef` | Name of a Secret (same namespace) holding this user's credentials — see below. Unlike every other field on this page, this one stays a typed field *outside* `spec.config`: it's k8s-native Secret plumbing, not a ThunderID schema field |
-
-#### Credentials (`spec.credentialsSecretRef`)
+#### Credentials (`spec.credentialsSecretRef`, `resource_type: user` only)
 
 A user's credentials (and, if present, `username`) come from a Kubernetes Secret rather than plaintext CR fields, so they never sit in the CR spec or etcd unencrypted.
 
-- **You supply the Secret** (`spec.credentialsSecretRef: admin-credentials`) — every key in the Secret's `data`/`stringData` is passed through as a credential type (e.g. `password`, or any other type name a UserType's `schema` marks `"credential": true`), **except** `username`, which is special-cased: it overrides `spec.config.attributes.username` instead, since ThunderID treats username as an identifying attribute, not a credential. If both are set, the Secret wins — you don't need `username` in `spec.config.attributes` at all once it's in the Secret.
+- **You supply the Secret** (`spec.credentialsSecretRef: admin-credentials`) — every key in the Secret's `data`/`stringData` is passed through as a credential type (e.g. `password`, or any other type name a UserType's `schema` marks `"credential": true`), **except** `username`, which is special-cased: it overrides `spec.attributes.username` instead, since ThunderID treats username as an identifying attribute, not a credential. If both are set, the Secret wins — you don't need `username` in `spec.attributes` at all once it's in the Secret.
 
   ```yaml
   apiVersion: v1
@@ -663,7 +451,7 @@ A user's credentials (and, if present, `username`) come from a Kubernetes Secret
     password: change-me
   ```
 
-- **You omit it** — the operator auto-generates a Secret named `<user-name>-credentials` on first reconcile, with a random `username` (`user-<8 hex chars>`) and `password` (8 hex chars), owned by the User (deleted automatically when the User is). Like the auto-generated security Secret, it's created once and never regenerated on later reconciles, so the password doesn't rotate out from under you — see `scripts/reset-credentials.sh` below if you need a new one.
+- **You omit it** — the operator auto-generates a Secret named `<name>-credentials` on first reconcile, with a random `username` (`user-<8 hex chars>`) and `password` (8 hex chars), owned by the `Resource` (deleted automatically when it is). Like the auto-generated security Secret, it's created once and never regenerated on later reconciles, so the password doesn't rotate out from under you — see `scripts/reset-credentials.sh` below if you need a new one.
 
   To find and read the generated credentials:
   ```
@@ -671,10 +459,10 @@ A user's credentials (and, if present, `username`) come from a Kubernetes Secret
   ```
   which is shorthand for:
   ```
-  kubectl get user <name> -o jsonpath='{.status.credentialsSecretRef}'
+  kubectl get resource <name> -o jsonpath='{.status.credentialsSecretRef}'
   kubectl get secret <name>-credentials -o go-template='{{.data.username|base64decode}} / {{.data.password|base64decode}}'
   ```
-  The operator also emits a one-time `CredentialsGenerated` Event on the User with this command pre-filled — `kubectl describe user <name>` shortly after creation. Events expire (~1h, cluster-dependent), so the `status.credentialsSecretRef` + Secret are the durable way to find them later.
+  The operator also emits a one-time `CredentialsGenerated` Event on the `Resource` with this command pre-filled — `kubectl describe resource <name>` shortly after creation. Events expire (~1h, cluster-dependent), so the `status.credentialsSecretRef` + Secret are the durable way to find them later.
 
   To reset an auto-generated user's password (and username) to a fresh random pair:
   ```
@@ -682,37 +470,7 @@ A user's credentials (and, if present, `username`) come from a Kubernetes Secret
   ```
   This only works when `spec.credentialsSecretRef` was left empty — it refuses to touch a Secret you supplied yourself, since the operator doesn't own it. For a user-supplied Secret, rotate it directly (`kubectl edit secret <your-secret-name>`); the operator picks up whatever's in it on its next reconcile. Either way, the ThunderID pod still needs to restart before a changed password actually works for login (see below).
 
-Either way, ThunderID's declarative loader only reads resources at pod **startup** — changing a User's credentials Secret after the fact still requires the ThunderID pod to restart (triggered automatically by the ConfigMap-version annotation bump) before the new values take effect.
-
----
-
-### Group
-
-Registers a group and its member list. Loaded via the `<instance>-groups` ConfigMap.
-
-```yaml
-apiVersion: apps.thunderid.io/v1alpha1
-kind: Group
-metadata:
-  name: administrators
-  namespace: default
-  labels:
-    thunderid.io/instance: thunderid-prod
-spec:
-  config:
-    name: Administrators
-    description: System administrators group
-    ouId: "<id of the 'default' OrganizationUnit>"
-    members:
-      - id: "<user-or-group-id>"
-        type: user
-```
-
-| Field | Description |
-|-------|-------------|
-| `spec.config.name` | Required |
-| `spec.config.ouId` | Owning organization unit ID |
-| `spec.config.members[].id` / `.type` | Literal member ID (a `User` or `Group`'s ID) and type (e.g. `user`, `group`) — literal, not a Kubernetes reference, same convention as `Role.assignments` |
+Either way, ThunderID's declarative loader only reads resources at pod **startup** — changing a user's credentials Secret after the fact still requires the ThunderID pod to restart (triggered automatically by the ConfigMap-version annotation bump) before the new values take effect.
 
 ---
 
@@ -732,20 +490,21 @@ During a rolling update you will see the old pod (`Running`) and a new pod simul
 
 This is **normal Kubernetes CrashLoopBackOff behaviour**. Kubernetes introduces an exponential backoff between restarts. If the application config is valid the pod will eventually reach `1/1 Running`.
 
-### Application status
+### Resource status
 
 ```bash
-kubectl get applications
+kubectl get resources
+kubectl get resources -o custom-columns='NAME:.metadata.name,TYPE:.spec.resource_type,PHASE:.status.phase'   # filter/inspect by resource_type
 ```
 
 | Phase | Meaning |
 |-------|---------|
 | `Pending` | Config change detected; waiting for ThunderID pod to apply it |
-| `Ready` | Application loaded successfully |
+| `Ready` | Resource loaded successfully |
 | `Error` | ThunderID rejected the config or the pod is crashing |
 
 ```bash
-kubectl describe applications <name>
+kubectl describe resource <name>
 ```
 
 Look at the **Events** section. Event types:
@@ -753,13 +512,14 @@ Look at the **Events** section. Event types:
 | Reason | Meaning |
 |--------|---------|
 | `Synced` | Config change detected; ThunderID pod is restarting |
-| `Ready` | Application loaded successfully |
+| `Ready` | Resource loaded successfully |
 | `ThunderIDError` | ThunderID rejected the config — APP error code and message are shown |
 | `ThunderIDCrashed` | Pod is in CrashLoopBackOff; no structured error found in logs |
+| `UnknownType` | `spec.resource_type` isn't set, or isn't one this operator maps to a ConfigMap — see the [`resource_type` values](#resource_type-values) table |
 
-> **Tip:** `ThunderIDError` only appears after the pod reaches stable `CrashLoopBackOff`. Wait until `kubectl get pod` shows `CrashLoopBackOff` before running `kubectl describe applications`.
+> **Tip:** `ThunderIDError` only appears after the pod reaches stable `CrashLoopBackOff`. Wait until `kubectl get pod` shows `CrashLoopBackOff` before running `kubectl describe resource`.
 
-`kubectl get flows|themes|organizationunits|resourceservers|roles|usertypes|users|groups` and `kubectl describe <kind> <name>` report the same `Pending`/`Ready`/`Error` phases and `Synced`/`Ready`/`ThunderIDError`/`ThunderIDCrashed` events as Application, since every resource kind is reconciled the same way. `kubectl get thunderidinstance` additionally shows a `DEGRADED` count summarizing how many dependent resources (of any kind) currently have a sync failure, without needing to check each one individually.
+`kubectl get thunderidinstance` additionally shows a `DEGRADED` count summarizing how many dependent `Resource`s (of any `resource_type`) currently have a sync failure, without needing to check each one individually.
 
 ---
 
@@ -767,7 +527,7 @@ Look at the **Events** section. Event types:
 
 ### APP-1018 — Invalid request format
 
-**Cause:** The Application references an OU, auth flow, or theme ID/handle that doesn't actually exist. This is almost always a wrong ID, not a missing resource — the image bakes in its own defaults automatically (see [Key facts](#architecture)), so a fresh `ThunderIDInstance` with no `resourcesConfigMap` at all should still resolve `default`/`console-app-flow`/etc. fine.
+**Cause:** The `Resource` references an OU, auth flow, or theme ID/handle that doesn't actually exist. This is almost always a wrong ID, not a missing resource — the image bakes in its own defaults automatically (see [Key facts](#architecture)), so a fresh `ThunderIDInstance` with no `resourcesConfigMap` at all should still resolve `default`/`console-app-flow`/etc. fine.
 
 **Fix:** Double-check the exact ID or handle you're referencing. For a resource you created yourself via a CR, confirm the CR reached `Ready`. For a baked-in default, get the real ID straight from the image rather than guessing:
 
@@ -780,7 +540,7 @@ kubectl delete pod inspect-image --wait=false
 
 ### APP-1024 — Invalid OAuth configuration
 
-**Cause:** Incompatible OAuth2 settings in `spec.config.inboundAuthConfig`. Common examples:
+**Cause:** Incompatible OAuth2 settings in an `resource_type: application`'s `spec.inboundAuthConfig`. Common examples:
 
 - `client_credentials` grant type with `tokenEndpointAuthMethod: none`
 - `client_credentials` with `publicClient: true`
@@ -789,15 +549,15 @@ kubectl delete pod inspect-image --wait=false
 
 ### APP-1042 — Application type is required
 
-**Cause:** `spec.config.type` is unset on the Application. ThunderID's own bootstrap validation requires an application type — one of `browser`, `fullstack`, `mobile`, `m2m`, `custom`.
+**Cause:** `spec.type` is unset on a `resource_type: application` `Resource`. ThunderID's own bootstrap validation requires an application type — one of `browser`, `fullstack`, `mobile`, `m2m`, `custom`.
 
-**Fix:** Set `spec.config.type` on the Application.
+**Fix:** Set `spec.type` on the `Resource`.
 
 ### Phase: Error but no ThunderIDError event
 
 **Cause:** The pod has not yet reached stable `CrashLoopBackOff`. The operator fetches logs only after the pod enters `CrashLoopBackOff` (typically within 30–40 seconds of the first crash).
 
-**Fix:** Wait for `kubectl get pod` to show `CrashLoopBackOff`, then re-run `kubectl describe applications`.
+**Fix:** Wait for `kubectl get pod` to show `CrashLoopBackOff`, then re-run `kubectl describe resource`.
 
 ### Pod never reaches Ready after applying ThunderIDInstance
 

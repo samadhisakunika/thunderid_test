@@ -1,53 +1,53 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: UserType
+kind: Resource
 metadata:
   name: cloud-type
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    category: user
-    name: Cloud User
-    ouId: 81fbf6e2-9890-4108-bbae-ef61e6bedc3e
-    allowSelfRegistration: true
-    systemAttributes:
-      display: email
-    schema:
-      {
-        "sub": {
-          "type": "string",
-          "required": true,
-          "displayName": "Subject"
-        },
-        "email": {
-          "type": "string",
-          "required": false,
-          "displayName": "Email Address"
-        },
-        "email_verified": {
-          "type": "string",
-          "required": false,
-          "displayName": "Email Verified"
-        },
-        "given_name": {
-          "type": "string",
-          "required": false,
-          "displayName": "First Name"
-        },
-        "family_name": {
-          "type": "string",
-          "required": false,
-          "displayName": "Last Name"
-        },
-        "name": {
-          "type": "string",
-          "required": false,
-          "displayName": "Full Name"
-        },
-        "picture": {
-          "type": "string",
-          "required": false,
-          "displayName": "Profile Picture URL"
-        }
+  resource_type: user_type
+  category: user
+  name: Cloud User
+  ouId: 81fbf6e2-9890-4108-bbae-ef61e6bedc3e
+  allowSelfRegistration: true
+  systemAttributes:
+    display: email
+  schema:
+    {
+      "sub": {
+        "type": "string",
+        "required": true,
+        "displayName": "Subject"
+      },
+      "email": {
+        "type": "string",
+        "required": false,
+        "displayName": "Email Address"
+      },
+      "email_verified": {
+        "type": "string",
+        "required": false,
+        "displayName": "Email Verified"
+      },
+      "given_name": {
+        "type": "string",
+        "required": false,
+        "displayName": "First Name"
+      },
+      "family_name": {
+        "type": "string",
+        "required": false,
+        "displayName": "Last Name"
+      },
+      "name": {
+        "type": "string",
+        "required": false,
+        "displayName": "Full Name"
+      },
+      "picture": {
+        "type": "string",
+        "required": false,
+        "displayName": "Profile Picture URL"
       }
+    }

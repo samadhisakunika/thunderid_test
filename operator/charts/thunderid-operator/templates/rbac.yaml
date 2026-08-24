@@ -56,18 +56,8 @@ rules:
 - apiGroups:
   - apps.thunderid.io
   resources:
-  - applications
-  - flows
-  - groups
-  - organizationunits
-  - resourceservers
-  - roles
-  - serverconfigs
-  - themes
+  - resources
   - thunderidinstances
-  - translations
-  - users
-  - usertypes
   verbs:
   - create
   - delete
@@ -79,18 +69,8 @@ rules:
 - apiGroups:
   - apps.thunderid.io
   resources:
-  - applications/status
-  - flows/status
-  - groups/status
-  - organizationunits/status
-  - resourceservers/status
-  - roles/status
-  - serverconfigs/status
-  - themes/status
+  - resources/status
   - thunderidinstances/status
-  - translations/status
-  - users/status
-  - usertypes/status
   verbs:
   - get
   - patch

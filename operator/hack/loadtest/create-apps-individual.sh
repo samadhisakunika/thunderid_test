@@ -11,7 +11,7 @@ PREFIX="${3:-loadtest-app}"
 for i in $(seq -w 1 "$COUNT"); do
   kubectl apply -f - <<EOF
 apiVersion: apps.thunderid.io/v1alpha1
-kind: Application
+kind: Resource
 metadata:
   name: $PREFIX-$i
   namespace: default
@@ -19,18 +19,18 @@ metadata:
     loadtest: "true"
     thunderid.io/instance: $INSTANCE_REF
 spec:
-  config:
-    name: "Load Test App $i"
-    ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
-    authFlowHandle: console-app-flow
-    themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
-    isRegistrationFlowEnabled: true
-    isRecoveryFlowEnabled: false
-    allowedUserTypes:
-      - Person
-    assertion:
-      validityPeriod: 3600
-    loginConsent:
-      validityPeriod: 0
+  resource_type: application
+  name: "Load Test App $i"
+  ouId: "019ef85a-0aa4-7736-9357-d25edba4db95"
+  authFlowHandle: console-app-flow
+  themeId: "019ef85a-0eab-7d82-b9a9-62b8be7efe8c"
+  isRegistrationFlowEnabled: true
+  isRecoveryFlowEnabled: false
+  allowedUserTypes:
+    - Person
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
 EOF
 done

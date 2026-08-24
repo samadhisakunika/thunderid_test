@@ -4,19 +4,22 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: themes.apps.thunderid.io
+  name: resources.apps.thunderid.io
 spec:
   group: apps.thunderid.io
   names:
-    kind: Theme
-    listKind: ThemeList
-    plural: themes
-    singular: theme
+    kind: Resource
+    listKind: ResourceList
+    plural: resources
+    singular: resource
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .metadata.labels['thunderid\.io/instance']
       name: Instance
+      type: string
+    - jsonPath: .spec.resource_type
+      name: Type
       type: string
     - jsonPath: .status.synced
       name: Synced
@@ -46,11 +49,15 @@ spec:
           metadata:
             type: object
           spec:
-            properties:
-              config:
-                type: object
-                x-kubernetes-preserve-unknown-fields: true
+            description: |-
+              spec is ThunderID's own exported bootstrap document, pasted in essentially as-is
+              (resource_type, name, ouId, ... — whatever ThunderID's bootstrap loader recognizes
+              for that resource_type). The operator reads spec.resource_type to know which
+              ConfigMap this belongs in and spec.credentialsSecretRef (only meaningful when
+              resource_type == "user") as a k8s Secret reference — both keys are stripped before
+              forwarding to ThunderID. Everything else passes through untouched.
             type: object
+            x-kubernetes-preserve-unknown-fields: true
           status:
             properties:
               conditions:
@@ -112,6 +119,13 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              credentialsSecretRef:
+                description: |-
+                  CredentialsSecretRef mirrors User's old status field — only set when
+                  spec.resource_type == "user".
+                type: string
+              id:
+                type: string
               lastSyncTime:
                 format: date-time
                 type: string
@@ -119,8 +133,6 @@ spec:
                 type: string
               synced:
                 type: boolean
-              themeID:
-                type: string
             type: object
         type: object
     served: true

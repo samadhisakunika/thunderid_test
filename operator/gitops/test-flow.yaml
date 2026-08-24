@@ -1,55 +1,55 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: Flow
+kind: Resource
 metadata:
   name: test-basic-flow
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    handle: test-basic-flow
-    name: Test Basic Authentication Flow NEW1
-    flowType: AUTHENTICATION
-    isReadOnly: false
-    nodes:
-      - id: start
-        type: START
-        onSuccess: prompt_credentials
-      - id: prompt_credentials
-        type: PROMPT
-        meta: '{"components":[{"align":"center","id":"text_001","label":"Welcome to Demo Portal.\nUsing Custom Test Basic Flow","type":"TEXT","variant":"HEADING_1"},{"components":[{"id":"input_003","label":"Email","placeholder":"Enter your email","ref":"email","required":false,"type":"TEXT_INPUT"},{"id":"input_001","label":"Username","placeholder":"Enter your username","ref":"username","required":true,"type":"TEXT_INPUT"},{"id":"input_002","label":"Password","placeholder":"Enter your password","ref":"password","required":true,"type":"PASSWORD_INPUT"},{"eventType":"SUBMIT","id":"action_001","label":"Sign In","type":"ACTION","variant":"PRIMARY"}],"id":"block_001","type":"BLOCK"}]}'
-        prompts:
-          - inputs:
-              - ref: input_003
-                type: TEXT_INPUT
-                identifier: email
-                required: false
-              - ref: input_001
-                type: TEXT_INPUT
-                identifier: username
-                required: true
-              - ref: input_002
-                type: PASSWORD_INPUT
-                identifier: password
-                required: true
-            action:
-              ref: action_001
-              nextNode: credentials_auth
-      - id: credentials_auth
-        type: TASK_EXECUTION
-        executor:
-          name: CredentialsAuthExecutor
-        onSuccess: authorization_check
-        onIncomplete: prompt_credentials
-      - id: authorization_check
-        type: TASK_EXECUTION
-        executor:
-          name: AuthorizationExecutor
-        onSuccess: auth_assert
-      - id: auth_assert
-        type: TASK_EXECUTION
-        executor:
-          name: AuthAssertExecutor
-        onSuccess: end
-      - id: end
-        type: END
+  resource_type: flow
+  handle: test-basic-flow
+  name: Test Basic Authentication Flow NEW1
+  flowType: AUTHENTICATION
+  isReadOnly: false
+  nodes:
+    - id: start
+      type: START
+      onSuccess: prompt_credentials
+    - id: prompt_credentials
+      type: PROMPT
+      meta: '{"components":[{"align":"center","id":"text_001","label":"Welcome to Demo Portal.\nUsing Custom Test Basic Flow","type":"TEXT","variant":"HEADING_1"},{"components":[{"id":"input_003","label":"Email","placeholder":"Enter your email","ref":"email","required":false,"type":"TEXT_INPUT"},{"id":"input_001","label":"Username","placeholder":"Enter your username","ref":"username","required":true,"type":"TEXT_INPUT"},{"id":"input_002","label":"Password","placeholder":"Enter your password","ref":"password","required":true,"type":"PASSWORD_INPUT"},{"eventType":"SUBMIT","id":"action_001","label":"Sign In","type":"ACTION","variant":"PRIMARY"}],"id":"block_001","type":"BLOCK"}]}'
+      prompts:
+        - inputs:
+            - ref: input_003
+              type: TEXT_INPUT
+              identifier: email
+              required: false
+            - ref: input_001
+              type: TEXT_INPUT
+              identifier: username
+              required: true
+            - ref: input_002
+              type: PASSWORD_INPUT
+              identifier: password
+              required: true
+          action:
+            ref: action_001
+            nextNode: credentials_auth
+    - id: credentials_auth
+      type: TASK_EXECUTION
+      executor:
+        name: CredentialsAuthExecutor
+      onSuccess: authorization_check
+      onIncomplete: prompt_credentials
+    - id: authorization_check
+      type: TASK_EXECUTION
+      executor:
+        name: AuthorizationExecutor
+      onSuccess: auth_assert
+    - id: auth_assert
+      type: TASK_EXECUTION
+      executor:
+        name: AuthAssertExecutor
+      onSuccess: end
+    - id: end
+      type: END

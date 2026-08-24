@@ -1,60 +1,60 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: Application
+kind: Resource
 metadata:
   name: login-app
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    name: Login App
-    description: Sample login application
-    logoUrl: emoji:✈️
-    ouHandle: default
-    authFlowHandle: default-flow
-    isRegistrationFlowEnabled: false
-    assertion:
-      validityPeriod: 3600
-    loginConsent:
-      validityPeriod: 0
-    allowedUserTypes:
-      - Person
-    type: browser # ThunderID's own key is "type", not "template"
-    inboundAuthConfig:
-      - type: oauth2
-        config:
-          clientId: SAMPLE_CLIENT_ID
-          redirectUris:
-            - "https://localhost:3000"
-          grantTypes:
-            - authorization_code
-            - refresh_token
-          responseTypes:
-            - code
-          tokenEndpointAuthMethod: none
-          pkceRequired: true
-          publicClient: true
-          token:
-            accessToken:
-              userConfig:
-                validityPeriod: 3600
-                attributes:
-                  - family_name
-                  - email
-                  - groups
-            idToken:
+  resource_type: application
+  name: Login App
+  description: Sample login application
+  logoUrl: emoji:✈️
+  ouHandle: default
+  authFlowHandle: default-flow
+  isRegistrationFlowEnabled: false
+  assertion:
+    validityPeriod: 3600
+  loginConsent:
+    validityPeriod: 0
+  allowedUserTypes:
+    - Person
+  type: browser # ThunderID's own key is "type", not "template"
+  inboundAuthConfig:
+    - type: oauth2
+      config:
+        clientId: SAMPLE_CLIENT_ID
+        redirectUris:
+          - "https://localhost:3000"
+        grantTypes:
+          - authorization_code
+          - refresh_token
+        responseTypes:
+          - code
+        tokenEndpointAuthMethod: none
+        pkceRequired: true
+        publicClient: true
+        token:
+          accessToken:
+            userConfig:
               validityPeriod: 3600
-              userAttributes:
-                - given_name
+              attributes:
                 - family_name
                 - email
                 - groups
-          scopeClaims:
-            email:
-              - email
-              - email_verified
-            group:
-              - groups
-            profile:
+          idToken:
+            validityPeriod: 3600
+            userAttributes:
               - given_name
               - family_name
+              - email
+              - groups
+        scopeClaims:
+          email:
+            - email
+            - email_verified
+          group:
+            - groups
+          profile:
+            - given_name
+            - family_name

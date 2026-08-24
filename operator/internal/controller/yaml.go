@@ -3,7 +3,6 @@ package controller
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -11,7 +10,6 @@ import (
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // yamlSingleQuote formats s as a single-quoted YAML scalar. Go's %q escapes
@@ -45,27 +43,6 @@ func yamlScalar(v interface{}) string {
 	default:
 		return fmt.Sprintf("%v", val)
 	}
-}
-
-// renderResourceYAML decodes spec.config — an arbitrary object ThunderID's own bootstrap
-// loader validates and owns the shape of, so a schema change on ThunderID's side never
-// needs an operator code change — and overlays the handful of values the operator itself
-// is responsible for (resource_type, id, and similar k8s-generated identifiers) on top,
-// then renders the merged document as YAML.
-func renderResourceYAML(raw runtime.RawExtension, overrides map[string]interface{}) (string, error) {
-	data := map[string]interface{}{}
-	if len(raw.Raw) > 0 {
-		if err := json.Unmarshal(raw.Raw, &data); err != nil {
-			return "", fmt.Errorf("spec.config: %w", err)
-		}
-	}
-	for k, v := range overrides {
-		data[k] = v
-	}
-
-	var buf bytes.Buffer
-	writeYAMLMapBody(&buf, "", data)
-	return buf.String(), nil
 }
 
 // mergeStringMap ensures data[key] is a map[string]interface{} and overlays values on top
@@ -181,4 +158,23 @@ func deterministicUUIDv7(meta metav1.ObjectMeta) string {
 	copy(b[9:], h[3:10])
 
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+func removeString(slice []string, s string) []string {
+	var out []string
+	for _, item := range slice {
+		if item != s {
+			out = append(out, item)
+		}
+	}
+	return out
 }

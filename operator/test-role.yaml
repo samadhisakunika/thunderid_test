@@ -1,19 +1,19 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: Role
+kind: Resource
 metadata:
   name: test-role
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  config:
-    name: Test Role
-    description: A simple test role for verifying the Role controller.
-    ouHandle: test-ou  # matches spec.config.handle on the "test-ou" OrganizationUnit CR
-    permissions:
-      - resourceServerId: "019f215e-1a55-72db-9743-ac25d839c72a"
-        permissions:
-          - system
-    assignments:
-      - id: "019f215e-1bc0-773b-a202-04fbcee09eeb"
-        type: group
+  resource_type: role
+  name: Test Role
+  description: A simple test role for verifying the Role controller.
+  ouHandle: test-ou  # matches spec.config.handle on the "test-ou" OrganizationUnit CR
+  permissions:
+    - resourceServerId: "019f215e-1a55-72db-9743-ac25d839c72a"
+      permissions:
+        - system
+  assignments:
+    - id: "019f215e-1bc0-773b-a202-04fbcee09eeb"
+      type: group
