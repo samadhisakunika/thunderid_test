@@ -413,8 +413,15 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	if cm.Data["deployment.yaml"] == data["deployment.yaml"] && cm.Data["resources.yaml"] == data["resources.yaml"] {
 		return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, nil
 	}
-	cm.Data = data
-	return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, r.Update(ctx, cm)
+	updateErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		latest := &corev1.ConfigMap{}
+		if err := r.Get(ctx, types.NamespacedName{Name: instance.Name + "-config", Namespace: instance.Namespace}, latest); err != nil {
+			return err
+		}
+		latest.Data = data
+		return r.Update(ctx, latest)
+	})
+	return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, updateErr
 }
 
 func (r *ThunderIDInstanceReconciler) appendResourceConfigMap(

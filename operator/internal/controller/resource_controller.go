@@ -100,6 +100,10 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	resourceType, credentialsSecretRef, _, err := parseResourceSpec(obj.Spec)
 	if err != nil {
+		if !obj.DeletionTimestamp.IsZero() {
+			obj.Finalizers = removeString(obj.Finalizers, resourceFinalizer)
+			return ctrl.Result{}, r.Update(ctx, obj)
+		}
 		r.Recorder.Event(obj, corev1.EventTypeWarning, "InvalidSpec", err.Error())
 		obj.Status.Phase = "Error"
 		obj.Status.Synced = false
@@ -107,7 +111,30 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	if _, ok := resourceTypeMeta[resourceType]; !ok && obj.DeletionTimestamp.IsZero() {
+	// Deletion is handled before the instance lookup below: once the owning ThunderIDInstance
+	// is itself gone, that lookup would return NotFound forever and this finalizer could never
+	// clear (the object would be stuck Terminating indefinitely) if it were checked first.
+	if !obj.DeletionTimestamp.IsZero() {
+		if containsString(obj.Finalizers, resourceFinalizer) {
+			instance := &appsv1alpha1.ThunderIDInstance{}
+			if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
+				if client.IgnoreNotFound(err) != nil {
+					return ctrl.Result{}, err
+				}
+				// Owning instance already gone — its ConfigMaps are gone with it, nothing left
+				// to remove this resource from. Fall through to just drop the finalizer.
+			} else if _, err := r.rebuildResourcesConfigMap(ctx, instance, resourceType, string(obj.UID)); err != nil {
+				return ctrl.Result{}, err
+			}
+			obj.Finalizers = removeString(obj.Finalizers, resourceFinalizer)
+			if err := r.Update(ctx, obj); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if _, ok := resourceTypeMeta[resourceType]; !ok {
 		r.Recorder.Eventf(obj, corev1.EventTypeWarning, "UnknownType", "spec.resource_type %q is not a known ThunderID resource_type", resourceType)
 		obj.Status.Phase = "Error"
 		obj.Status.Synced = false
@@ -123,19 +150,6 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", obj.Labels[appsv1alpha1.InstanceRefLabel])
 		return ctrl.Result{}, err
-	}
-
-	if !obj.DeletionTimestamp.IsZero() {
-		if containsString(obj.Finalizers, resourceFinalizer) {
-			if _, err := r.rebuildResourcesConfigMap(ctx, instance, resourceType, string(obj.UID)); err != nil {
-				return ctrl.Result{}, err
-			}
-			obj.Finalizers = removeString(obj.Finalizers, resourceFinalizer)
-			if err := r.Update(ctx, obj); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-		return ctrl.Result{}, nil
 	}
 
 	if !containsString(obj.Finalizers, resourceFinalizer) {
