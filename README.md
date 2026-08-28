@@ -217,6 +217,7 @@ The top-level resource. Creates and manages a `Deployment`, `Service`, and (opti
 | `spec.image` | Yes | ThunderID container image |
 | `spec.domain` | No | Externally-reachable hostname. When set, creates an `Ingress` (`Host: spec.domain`, TLS via `spec.tlsSecret` if set) so ThunderID is reachable without `kubectl port-forward` — e.g. a real deployment behind real DNS. When unset (the default — every local/dev workflow in this repo uses this), no `Ingress` is created; reach ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead |
 | `spec.resourcesConfigMap` | No | ConfigMap containing *additional* base resources YAML, seeded alongside the image's own built-in defaults (default OU, user types, flows). Not required for normal use |
+| `spec.envSecretRef` | No | Secret whose keys are mounted as environment variables on the ThunderID container — see [Env vars & `{{.VAR}}` placeholders](#env-vars--var-placeholders) below |
 | `spec.config.database` | See note | Mirrors ThunderID's own `database:` section 1:1 — four independent scopes (`config`, `runtimeTransient`, `entity`, `runtimePersistent`), each with `type: sqlite` (default) or `type: postgres` and a matching `sqlite:`/`postgres:` block. Unset means the image's built-in sqlite defaults for all four. See [Database](#database) below. Unless every scope is `type: postgres`, `spec.dataVolumeSize` **must** be set — a `ThunderIDInstance` with neither is rejected |
 | `spec.config.database.secretRef` | No | Required when any scope's `type` is `postgres`: name of the Secret holding the `password` key, shared across every postgres scope |
 | `spec.tlsSecret` | No | Kubernetes Secret name for TLS |
@@ -404,10 +405,9 @@ spec:
 |-------|-------------|
 | `metadata.labels['thunderid.io/instance']` | Name of the `ThunderIDInstance` to register with |
 | `spec.resource_type` | **Required.** Which ThunderID resource this is — see the table below for the ConfigMap each one lands in |
-| `spec.credentialsSecretRef` | Only meaningful when `resource_type: user` — see [Credentials](#credentials-speccredentialssecretref-resource_type-user-only) below. Unlike everything else under `spec`, this one is k8s-native Secret plumbing, not a ThunderID schema field |
-| everything else under `spec` | ThunderID's own field names for that `resource_type` (`name`, `ouId`, `handle`, `type`, ...) — copy-paste ThunderID's own exported YAML in directly (dropping its `id:` line, which the operator generates itself) |
+| everything else under `spec` | ThunderID's own field names for that `resource_type` (`name`, `ouId`, `handle`, `type`, ...) — copy-paste ThunderID's own exported YAML in directly (dropping its `id:` line, which the operator generates itself). Any field can hold a `{{.VAR}}` token — see [Env vars & `{{.VAR}}` placeholders](#env-vars--var-placeholders) below |
 
-**Design note:** Everything under `spec` except `resource_type` and `credentialsSecretRef` is forwarded into ThunderID's own bootstrap schema for that resource type essentially as-is. The operator does **not** resolve handles, validate required fields, or otherwise interpret the content — that's ThunderID's own bootstrap loader's job. This means:
+**Design note:** Everything under `spec` except `resource_type` is forwarded into ThunderID's own bootstrap schema for that resource type essentially as-is. The operator does **not** resolve handles, validate required fields, or otherwise interpret the content — that's ThunderID's own bootstrap loader's job. This means:
 - A mistake (missing required field, a bad ID, malformed JSON) is **not** caught at `kubectl apply` time — it's caught at ThunderID's own bootstrap time, surfaced as a `ThunderIDError`/`ThunderIDCrashed` Event on the CR (see [Checking Status](#checking-status)).
 - Cross-references (`ouId`, `authFlowId`, `themeId`, `resourceServerId`, member/assignment IDs, ...) can be literal ThunderID IDs, the same as if you were editing ThunderID's own `resources.yaml` by hand. Or use `*Handle`-style fields (`ouHandle`, `authFlowHandle`, `registrationFlowHandle`, `recoveryFlowHandle`) — ThunderID's own bootstrap loader resolves them itself, confirmed live against `ghcr.io/thunder-id/thunderid:latest` (a plain `ouHandle`/`authFlowHandle` application reached `Ready` with no ID at all). `themeHandle` is the one confirmed exception — not supported by ThunderID at all; use `themeId`.
 - None of the field names in the table below are enforced by the operator or the CRD schema; get the exact set ThunderID's bootstrap loader accepts from its own docs/schema when in doubt.
@@ -422,7 +422,7 @@ spec:
 | `organization_unit` | `<instance>-organizationunits` | Container for users, roles, applications. `handle`/`name` required. `parentId` is an optional literal parent-OU ID |
 | `role` | `<instance>-roles` | `name` required. `permissions[].resourceServerId` + `.permissions`, `assignments[].id` + `.type` — literal IDs, not Kubernetes references |
 | `user_type` | `<instance>-usertypes` | `category`/`name` required. `schema` (required) is the attribute schema, nested YAML/JSON |
-| `user` | `<instance>-users` | `type` (the owning `UserType`'s **name**, e.g. `Person` — a literal string, not a Kubernetes reference) required. `attributes` is a free-form key/value map matching the `UserType`'s `schema`. See [Credentials](#credentials-speccredentialssecretref-resource_type-user-only) |
+| `user` | `<instance>-users` | `type` (the owning `UserType`'s **name**, e.g. `Person` — a literal string, not a Kubernetes reference) required. `attributes` is a free-form key/value map matching the `UserType`'s `schema`. Passwords/credentials go under `credentials` (e.g. `credentials.password`) — see [Env vars & `{{.VAR}}` placeholders](#env-vars--var-placeholders) to keep the literal value out of this CR entirely |
 | `resource_server` | `<instance>-resourceservers` | `name`/`identifier` required — ThunderID rejects one with no identifier at bootstrap, crash-looping the pod. `delimiter` joins a resource/action handle into a permission string (e.g. `ou:view`). `resources[].actions[]` nested |
 | `group` | `<instance>-groups` | `name` required. `members[].id` + `.type` — literal IDs, not Kubernetes references |
 | `server_config` | `<instance>-serverconfigs` | `name: cors\|session\|defaultResourceServer` + `value: {...}` holding that section's own fields |
@@ -433,44 +433,65 @@ spec:
 - Confidential client (server-side): use `publicClient: false`, `tokenEndpointAuthMethod: client_secret_basic`
 - `client_credentials` grant type requires a confidential client (`publicClient: false`) with a real auth method — it cannot use `tokenEndpointAuthMethod: none`
 
-#### Credentials (`spec.credentialsSecretRef`, `resource_type: user` only)
+#### Env vars & `{{.VAR}}` placeholders
 
-A user's credentials (and, if present, `username`) come from a Kubernetes Secret rather than plaintext CR fields, so they never sit in the CR spec or etcd unencrypted.
+Any field, in any `resource_type` — a user's `credentials.password`, an application's OAuth `clientSecret`, anything — can hold a `{{.VAR}}` token instead of a literal value, so the CR itself never holds the literal secret. ThunderID's own live `resources.yaml` loader resolves these at pod **startup** (confirmed live, against `ghcr.io/thunder-id/thunderid:latest`) against the process environment — the same mechanism ThunderID's own bundled bootstrap templates use, just applied to every declarative resource this operator mounts, not only its own bootstrap-time ones.
 
-- **You supply the Secret** (`spec.credentialsSecretRef: admin-credentials`) — every key in the Secret's `data`/`stringData` is passed through as a credential type (e.g. `password`, or any other type name a UserType's `schema` marks `"credential": true`), **except** `username`, which is special-cased: it overrides `spec.attributes.username` instead, since ThunderID treats username as an identifying attribute, not a credential. If both are set, the Secret wins — you don't need `username` in `spec.attributes` at all once it's in the Secret.
+`spec.envSecretRef` on the `ThunderIDInstance` names a single Secret in the same namespace; every key in it becomes an environment variable on the ThunderID container via `envFrom`. The operator only ever mounts this Secret whole — it never creates, reads individual keys from, or generates values into it. Two ways to author it, both producing exactly the same Secret and both fully supported:
 
-  ```yaml
-  apiVersion: v1
-  kind: Secret
-  metadata:
-    name: admin-credentials
-    namespace: default
-  type: Opaque
-  stringData:
-    username: admin
-    password: change-me
-  ```
+**Hand-write the Secret directly:**
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: thunderid-env
+  namespace: default
+type: Opaque
+stringData:
+  ADMIN2_PASSWORD: change-me
+```
 
-- **You omit it** — the operator auto-generates a Secret named `<name>-credentials` on first reconcile, with a random `username` (`user-<8 hex chars>`) and `password` (8 hex chars), owned by the `Resource` (deleted automatically when it is). Like the auto-generated security Secret, it's created once and never regenerated on later reconciles, so the password doesn't rotate out from under you — see `scripts/reset-credentials.sh` below if you need a new one.
+**Or apply an `Environment`** — a one-shot CR: the operator creates/updates a Secret of the same name from `spec.env`, then deletes the `Environment` object, leaving only the Secret behind. Re-apply the same name to change values later (it isn't there to edit — each apply is a fresh sync-then-delete). This means the value briefly exists in the `Environment` object's own `spec` in etcd before that happens — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for the short time it exists:
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Environment
+metadata:
+  name: thunderid-env
+  namespace: default
+spec:
+  env:
+    ADMIN2_PASSWORD: change-me
+```
 
-  To find and read the generated credentials:
-  ```
-  ./scripts/get-credentials.sh <name>
-  ```
-  which is shorthand for:
-  ```
-  kubectl get resource <name> -o jsonpath='{.status.credentialsSecretRef}'
-  kubectl get secret <name>-credentials -o go-template='{{.data.username|base64decode}} / {{.data.password|base64decode}}'
-  ```
-  The operator also emits a one-time `CredentialsGenerated` Event on the `Resource` with this command pre-filled — `kubectl describe resource <name>` shortly after creation. Events expire (~1h, cluster-dependent), so the `status.credentialsSecretRef` + Secret are the durable way to find them later.
+Either way, point the instance at the resulting Secret and reference the key from a CR:
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ThunderIDInstance
+metadata:
+  name: thunderid-prod
+spec:
+  envSecretRef: thunderid-env
+  # ...
+```
 
-  To reset an auto-generated user's password (and username) to a fresh random pair:
-  ```
-  ./scripts/reset-credentials.sh <name>
-  ```
-  This only works when `spec.credentialsSecretRef` was left empty — it refuses to touch a Secret you supplied yourself, since the operator doesn't own it. For a user-supplied Secret, rotate it directly (`kubectl edit secret <your-secret-name>`); the operator picks up whatever's in it on its next reconcile. Either way, the ThunderID pod still needs to restart before a changed password actually works for login (see below).
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Resource
+metadata:
+  name: admin2
+  labels:
+    thunderid.io/instance: thunderid-prod
+spec:
+  resource_type: user
+  credentials:
+    password: '{{.ADMIN2_PASSWORD}}'
+```
 
-Either way, ThunderID's declarative loader only reads resources at pod **startup** — changing a user's credentials Secret after the fact still requires the ThunderID pod to restart (triggered automatically by the ConfigMap-version annotation bump) before the new values take effect.
+A `{{.VAR}}` token with no matching key in `envSecretRef`'s Secret isn't caught at `kubectl apply` time — ThunderID's own boot fails with a clear `environment variable ADMIN2_PASSWORD is not set` error, surfaced the same way any other bootstrap failure is (see [Checking Status](#checking-status)).
+
+ThunderID's declarative loader only reads resources and environment variables at pod **startup** — changing the Secret's content after the fact still requires the ThunderID pod to restart (triggered automatically, the same way editing `spec.config.database`/`spec.config.email` already does) before the new values take effect.
+
+There's no built-in "generate me a password" convenience today — every value is authored by hand into the Secret. If that turns out to matter, it can be layered on top later (the operator writing a generated value into a deterministic key if one isn't already present) without changing anything else about this mechanism.
 
 ---
 

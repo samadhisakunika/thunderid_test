@@ -52,10 +52,12 @@ spec:
             description: |-
               spec is ThunderID's own exported bootstrap document, pasted in essentially as-is
               (resource_type, name, ouId, ... — whatever ThunderID's bootstrap loader recognizes
-              for that resource_type). The operator reads spec.resource_type to know which
-              ConfigMap this belongs in and spec.credentialsSecretRef (only meaningful when
-              resource_type == "user") as a k8s Secret reference — both keys are stripped before
-              forwarding to ThunderID. Everything else passes through untouched.
+              for that resource_type). The operator only ever reads spec.resource_type, to know
+              which ConfigMap this belongs in — that key is stripped before forwarding to
+              ThunderID. Everything else passes through untouched, including a {{.VAR}} token in
+              any field, resolved by ThunderID's own live resources.yaml loader at boot against
+              whatever the owning ThunderIDInstance's spec.envSecretRef Secret provides (confirmed
+              live).
             type: object
             x-kubernetes-preserve-unknown-fields: true
           status:
@@ -119,11 +121,6 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              credentialsSecretRef:
-                description: |-
-                  CredentialsSecretRef mirrors User's old status field — only set when
-                  spec.resource_type == "user".
-                type: string
               id:
                 type: string
               lastSyncTime:

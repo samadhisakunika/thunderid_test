@@ -125,6 +125,13 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
+	envSecretHash, err := r.resolveEnvSecretHash(ctx, instance)
+	if err != nil {
+		log.Error(err, "failed to resolve env Secret")
+		r.Recorder.Event(instance, corev1.EventTypeWarning, "InvalidSpec", err.Error())
+		return ctrl.Result{}, err
+	}
+
 	if err := r.reconcileHPA(ctx, instance); err != nil {
 		log.Error(err, "failed to reconcile HPA")
 		return ctrl.Result{}, err
@@ -132,7 +139,7 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Hash includes every resource-kind's version annotation so pod rolls when any of them changes.
 	configHash := func() string {
 		h := sha256.New()
-		h.Write([]byte(publicURL + strconv.Itoa(int(port)) + instance.Spec.ResourcesConfigMap + databaseBlock + emailBlock +
+		h.Write([]byte(publicURL + strconv.Itoa(int(port)) + instance.Spec.ResourcesConfigMap + databaseBlock + emailBlock + envSecretHash +
 			instance.Spec.Config.TLS.MinVersion + instance.Spec.Config.JWT.PreferredKeyID +
 			strings.Join(instance.Spec.Config.Passkey.ExtraAllowedOrigins, ",") +
 			instance.Annotations["thunderid.io/serverconfigs-version"] +
@@ -250,8 +257,32 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// only updates status, which never bumps generation. reconcileBootstrapJob needs to see
 		// that transition to retry a failed bootstrap automatically.
 		Owns(&batchv1.Job{}).
+		// Not Owns(): spec.envSecretRef names a Secret the instance doesn't own (the caller
+		// authors it directly, see EnvSecretRef's doc comment), so there's no owner reference to
+		// follow. Editing its content alone doesn't touch the ThunderIDInstance object itself —
+		// without this, resolveEnvSecretHash's new value would only ever be picked up by some
+		// unrelated reconcile trigger, not promptly when the Secret you actually changed changes.
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvSecret)).
 		Named("thunderidinstance").
 		Complete(r)
+}
+
+// instancesForEnvSecret maps a Secret change to every ThunderIDInstance whose spec.envSecretRef
+// names it.
+func (r *ThunderIDInstanceReconciler) instancesForEnvSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	list := &appsv1alpha1.ThunderIDInstanceList{}
+	if err := r.List(ctx, list, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for _, instance := range list.Items {
+		if instance.Spec.EnvSecretRef == obj.GetName() {
+			reqs = append(reqs, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace},
+			})
+		}
+	}
+	return reqs
 }
 
 // mapServingPodToInstance handles a freshly (re)created serving pod: if this instance's
@@ -856,6 +887,16 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	// to persist, so spec.dataVolumeSize (and the once-only setup.sh gating below) is ignored.
 	hasDataVolume := instance.Spec.DataVolumeSize != "" && !usingPostgres(instance)
 
+	// Every key in spec.envSecretRef's Secret becomes an env var on the container — resolving
+	// whatever {{.VAR}} tokens a Resource's spec holds is entirely ThunderID's own job at boot,
+	// not the operator's; see EnvSecretRef's doc comment.
+	var envFrom []corev1.EnvFromSource
+	if instance.Spec.EnvSecretRef != "" {
+		envFrom = []corev1.EnvFromSource{
+			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: instance.Spec.EnvSecretRef}}},
+		}
+	}
+
 	// The thunderid image runs as a non-root user (uid/gid 10001, see the image's Dockerfile).
 	// A freshly provisioned PVC is mounted root-owned, so without fsGroup the container can't
 	// write its "setup ran once" marker to it — setup.sh succeeds but the following touch fails
@@ -1142,6 +1183,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 									{Name: "ADMIN_USERNAME", Value: "admin"},
 									{Name: "ADMIN_PASSWORD", Value: "admin"},
 								},
+								EnvFrom:        envFrom,
 								Ports:          []corev1.ContainerPort{{ContainerPort: port, Protocol: corev1.ProtocolTCP}},
 								VolumeMounts:   volumeMounts,
 								Resources:      instance.Spec.Resources,
@@ -1204,6 +1246,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		{Name: "ADMIN_USERNAME", Value: "admin"},
 		{Name: "ADMIN_PASSWORD", Value: "admin"},
 	}
+	dep.Spec.Template.Spec.Containers[0].EnvFrom = envFrom
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
 	dep.Spec.Template.Spec.Containers[0].Resources = instance.Spec.Resources
 	dep.Spec.Template.Spec.Containers[0].Ports = []corev1.ContainerPort{{ContainerPort: port, Protocol: corev1.ProtocolTCP}}

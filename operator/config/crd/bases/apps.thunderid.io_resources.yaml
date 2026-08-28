@@ -35,11 +35,13 @@ spec:
           Paste a document like:\n\n\tresource_type: application\n\tid: 01900000-0000-7000-8000-000000000060\n\touId:
           01900000-0000-7000-8000-000000000001\n\tname: Console\n\t...\n\ndirectly
           under spec (dropping the id: line — the operator generates that itself).
-          The\noperator reads spec.resource_type to know which ConfigMap this belongs
-          in and\nspec.credentialsSecretRef (only meaningful when resource_type ==
-          \"user\") as a k8s Secret\nreference — both keys are stripped before forwarding
-          to ThunderID. Every other key,\nincluding ones this operator has never heard
-          of, passes through completely untouched."
+          The\noperator only ever reads spec.resource_type, to know which ConfigMap
+          this belongs in — that\nkey is stripped before forwarding to ThunderID.
+          Every other key, including ones this operator\nhas never heard of, passes
+          through completely untouched — including a `{{.VAR}}` token in any\nfield,
+          resolved by ThunderID's own live resources.yaml loader at boot against whatever
+          the\nowning ThunderIDInstance's spec.envSecretRef Secret provides (confirmed
+          live)."
         properties:
           apiVersion:
             description: |-
@@ -122,11 +124,6 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              credentialsSecretRef:
-                description: |-
-                  CredentialsSecretRef mirrors User's old status field — only set when
-                  spec.resource_type == "user".
-                type: string
               id:
                 type: string
               lastSyncTime:

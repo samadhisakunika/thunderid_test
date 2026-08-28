@@ -7,10 +7,12 @@ metadata:
     thunderid.io/instance: external-pg-instance
 spec:
   resource_type: user
-  credentialsSecretRef: test-resource-user-creds
   type: Person
   ouId: 01900000-0000-7000-8000-000000000001
   attributes:
+    username: "User123"
     email: "User1@gmail.com"
     family_name: "User_last_name"
     given_name: "User_first_name"
+  credentials:
+    password: '{{.TEST_RESOURCE_USER_PASSWORD}}' # resolved from external-pg-instance's spec.envSecretRef Secret at boot — see test-resource-user-secret.yaml

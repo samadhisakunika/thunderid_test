@@ -56,6 +56,7 @@ rules:
 - apiGroups:
   - apps.thunderid.io
   resources:
+  - environments
   - resources
   - thunderidinstances
   verbs:
@@ -69,6 +70,7 @@ rules:
 - apiGroups:
   - apps.thunderid.io
   resources:
+  - environments/status
   - resources/status
   - thunderidinstances/status
   verbs:

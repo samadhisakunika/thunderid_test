@@ -232,6 +232,17 @@ type ThunderIDInstanceSpec struct {
 	// +optional
 	ResourcesConfigMap string `json:"resourcesConfigMap,omitempty"`
 
+	// EnvSecretRef names a Secret in this namespace whose keys are mounted as environment
+	// variables on the ThunderID container. Any field in any Resource's spec — a user's
+	// password, an application's OAuth clientSecret, anything — can hold a `{{.KEY}}` token
+	// referencing one of those keys; ThunderID's own live resources.yaml loader resolves it at
+	// boot (confirmed live). Wholly user-authored: the operator never creates, inspects, or
+	// generates values into this Secret, only mounts it whole. A `{{.VAR}}` token with no
+	// matching key fails ThunderID's own boot with a clear "environment variable X is not set"
+	// error — nothing the operator needs to validate ahead of time.
+	// +optional
+	EnvSecretRef string `json:"envSecretRef,omitempty"`
+
 	// DataVolumeSize, when set (e.g. "1Gi"), provisions a ReadWriteOnce PersistentVolumeClaim
 	// mounted at /opt/thunderid/repository/database (where the SQLite files live) and gates
 	// setup.sh to run only once: the container entrypoint checks a marker file on that volume

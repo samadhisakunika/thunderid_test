@@ -18,11 +18,6 @@ type ResourceStatus struct {
 	// +optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
 
-	// CredentialsSecretRef mirrors User's old status field — only set when
-	// spec.resource_type == "user".
-	// +optional
-	CredentialsSecretRef string `json:"credentialsSecretRef,omitempty"`
-
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -46,10 +41,11 @@ type ResourceStatus struct {
 //	...
 //
 // directly under spec (dropping the id: line — the operator generates that itself). The
-// operator reads spec.resource_type to know which ConfigMap this belongs in and
-// spec.credentialsSecretRef (only meaningful when resource_type == "user") as a k8s Secret
-// reference — both keys are stripped before forwarding to ThunderID. Every other key,
-// including ones this operator has never heard of, passes through completely untouched.
+// operator only ever reads spec.resource_type, to know which ConfigMap this belongs in — that
+// key is stripped before forwarding to ThunderID. Every other key, including ones this operator
+// has never heard of, passes through completely untouched — including a `{{.VAR}}` token in any
+// field, resolved by ThunderID's own live resources.yaml loader at boot against whatever the
+// owning ThunderIDInstance's spec.envSecretRef Secret provides (confirmed live).
 type Resource struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

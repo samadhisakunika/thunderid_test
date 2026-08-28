@@ -8,14 +8,15 @@ metadata:
 spec:
   resource_type: user
   type: Person
-  ouHandle: test-ou
+  ouHandle: default
   attributes:
     given_name: "Admin"
     name: "Administrator"
     phone_number: "+12345678920"
     picture: "https://example.com/avatar.jpg"
     sub: "admin"
-    username: "admin"
+    username: "admin2"
     email: "admin@example.com"
     family_name: "User"
-  credentialsSecretRef: admin2-credentials
+  credentials:
+    password: '{{.ADMIN2_PASSWORD}}' # resolved from thunderid-prod's spec.envSecretRef Secret at boot — see Admin2User_credentials.yaml

@@ -45,24 +45,6 @@ func yamlScalar(v interface{}) string {
 	}
 }
 
-// mergeStringMap ensures data[key] is a map[string]interface{} and overlays values on top
-// of it, values winning over whatever spec.config already set for the same sub-key. Used
-// to fold k8s-Secret-derived material (e.g. a User's resolved credentials) into spec.config
-// without clobbering unrelated fields the user put alongside them.
-func mergeStringMap(data map[string]interface{}, key string, values map[string]string) {
-	if len(values) == 0 {
-		return
-	}
-	existing, _ := data[key].(map[string]interface{})
-	if existing == nil {
-		existing = map[string]interface{}{}
-	}
-	for k, v := range values {
-		existing[k] = v
-	}
-	data[key] = existing
-}
-
 // writeYAMLMapBody writes each of data's keys, sorted, as "<indent><key>: ...\n" lines.
 func writeYAMLMapBody(buf *bytes.Buffer, indent string, data map[string]interface{}) {
 	keys := make([]string, 0, len(data))

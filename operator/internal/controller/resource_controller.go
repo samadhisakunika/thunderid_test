@@ -56,21 +56,18 @@ var resourceTypeMeta = map[string]struct {
 	"translation":       {"translations", "translations.yaml"},
 }
 
-// parseResourceSpec decodes obj.Spec.Raw into a generic map, pulling out the two operator-only
-// keys (resource_type, credentialsSecretRef) that live alongside ThunderID's own fields — spec
-// is otherwise forwarded to ThunderID essentially as-is (see resource_type.go's doc comment).
-// credentialsSecretRef is removed from the returned data, since ThunderID has no use for it.
-func parseResourceSpec(raw runtime.RawExtension) (resourceType, credentialsSecretRef string, data map[string]interface{}, err error) {
+// parseResourceSpec decodes obj.Spec.Raw into a generic map, pulling out the one operator-only
+// key (resource_type) that lives alongside ThunderID's own fields — spec is otherwise forwarded
+// to ThunderID essentially as-is (see resource_type.go's doc comment).
+func parseResourceSpec(raw runtime.RawExtension) (resourceType string, data map[string]interface{}, err error) {
 	data = map[string]interface{}{}
 	if len(raw.Raw) > 0 {
 		if err := json.Unmarshal(raw.Raw, &data); err != nil {
-			return "", "", nil, fmt.Errorf("spec: %w", err)
+			return "", nil, fmt.Errorf("spec: %w", err)
 		}
 	}
 	resourceType, _ = data["resource_type"].(string)
-	credentialsSecretRef, _ = data["credentialsSecretRef"].(string)
-	delete(data, "credentialsSecretRef")
-	return resourceType, credentialsSecretRef, data, nil
+	return resourceType, data, nil
 }
 
 type ResourceReconciler struct {
@@ -85,7 +82,6 @@ type ResourceReconciler struct {
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances,verbs=get;patch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=thunderidinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;create;update;patch
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
@@ -98,7 +94,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	resourceType, credentialsSecretRef, _, err := parseResourceSpec(obj.Spec)
+	resourceType, _, err := parseResourceSpec(obj.Spec)
 	if err != nil {
 		if !obj.DeletionTimestamp.IsZero() {
 			obj.Finalizers = removeString(obj.Finalizers, resourceFinalizer)
@@ -160,31 +156,6 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	if resourceType == "user" {
-		credSecretName, credCreated, err := r.ensureResourceCredentialsSecret(ctx, obj, credentialsSecretRef)
-		if err != nil {
-			log.Error(err, "failed to resolve credentials secret")
-			r.Recorder.Event(obj, corev1.EventTypeWarning, "CredentialsError", err.Error())
-			obj.Status.Phase = "Error"
-			obj.Status.Synced = false
-			_ = r.Status().Update(ctx, obj)
-			return ctrl.Result{}, err
-		}
-		if credCreated {
-			r.Recorder.Eventf(obj, corev1.EventTypeNormal, "CredentialsGenerated",
-				"spec.credentialsSecretRef was empty; generated Secret %q. Retrieve with: "+
-					"kubectl get secret %s -n %s -o go-template='{{.data.username|base64decode}} / {{.data.password|base64decode}}'",
-				credSecretName, credSecretName, obj.Namespace)
-		}
-		if obj.Status.CredentialsSecretRef != credSecretName {
-			obj.Status.CredentialsSecretRef = credSecretName
-			if err := r.Status().Update(ctx, obj); err != nil {
-				log.Error(err, "failed to update status with credentials secret name")
-				return ctrl.Result{}, err
-			}
-		}
-	}
-
 	changed, err := r.rebuildResourcesConfigMap(ctx, instance, resourceType, "")
 	if err != nil {
 		log.Error(err, "failed to sync resources ConfigMap")
@@ -242,8 +213,16 @@ func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *apps
 				continue
 			}
 			inCrashLoop := cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff"
+			// LastTerminationState reflects the most recent termination ever, not the current
+			// state — it stays populated forever after a single past crash, even once the
+			// container has been Ready and healthy for hours since. Gating on !cs.Ready keeps
+			// this catching the narrow window right after a crash but before Kubernetes has
+			// escalated to CrashLoopBackOff (which inCrashLoop alone would miss), without
+			// permanently flagging a fully-recovered container as still crashed (confirmed
+			// live: a pod that crashed once ~an hour earlier and fully recovered stayed stuck
+			// re-polling every 10s and reporting Error forever without this guard).
 			crashed := inCrashLoop ||
-				(cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.ExitCode != 0)
+				(!cs.Ready && cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.ExitCode != 0)
 			if crashed {
 				log.Info("ThunderID pod has crashed", "pod", pod.Name)
 				if obj.Status.Phase != "Error" {
@@ -346,7 +325,7 @@ func (r *ResourceReconciler) rebuildResourcesConfigMap(ctx context.Context, inst
 
 	var buf bytes.Buffer
 	for _, o := range list.Items {
-		itemType, itemCredentialsSecretRef, itemData, err := parseResourceSpec(o.Spec)
+		itemType, itemData, err := parseResourceSpec(o.Spec)
 		if err != nil {
 			return false, fmt.Errorf("resource %s: %w", o.Name, err)
 		}
@@ -362,7 +341,7 @@ func (r *ResourceReconciler) rebuildResourcesConfigMap(ctx context.Context, inst
 		if !o.DeletionTimestamp.IsZero() {
 			continue
 		}
-		yamlDoc, err := r.buildResourceYAML(ctx, o, itemType, itemCredentialsSecretRef, itemData)
+		yamlDoc, err := r.buildResourceYAML(o, itemType, itemData)
 		if err != nil {
 			return false, fmt.Errorf("failed to build YAML for resource %s: %w", o.Name, err)
 		}
@@ -423,11 +402,9 @@ func (r *ResourceReconciler) rebuildResourcesConfigMap(ctx context.Context, inst
 }
 
 // buildResourceYAML generates a YAML document for a single resource in the format ThunderID's
-// declarative resource loader expects. resourceType == "user" gets the same credentials-Secret
-// merge every other kind's User controller did. data is o.Spec already decoded with
-// credentialsSecretRef stripped out (see parseResourceSpec) — the caller parses once and
-// passes it in rather than every item re-parsing its own spec twice.
-func (r *ResourceReconciler) buildResourceYAML(ctx context.Context, o appsv1alpha1.Resource, resourceType, credentialsSecretRef string, data map[string]interface{}) (string, error) {
+// declarative resource loader expects. data is o.Spec already decoded (see parseResourceSpec) —
+// the caller parses once and passes it in rather than every item re-parsing its own spec twice.
+func (r *ResourceReconciler) buildResourceYAML(o appsv1alpha1.Resource, resourceType string, data map[string]interface{}) (string, error) {
 	// flow/theme need a UUIDv7-shaped id — ThunderID requires it for these two kinds
 	// specifically; every other kind accepts the k8s object's own (v4) UID as-is.
 	if resourceType == "flow" || resourceType == "theme" {
@@ -436,88 +413,9 @@ func (r *ResourceReconciler) buildResourceYAML(ctx context.Context, o appsv1alph
 		data["id"] = string(o.UID)
 	}
 
-	if resourceType != "user" {
-		var buf bytes.Buffer
-		writeYAMLMapBody(&buf, "", data)
-		return buf.String(), nil
-	}
-
-	attributes := map[string]string{}
-	credentials := map[string]string{}
-
-	credSecretName, _, err := r.ensureResourceCredentialsSecret(ctx, &o, credentialsSecretRef)
-	if err != nil {
-		return "", fmt.Errorf("resolving credentials for user %s: %w", o.Name, err)
-	}
-	credSecret := &corev1.Secret{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: o.Namespace, Name: credSecretName}, credSecret); err != nil {
-		return "", fmt.Errorf("credentials secret %q: %w", credSecretName, err)
-	}
-	for k, v := range credSecret.Data {
-		if k == "username" {
-			attributes["username"] = string(v)
-			continue
-		}
-		credentials[k] = string(v)
-	}
-	mergeStringMap(data, "attributes", attributes)
-	mergeStringMap(data, "credentials", credentials)
-
 	var buf bytes.Buffer
 	writeYAMLMapBody(&buf, "", data)
 	return buf.String(), nil
-}
-
-// ensureResourceCredentialsSecret is UserReconciler.ensureCredentialsSecret, adapted to the
-// generic Resource type — see credentials_secret.go.
-func (r *ResourceReconciler) ensureResourceCredentialsSecret(ctx context.Context, obj *appsv1alpha1.Resource, credentialsSecretRef string) (name string, created bool, err error) {
-	if credentialsSecretRef != "" {
-		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{Namespace: obj.Namespace, Name: credentialsSecretRef}, secret); err != nil {
-			if errors.IsNotFound(err) {
-				return "", false, fmt.Errorf("spec.credentialsSecretRef %q not found", credentialsSecretRef)
-			}
-			return "", false, err
-		}
-		return credentialsSecretRef, false, nil
-	}
-
-	name = obj.Name + "-credentials"
-	existing := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: obj.Namespace, Name: name}, existing); err == nil {
-		return name, false, nil
-	} else if !errors.IsNotFound(err) {
-		return "", false, err
-	}
-
-	username, err := randomUsername()
-	if err != nil {
-		return "", false, fmt.Errorf("generating username: %w", err)
-	}
-	password, err := randomPassword()
-	if err != nil {
-		return "", false, fmt.Errorf("generating password: %w", err)
-	}
-
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: obj.Namespace,
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{
-			"username": username,
-			"password": password,
-		},
-	}
-	_ = ctrl.SetControllerReference(obj, secret, r.Scheme)
-	if err := r.Create(ctx, secret); err != nil {
-		if errors.IsAlreadyExists(err) {
-			return name, false, nil
-		}
-		return "", false, err
-	}
-	return name, true, nil
 }
 
 func (r *ResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -526,7 +424,6 @@ func (r *ResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.resourcesForDeployment), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.resourcesForInstance),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.resourcesForSecret)).
 		Named("resource").
 		Complete(r)
 }
@@ -572,27 +469,6 @@ func (r *ResourceReconciler) resourcesForInstance(ctx context.Context, obj clien
 	var reqs []reconcile.Request
 	for _, o := range list.Items {
 		if o.Labels[appsv1alpha1.InstanceRefLabel] == obj.GetName() {
-			reqs = append(reqs, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: o.Name, Namespace: o.Namespace},
-			})
-		}
-	}
-	return reqs
-}
-
-// resourcesForSecret maps a Secret change to Resources whose spec.credentialsSecretRef names it.
-func (r *ResourceReconciler) resourcesForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
-	list := &appsv1alpha1.ResourceList{}
-	if err := r.List(ctx, list, client.InNamespace(obj.GetNamespace())); err != nil {
-		return nil
-	}
-	var reqs []reconcile.Request
-	for _, o := range list.Items {
-		_, credentialsSecretRef, _, err := parseResourceSpec(o.Spec)
-		if err != nil {
-			continue
-		}
-		if credentialsSecretRef == obj.GetName() {
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: o.Name, Namespace: o.Namespace},
 			})
