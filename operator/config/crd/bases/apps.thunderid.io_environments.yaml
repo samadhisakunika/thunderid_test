@@ -28,12 +28,16 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          Environment is a one-shot trigger, not an ongoing source of truth: applying one makes the
-          operator create/update a Secret (named the same as this object, holding spec.env verbatim as
-          its stringData) and then delete this Environment object — see environment_controller.go. To
-          change the values later, apply a new Environment with the same name; it will update the
-          existing Secret's content and self-delete again. The Secret it produces is deliberately not
-          owned by this object (no controller reference), since it must outlive it.
+          Environment mirrors spec.env into a Secret of the same name, then masks each synced key's
+          value in place (see EnvironmentSpec.Env) — see environment_controller.go. Unlike an earlier
+          version of this design, the object is never deleted: it stays gettable forever, just with
+          masked values, so a developer who doesn't know this becomes a Secret never hits a surprise
+          NotFound. The Secret it produces is deliberately not owned by this object (no controller
+          reference) — nothing here ever deletes this object, but keeping them decoupled means a future
+          change to one can't accidentally cascade-delete the other. Do NOT put this CRD under GitOps
+          (Flux) management: a continuously reconciling GitOps tool enforces live-must-match-Git and
+          will fight the masking forever (reverting it back to plaintext every reconcile) — see
+          operator/gitops/README.md.
         properties:
           apiVersion:
             description: |-
@@ -58,11 +62,13 @@ spec:
                 additionalProperties:
                   type: string
                 description: |-
-                  Env holds this environment's key-value pairs, applied verbatim as the generated Secret's
-                  stringData. Plaintext in the CR's spec — like any Kubernetes object's spec, it's stored in
-                  etcd without the base64/RBAC/encryption-at-rest treatment Secret gets. The operator only
-                  ever mirrors it into a Secret and then deletes this object (see the controller) — it never
-                  reads this field back for any other purpose.
+                  Env holds this environment's key-value pairs, mirrored into the generated Secret's Data.
+                  Plaintext only until the next reconcile: the controller overwrites each key's value here
+                  with a masked marker ("thunderid-masked:<up to 4 leading chars>****:len=<n>") once it's
+                  synced to the Secret, so only a short prefix (never the rest of the raw value) is visible
+                  via `kubectl get/describe environment` past that point — see the controller. To change a
+                  key's value later, re-apply with new plaintext for just that key; kubectl apply's 3-way
+                  merge leaves already-masked sibling keys untouched.
                 type: object
             type: object
           status:
@@ -126,6 +132,13 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              keys:
+                description: |-
+                  Keys lists the currently-synced key names only (never values) — for a developer checking
+                  "did my key actually get picked up" without needing to know this becomes a Secret.
+                items:
+                  type: string
+                type: array
               phase:
                 type: string
               secretName:

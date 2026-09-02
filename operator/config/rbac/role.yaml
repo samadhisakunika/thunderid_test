@@ -56,11 +56,8 @@ rules:
   - apps.thunderid.io
   resources:
   - environments
-  - resources
-  - thunderidinstances
   verbs:
   - create
-  - delete
   - get
   - list
   - patch
@@ -76,6 +73,19 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - apps.thunderid.io
+  resources:
+  - resources
+  - thunderidinstances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - apps.thunderid.io
   resources:

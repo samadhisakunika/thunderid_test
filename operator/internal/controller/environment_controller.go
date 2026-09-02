@@ -2,6 +2,11 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	"regexp"
+	"sort"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -16,18 +21,73 @@ import (
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
 )
 
-// EnvironmentReconciler is a one-shot trigger, not an ongoing controller for a persistent
-// object: it syncs spec.env into a Secret of the same name, then deletes the Environment that
-// triggered it — see Environment's own doc comment for why. Updating values later means
-// applying a new Environment with the same name, not editing an existing one (it won't still
-// exist to edit).
+// maskPrefix marks a spec.env value the controller has already synced to the Secret and
+// overwritten in place. A value not matching maskPattern is treated as new plaintext to sync —
+// this prefix+suffix combination is specific enough that a real credential accidentally
+// colliding with it isn't a realistic concern.
+const maskPrefix = "thunderid-masked:"
+
+var maskPattern = regexp.MustCompile(`^thunderid-masked:.*:len=\d+$`)
+
+func isMasked(v string) bool {
+	return maskPattern.MatchString(v)
+}
+
+// managedKeysAnnotation records, on the generated Secret, exactly which keys this controller
+// last wrote there — the only keys it's ever safe to remove on a later sync. A Secret sharing
+// this Environment's name but never written by it (hand-made, or pre-existing from before this
+// annotation existed) carries no such record, so its keys are left alone instead of being wiped
+// by treating the Secret's Data as a full replace (confirmed live: a full replace previously
+// destroyed unrelated Secret keys on name collision).
+const managedKeysAnnotation = "thunderid.io/managed-keys"
+
+func managedKeySet(secret *corev1.Secret) map[string]bool {
+	set := map[string]bool{}
+	raw := secret.Annotations[managedKeysAnnotation]
+	if raw == "" {
+		return set
+	}
+	for _, k := range strings.Split(raw, ",") {
+		if k != "" {
+			set[k] = true
+		}
+	}
+	return set
+}
+
+// maskValue reveals at most the first 4 characters of v (never all of it, even for a value 4
+// characters or shorter — a short value gets a shorter reveal instead) so a developer can
+// eyeball "is this the value I think it is" without the full secret ever living in etcd.
+func maskValue(v string) string {
+	n := len(v)
+	reveal := 4
+	if reveal > n-1 {
+		reveal = n - 1
+	}
+	if reveal < 0 {
+		reveal = 0
+	}
+	masked := v[:reveal] + strings.Repeat("*", n-reveal)
+	return fmt.Sprintf("%s%s:len=%d", maskPrefix, masked, n)
+}
+
+// EnvironmentReconciler mirrors spec.env into a Secret of the same name, then overwrites each
+// synced key's value in spec.env with a masked marker (up to 4 leading characters + stars +
+// length, never the rest of the raw value) — see Environment's own doc comment for why this
+// replaced an earlier delete-on-sync design. Status.Keys lists which keys are currently synced (names only, no values) for
+// debugging "did my key actually get picked up."
+//
+// Updating a value later means re-applying the same Environment with new plaintext for that key
+// — kubectl apply's 3-way merge only sends the changed field, so already-masked sibling keys are
+// untouched. Do NOT put Environment under GitOps (Flux) management — see
+// operator/gitops/README.md.
 type EnvironmentReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 }
 
-// +kubebuilder:rbac:groups=apps.thunderid.io,resources=environments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps.thunderid.io,resources=environments,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=environments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;create;update;patch
 
@@ -39,7 +99,8 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if err := r.syncSecret(ctx, obj); err != nil {
+	keys, maskedAny, err := r.syncSecretAndMask(ctx, obj)
+	if err != nil {
 		log.Error(err, "failed to sync Secret from Environment")
 		r.Recorder.Event(obj, corev1.EventTypeWarning, "SyncFailed", err.Error())
 		obj.Status.Phase = "Error"
@@ -49,61 +110,155 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	r.Recorder.Eventf(obj, corev1.EventTypeNormal, "SecretSynced",
-		"Secret %q synced from this Environment's spec.env; deleting the Environment now that "+
-			"the Secret holds its content — apply a new Environment with this same name to change "+
-			"the values later.", obj.Name)
-
-	// Deliberately deleted, not left Ready: the Secret this just wrote to must be the only
-	// lasting copy of these values — see Environment's own doc comment. Only reached after
-	// syncSecret succeeds; a failed sync above leaves this object in place with an Error status
-	// instead, so it's inspectable.
-	return ctrl.Result{}, r.Delete(ctx, obj)
-}
-
-// syncSecret creates or updates a Secret named after obj holding obj.Spec.Env verbatim as
-// stringData. Deliberately no ctrl.SetControllerReference: unlike every other generated object
-// in this operator, this Secret must outlive its trigger (Reconcile deletes obj right after this
-// succeeds), so it cannot be an owned child — an owner reference here would make that deletion
-// cascade-delete the Secret too.
-func (r *EnvironmentReconciler) syncSecret(ctx context.Context, obj *appsv1alpha1.Environment) error {
-	// Built as Data (not StringData) even here: StringData only ever merges into whatever
-	// Data a Secret already has (see the update path's comment below) — using it on create too
-	// would be an inconsistency waiting to bite if this function's paths ever get reordered.
-	data := make(map[string][]byte, len(obj.Spec.Env))
-	for k, v := range obj.Spec.Env {
-		data[k] = []byte(v)
+	obj.Status.Phase = "Synced"
+	obj.Status.Synced = true
+	obj.Status.SecretName = obj.Name
+	obj.Status.Keys = keys
+	if err := r.Status().Update(ctx, obj); err != nil {
+		return ctrl.Result{}, err
 	}
 
-	secret := &corev1.Secret{}
-	err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Name}, secret)
+	// Only fires the reconcile that actually masked new plaintext — an already-fully-masked
+	// object is a no-op above this point, so this doesn't spam an event every time something
+	// else (e.g. the status write itself) re-triggers a reconcile.
+	if maskedAny {
+		r.Recorder.Eventf(obj, corev1.EventTypeNormal, "SecretSynced",
+			"Secret %q synced from this Environment's spec.env; synced key values are now masked "+
+				"in spec.env (see status.keys for the current key names) — re-apply with new "+
+				"plaintext for a key to change it.", obj.Name)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// syncSecretAndMask makes the Secret's Data an exact match for obj.Spec.Env's real values
+// (a masked key keeps whatever the Secret already holds; a new-plaintext key is written then
+// masked in place) and returns the current key names. It persists the spec mutation via Update
+// only when at least one key held new plaintext this pass, so a fully-masked object converges
+// instead of looping.
+func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *appsv1alpha1.Environment) ([]string, bool, error) {
+	existing := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Name}, existing)
+	found := true
 	if errors.IsNotFound(err) {
-		secret = &corev1.Secret{
+		found = false
+	} else if err != nil {
+		return nil, false, err
+	}
+
+	data := make(map[string][]byte, len(obj.Spec.Env))
+	maskedSpec := make(map[string]string, len(obj.Spec.Env))
+	keys := make([]string, 0, len(obj.Spec.Env))
+	maskedAny := false
+
+	for k, v := range obj.Spec.Env {
+		keys = append(keys, k)
+		if isMasked(v) {
+			// Already synced on a previous reconcile — carry over whatever the Secret already
+			// holds for this key rather than the marker itself. If the Secret lost the key (e.g.
+			// someone deleted it out-of-band) there's no way to recover the real value from the
+			// marker; the key is simply absent from the Secret until re-applied with plaintext.
+			if found {
+				if b, ok := existing.Data[k]; ok {
+					data[k] = b
+				}
+			}
+			maskedSpec[k] = v
+			continue
+		}
+		data[k] = []byte(v)
+		maskedSpec[k] = maskValue(v)
+		maskedAny = true
+	}
+	sort.Strings(keys)
+
+	if err := r.upsertSecret(ctx, obj, found, existing, data); err != nil {
+		return nil, false, err
+	}
+
+	if maskedAny {
+		if err := r.maskSpec(ctx, obj, maskedSpec); err != nil {
+			return nil, false, err
+		}
+	}
+
+	return keys, maskedAny, nil
+}
+
+func (r *EnvironmentReconciler) upsertSecret(ctx context.Context, obj *appsv1alpha1.Environment, found bool, existing *corev1.Secret, data map[string][]byte) error {
+	managedKeys := make([]string, 0, len(data))
+	for k := range data {
+		managedKeys = append(managedKeys, k)
+	}
+	sort.Strings(managedKeys)
+	managedKeysValue := strings.Join(managedKeys, ",")
+
+	if !found {
+		return r.Create(ctx, &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      obj.Name,
-				Namespace: obj.Namespace,
+				Name:        obj.Name,
+				Namespace:   obj.Namespace,
+				Annotations: map[string]string{managedKeysAnnotation: managedKeysValue},
 			},
 			Type: corev1.SecretTypeOpaque,
 			Data: data,
+		})
+	}
+
+	// Merge, not replace: start from whatever the Secret already has, drop only the keys this
+	// controller previously wrote (per managedKeysAnnotation) that are no longer in spec.env —
+	// preserving the existing declarative "dropped key stops being synced" behavior — then lay
+	// this pass's data on top. A key neither previously-managed nor in this pass's data (a
+	// foreign key) is never touched.
+	previouslyManaged := managedKeySet(existing)
+	finalData := make(map[string][]byte, len(existing.Data)+len(data))
+	for k, v := range existing.Data {
+		finalData[k] = v
+	}
+	for k := range previouslyManaged {
+		if _, stillWanted := data[k]; !stillWanted {
+			delete(finalData, k)
 		}
-		return r.Create(ctx, secret)
 	}
-	if err != nil {
-		return err
+	for k, v := range data {
+		finalData[k] = v
 	}
+
+	if existing.Annotations[managedKeysAnnotation] == "" && len(existing.Data) > 0 {
+		r.Recorder.Eventf(obj, corev1.EventTypeWarning, "AdoptedExistingSecret",
+			"Secret %q already existed with key(s) not previously managed by this Environment; "+
+				"those are left untouched — only %v are now managed by this Environment.",
+			obj.Name, managedKeys)
+	}
+
+	if reflect.DeepEqual(existing.Data, finalData) && existing.Annotations[managedKeysAnnotation] == managedKeysValue {
+		return nil
+	}
+
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		latest := &corev1.Secret{}
 		if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Name}, latest); err != nil {
 			return err
 		}
-		// Data, not StringData: StringData only ever merges its keys into whatever Data the
-		// Secret already has — a key present in an earlier Environment but dropped from this
-		// one would linger forever. Setting Data directly makes the Secret's content an exact
-		// match for spec.env every time, the same way a declarative resource is supposed to
-		// behave (confirmed live — a reapplied Environment missing a previously-set key left
-		// that key in place until this fix).
-		latest.Data = data
+		if latest.Annotations == nil {
+			latest.Annotations = map[string]string{}
+		}
+		latest.Annotations[managedKeysAnnotation] = managedKeysValue
+		latest.Data = finalData
 		latest.StringData = nil
+		return r.Update(ctx, latest)
+	})
+}
+
+// maskSpec persists obj.Spec.Env = maskedSpec so the raw value of any key synced this pass is
+// never visible via `kubectl get/describe environment` again.
+func (r *EnvironmentReconciler) maskSpec(ctx context.Context, obj *appsv1alpha1.Environment, maskedSpec map[string]string) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		latest := &appsv1alpha1.Environment{}
+		if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Name}, latest); err != nil {
+			return err
+		}
+		latest.Spec.Env = maskedSpec
 		return r.Update(ctx, latest)
 	})
 }

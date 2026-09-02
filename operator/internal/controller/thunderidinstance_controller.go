@@ -679,34 +679,44 @@ func (r *ThunderIDInstanceReconciler) bootstrapPermanentFailureReason(ctx contex
 func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, jobName string,
 	securitySecretName string, attempt int) error {
-	// Plain "--bootstrap" (import-only, as opposed to "--bootstrap-and-serve") rejects
-	// --admin-username/--admin-password outright: "Error: --admin-username/--admin-password are
-	// only valid together with --bootstrap-and-serve". Admin creation for this mode instead comes
-	// from the ADMIN_USERNAME/ADMIN_PASSWORD env vars below — the same mechanism setup.sh's own
-	// wrapped "start.sh --bootstrap" call already relies on for the SQLite path.
+	// Runs the real setup.sh (same script the SQLite/PVC path runs on first boot) instead of
+	// calling the "bootstrap" subcommand directly, so any future setup.sh behavior (new
+	// generated material, new bootstrap steps) is picked up here automatically instead of
+	// needing an operator code change. Safe to run unconditionally on every Job execution
+	// (unlike the serving pod, which never runs setup.sh — see reconcileDeployment): this Job
+	// itself is already the "run exactly once per resource-hash-change" gate, so setup.sh here
+	// only ever runs when reconcileBootstrapJob decided a (re)bootstrap is actually needed, never
+	// on an ordinary pod restart or HPA scale-out of the serving Deployment.
 	//
-	// No resources.yaml argument here — confirmed against the real start.sh that "--bootstrap"
-	// never forwards the positional resources-file argument to the "bootstrap" subcommand at all
-	// (only BOOTSTRAP_EXTRA_ARGS, i.e. --admin-username/--admin-password/--console-redirect-uris),
-	// so passing it was always a dead argument. Declarative resources reach ThunderID via the
-	// serving pod's own resources.yaml mount instead (see reconcileDeployment), not this Job.
-	bootstrapCmd := "./start.sh --bootstrap"
+	// setup.sh's own cert/key/direct_auth_secret generation is a no-op here: certs are pre-supplied
+	// (below, same as the serving container) so generate_x509_cert finds them already present, and
+	// direct_auth_secret is pre-seeded into a writable location by the init container below so
+	// configure_direct_auth_secret reuses the existing value instead of generating a new one. Its
+	// unconditional "chmod 600" on that file (even on the reuse path) is exactly why it can't be
+	// mounted straight from the security Secret like the certs are — Secret volumes mount read-only,
+	// and that chmod would fail under setup.sh's "set -e" and abort the whole script.
+	//
+	// setup.sh finishes by calling "start.sh --bootstrap" itself (no positional resources.yaml
+	// argument — confirmed against the real start.sh that "--bootstrap" never forwards one, only
+	// BOOTSTRAP_EXTRA_ARGS), so the net DB-import behavior is unchanged from before. Declarative
+	// resources still reach ThunderID via the serving pod's own resources.yaml mount instead (see
+	// reconcileDeployment), not this Job.
+	bootstrapCmd := "./setup.sh"
 
 	volumeMounts := []corev1.VolumeMount{
 		{Name: "config", MountPath: "/opt/thunderid/deployment.yaml", SubPath: "deployment.yaml"},
 	}
-	// Same cert/secret mounts as the serving container's postgres branch (reconcileDeployment):
-	// certs are always pre-supplied, direct_auth_secret and the db password are read-only.
+	// Same cert mounts as the serving container's postgres branch (reconcileDeployment): certs are
+	// always pre-supplied read-only. direct_auth_secret is handled separately below — it needs a
+	// writable location (see the bootstrapCmd comment above), unlike these.
 	for _, f := range securityCertMountKeys {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name: "security", MountPath: "/opt/thunderid/config/certs/" + f, SubPath: f,
 		})
 	}
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name:      "security",
-		MountPath: "/opt/thunderid/config/secrets/" + securityKeyDirectAuth,
-		SubPath:   securityKeyDirectAuth,
-		ReadOnly:  true,
+		Name:      "secrets",
+		MountPath: "/opt/thunderid/config/secrets",
 	})
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name:      "database",
@@ -741,6 +751,14 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 			},
 		},
 		{
+			// Writable landing spot for direct_auth_secret, seeded from the read-only "security"
+			// Secret by the seed-direct-auth-secret init container below. emptyDir is enough here
+			// (unlike the serving Deployment's PVC-backed equivalent): this Job runs once and exits,
+			// so there's nothing that needs to survive beyond its own pod's lifetime.
+			Name:         "secrets",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		},
+		{
 			Name: "database",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
@@ -760,6 +778,30 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 				},
 			},
 		})
+	}
+
+	// Same seeding trick as the serving Deployment's PVC path (reconcileDeployment): copy
+	// direct_auth_secret out of the read-only security Secret into the writable "secrets" emptyDir
+	// so setup.sh's unconditional "chmod 600" on it succeeds instead of failing under set -e.
+	// RunAsUser must match the "bootstrap" container's own uid (10001, from the thunderid image's
+	// default): busybox defaults to root, so without this the file gets created root-owned, and
+	// chmod 600 then locks the "bootstrap" container (uid 10001) out with "permission denied".
+	thunderidUID := int64(10001)
+	seedDirectAuthSecretCmd := fmt.Sprintf(
+		"cp /run/security-seed/%[1]s /opt/thunderid/config/secrets/%[1]s && chmod 600 /opt/thunderid/config/secrets/%[1]s",
+		securityKeyDirectAuth)
+	initContainers := []corev1.Container{
+		{
+			Name:            "seed-direct-auth-secret",
+			Image:           initContainerImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-c", seedDirectAuthSecretCmd},
+			SecurityContext: &corev1.SecurityContext{RunAsUser: &thunderidUID},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "security", MountPath: "/run/security-seed", ReadOnly: true},
+				{Name: "secrets", MountPath: "/opt/thunderid/config/secrets"},
+			},
+		},
 	}
 
 	labels := map[string]string{
@@ -792,7 +834,8 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
+					RestartPolicy:  corev1.RestartPolicyNever,
+					InitContainers: initContainers,
 					Containers: []corev1.Container{
 						{
 							Name:    "bootstrap",

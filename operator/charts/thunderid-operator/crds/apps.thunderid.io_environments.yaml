@@ -51,11 +51,12 @@ spec:
                 additionalProperties:
                   type: string
                 description: |-
-                  Env holds this environment's key-value pairs, applied verbatim as the generated Secret's
-                  stringData. Plaintext in the CR's spec — like any Kubernetes object's spec, it's stored in
-                  etcd without the base64/RBAC/encryption-at-rest treatment Secret gets. The operator only
-                  ever mirrors it into a Secret and then deletes this object (see the controller) — it never
-                  reads this field back for any other purpose.
+                  Env holds this environment's key-value pairs, mirrored into the generated Secret's
+                  Data. Plaintext only until the next reconcile: the controller overwrites each key's
+                  value here with a masked marker ("thunderid-masked:<up to 4 leading chars>****:len=<n>")
+                  once it's synced to the Secret, so only a short prefix (never the rest of the raw
+                  value) is visible via `kubectl get/describe environment` past that point. To change a
+                  key's value later, re-apply with new plaintext for just that key.
                 type: object
             type: object
           status:
@@ -119,6 +120,14 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              keys:
+                description: |-
+                  Keys lists the currently-synced key names only (never values) — for a developer
+                  checking "did my key actually get picked up" without needing to know this becomes a
+                  Secret.
+                items:
+                  type: string
+                type: array
               phase:
                 type: string
               secretName:

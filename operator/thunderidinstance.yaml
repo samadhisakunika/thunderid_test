@@ -8,7 +8,7 @@ spec:
 
   # domain: my-instance.local
   # tlsSecret: my-tls-secret
-  # securitySecret: my-security-secret
+  securitySecret: thunderid-prod-manual-security
 
   # resourcesConfigMap: thunderid-resources
   # dataVolumeSize: "1Gi"
