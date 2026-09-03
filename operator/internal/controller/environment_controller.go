@@ -35,10 +35,9 @@ func isMasked(v string) bool {
 
 // managedKeysAnnotation records, on the generated Secret, exactly which keys this controller
 // last wrote there — the only keys it's ever safe to remove on a later sync. A Secret sharing
-// this Environment's name but never written by it (hand-made, or pre-existing from before this
-// annotation existed) carries no such record, so its keys are left alone instead of being wiped
-// by treating the Secret's Data as a full replace (confirmed live: a full replace previously
-// destroyed unrelated Secret keys on name collision).
+// this Environment's name but never written by it (hand-made, or otherwise missing the
+// annotation) carries no such record, so its keys are left alone instead of being wiped by
+// treating the Secret's Data as a full replace.
 const managedKeysAnnotation = "thunderid.io/managed-keys"
 
 func managedKeySet(secret *corev1.Secret) map[string]bool {
@@ -73,9 +72,9 @@ func maskValue(v string) string {
 
 // EnvironmentReconciler mirrors spec.env into a Secret of the same name, then overwrites each
 // synced key's value in spec.env with a masked marker (up to 4 leading characters + stars +
-// length, never the rest of the raw value) — see Environment's own doc comment for why this
-// replaced an earlier delete-on-sync design. Status.Keys lists which keys are currently synced (names only, no values) for
-// debugging "did my key actually get picked up."
+// length, never the rest of the raw value) — see Environment's own doc comment for the reasoning.
+// Status.Keys lists which keys are currently synced (names only, no values) for debugging "did
+// my key actually get picked up."
 //
 // Updating a value later means re-applying the same Environment with new plaintext for that key
 // — kubectl apply's 3-way merge only sends the changed field, so already-masked sibling keys are

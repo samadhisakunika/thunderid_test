@@ -45,7 +45,7 @@ type ResourceStatus struct {
 // key is stripped before forwarding to ThunderID. Every other key, including ones this operator
 // has never heard of, passes through completely untouched — including a `{{.VAR}}` token in any
 // field, resolved by ThunderID's own live resources.yaml loader at boot against whatever the
-// owning ThunderIDInstance's spec.envSecretRef Secret provides (confirmed live).
+// owning ThunderIDInstance's spec.envSecretRef Secret provides.
 type Resource struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

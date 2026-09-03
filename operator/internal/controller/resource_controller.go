@@ -35,10 +35,8 @@ import (
 const resourceFinalizer = "thunderid.io/resource-cleanup"
 
 // resourceTypeMeta maps spec.resource_type (ThunderID's own resource_type string) to the
-// ConfigMap this operator writes it into — the same names/keys the original per-kind CRDs
-// (Application, Flow, ...) used, so this generic controller is a drop-in for any of them.
-// Adding a new ThunderID resource kind means adding one line here — no new Go type, no new
-// CRD, no new controller file.
+// ConfigMap suffix/key this operator writes it into. Adding a new ThunderID resource kind means
+// adding one line here — no new Go type, no new CRD, no new controller file.
 var resourceTypeMeta = map[string]struct {
 	configMapSuffix string
 	fileKey         string
@@ -218,9 +216,9 @@ func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *apps
 			// container has been Ready and healthy for hours since. Gating on !cs.Ready keeps
 			// this catching the narrow window right after a crash but before Kubernetes has
 			// escalated to CrashLoopBackOff (which inCrashLoop alone would miss), without
-			// permanently flagging a fully-recovered container as still crashed (confirmed
-			// live: a pod that crashed once ~an hour earlier and fully recovered stayed stuck
-			// re-polling every 10s and reporting Error forever without this guard).
+			// permanently flagging a fully-recovered container as still crashed — without this
+			// guard, a pod that crashed once and fully recovered would stay stuck re-polling
+			// every 10s and reporting Error forever.
 			crashed := inCrashLoop ||
 				(!cs.Ready && cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.ExitCode != 0)
 			if crashed {
@@ -426,9 +424,9 @@ func (r *ResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// to react to pod-health transitions (crash <-> healthy), which are status-only changes.
 		// A GenerationChangedPredicate silently drops exactly those events, leaving Phase=Error
 		// resources permanently wedged until an unrelated spec-changing rollout happens to land
-		// while the pod's actually healthy (confirmed live). resourcesForDeployment already does
-		// its own filtering (Error: always re-check; Ready/Pending: only if unavailable), so no
-		// event-level predicate is needed on top.
+		// while the pod's actually healthy. resourcesForDeployment already does its own filtering
+		// (Error: always re-check; Ready/Pending: only if unavailable), so no event-level
+		// predicate is needed on top.
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.resourcesForDeployment)).
 		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.resourcesForInstance),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).

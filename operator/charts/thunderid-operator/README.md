@@ -4,7 +4,7 @@ A Helm chart for the ThunderID Kubernetes operator, which deploys and configures
 [ThunderID](https://github.com/wso2/thunderid) (a WSO2 IAM platform) via CRDs.
 
 This chart is a Helm-packaged equivalent of the project's `config/` kustomize
-manifests — same RBAC, same Deployment, same 12 CRDs — so either install path
+manifests — same RBAC, same Deployment, same 3 CRDs — so either install path
 produces the same cluster state.
 
 ## Installing
@@ -54,7 +54,7 @@ kubectl delete -f charts/thunderid-operator/crds/
 
 ## What this chart does not include
 
-Sub-controller RBAC and the 12 CRDs cover `apps.thunderid.io` resources only.
+Sub-controller RBAC and the 3 CRDs cover `apps.thunderid.io` resources only.
 This chart does not install ThunderID itself — that happens when you apply a
 `ThunderIDInstance` CR after the operator is running (see the repo root
 `README.md`).

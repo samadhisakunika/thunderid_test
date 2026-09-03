@@ -612,8 +612,8 @@ func bootstrapJobFailed(job *batchv1.Job) bool {
 	return false
 }
 
-// bootstrapAttempt reads how many attempts job itself represents, defaulting to 1 for a Job
-// created before this label existed or with an otherwise-unparseable value.
+// bootstrapAttempt reads how many attempts job itself represents, defaulting to 1 if the
+// label is missing or unparseable.
 func bootstrapAttempt(job *batchv1.Job) int {
 	n, err := strconv.Atoi(job.Labels[bootstrapAttemptLabel])
 	if err != nil || n < 1 {
@@ -696,11 +696,11 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 	// mounted straight from the security Secret like the certs are — Secret volumes mount read-only,
 	// and that chmod would fail under setup.sh's "set -e" and abort the whole script.
 	//
-	// setup.sh finishes by calling "start.sh --bootstrap" itself (no positional resources.yaml
-	// argument — confirmed against the real start.sh that "--bootstrap" never forwards one, only
-	// BOOTSTRAP_EXTRA_ARGS), so the net DB-import behavior is unchanged from before. Declarative
-	// resources still reach ThunderID via the serving pod's own resources.yaml mount instead (see
-	// reconcileDeployment), not this Job.
+	// setup.sh finishes by calling "start.sh --bootstrap" itself, which never forwards a
+	// positional resources.yaml argument (only BOOTSTRAP_EXTRA_ARGS) — so this Job only ever
+	// imports spec.resourcesConfigMap's base seed into the database. Declarative resources reach
+	// ThunderID via the serving pod's own resources.yaml mount instead (see reconcileDeployment),
+	// not this Job.
 	bootstrapCmd := "./setup.sh"
 
 	volumeMounts := []corev1.VolumeMount{
@@ -810,15 +810,13 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 		bootstrapAttemptLabel: strconv.Itoa(attempt),
 	}
 
-	// 0, not the earlier 3 (or 1): with the operator's own attempt-count retry (createBootstrapJob's
-	// caller) now handling recreation across full Job attempts, a Job-internal retry loop on top
+	// BackoffLimit 0: reconcileBootstrapJob's own attempt-count retry (createBootstrapJob's
+	// caller) already handles recreation across attempts, so a Job-internal retry loop on top
 	// would multiply total pod attempts before giving up — needlessly slow. RestartPolicy: Never
 	// pairs with this deliberately, not OnFailure: OnFailure restarts the container in place, and
-	// that in-place restart's pod-replacement triggers Kubernetes to clean up the old failed pod
-	// almost immediately — often before bootstrapPermanentFailureReason gets a chance to read its
-	// logs (confirmed: its pod lookup came back empty every time under this combination, even
-	// though the pod was visible via a plain "kubectl get pod" moments earlier). With BackoffLimit:
-	// 0 there's only ever one pod per Job anyway, so there's nothing to restart in place — Never
+	// the pod-replacement that triggers cleans up the old failed pod almost immediately — often
+	// before bootstrapPermanentFailureReason gets a chance to read its logs. With BackoffLimit: 0
+	// there's only ever one pod per Job anyway, so there's nothing to restart in place — Never
 	// avoids the replacement-driven cleanup and leaves that one failed pod inspectable.
 	backoffLimit := int32(0)
 	job := &batchv1.Job{
@@ -1016,9 +1014,9 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	// direct_auth_secret is handled separately from the cert/key files above. With a PVC, setup.sh
 	// still runs (see startCmd above) and unconditionally chmod's/rewrites this file every time it
 	// runs — Secret-backed volumes are always mounted read-only, so it needs a writable location,
-	// seeded by an init container. Without a PVC, startCmd goes straight to start.sh
-	// --bootstrap-and-serve, which only ever reads this file (via deployment.yaml's file://
-	// reference) — so it can be mounted directly, read-only, right alongside the certs below.
+	// seeded by an init container. Without a PVC, startCmd runs plain start.sh (see the else
+	// branch below), which only ever reads this file (via deployment.yaml's file:// reference) —
+	// so it can be mounted directly, read-only, right alongside the certs below.
 	if hasDataVolume {
 		// Backed by the PVC (subPath keeps it a distinct directory from the SQLite files), not an
 		// emptyDir: this makes seeding a true one-time cost, since the file persists across
@@ -1140,9 +1138,8 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command: []string{"/bin/sh", "-c",
 				// mkdir+chown here is a cheap, non-recursive, always-run step — kept separate
-				// from the owner check below so it isn't skipped on a PVC that already shows
-				// owner 10001 from before this directory existed (e.g. from an earlier restart
-				// under an older version of this init container).
+				// from the owner check below so it isn't skipped on a PVC whose top-level dir
+				// already shows owner 10001 but doesn't yet have this secrets subdirectory.
 				`mkdir -p /opt/thunderid/repository/database/secrets && ` +
 					`chown 10001:10001 /opt/thunderid/repository/database/secrets; ` +
 					`owner=$(stat -c %u /opt/thunderid/repository/database 2>/dev/null || echo -1); ` +
@@ -1157,7 +1154,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	// Only needed with a PVC: setup.sh there still chmod's this file every time it runs (see
 	// startCmd above), which needs a writable location since Secret volumes are always read-only.
 	// Without a PVC, direct_auth_secret is mounted directly, read-only, from the security Secret
-	// (see volumeMounts above) — nothing needs to seed it into a writable location anymore.
+	// (see volumeMounts above), so nothing needs a writable copy.
 	if hasDataVolume {
 		seedDirectAuthSecretCmd := fmt.Sprintf(
 			"[ -f /opt/thunderid/config/secrets/%[1]s ] || "+
@@ -1262,10 +1259,9 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	originalSecurityContext := dep.Spec.Template.Spec.SecurityContext.DeepCopy()
 	originalInitContainers := dep.Spec.Template.Spec.InitContainers
 
-	// Check for stale bootstrap volume that the old code left behind, and whether the security
-	// Secret volume (added later) already points at the Secret we want — deployments created
-	// before it existed, or whose spec.securitySecret just changed, need an update to pick that
-	// up even if nothing else about them changed.
+	// A leftover "bootstrap" volume needs cleanup, and the security volume must reference the
+	// current securitySecretName — either means an update is needed even if nothing else about
+	// the Deployment changed.
 	hasBootstrapVolume := false
 	securityVolumeCurrent := false
 	for _, v := range dep.Spec.Template.Spec.Volumes {

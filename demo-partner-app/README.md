@@ -80,13 +80,13 @@ change itself — everything after that is fast automatically.
 
 ## 2. Confirm the CRDs and ThunderID instance came up
 
-Once `crds` and `flux-system` both report `READY=True`, the 12
+Once `crds` and `flux-system` both report `READY=True`, the 3
 `apps.thunderid.io` CRDs and the `thunderid-prod` `ThunderIDInstance`
 (defined in `operator/gitops/thunderidConfig.yaml`) should already be on
 your cluster — nothing to apply by hand:
 
 ```bash
-kubectl get crd | grep thunderid.io   # should list 12
+kubectl get crd | grep thunderid.io   # should list 3
 kubectl get pod -w                    # wait for thunderid-prod to reach 1/1 Running
 ```
 

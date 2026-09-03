@@ -29,10 +29,10 @@ spec:
       openAPIV3Schema:
         description: |-
           Environment mirrors spec.env into a Secret of the same name, then masks each synced key's
-          value in place (see EnvironmentSpec.Env) — see environment_controller.go. Unlike an earlier
-          version of this design, the object is never deleted: it stays gettable forever, just with
-          masked values, so a developer who doesn't know this becomes a Secret never hits a surprise
-          NotFound. The Secret it produces is deliberately not owned by this object (no controller
+          value in place (see EnvironmentSpec.Env) — see environment_controller.go. The object is never
+          deleted: it stays gettable forever, just with masked values, so a developer who doesn't know
+          this becomes a Secret never hits a surprise NotFound. The Secret it produces is deliberately
+          not owned by this object (no controller
           reference) — nothing here ever deletes this object, but keeping them decoupled means a future
           change to one can't accidentally cascade-delete the other. Do NOT put this CRD under GitOps
           (Flux) management: a continuously reconciling GitOps tool enforces live-must-match-Git and

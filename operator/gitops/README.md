@@ -19,24 +19,22 @@ too, not just the CRs themselves.
   `Flow`, `Theme`, etc.) that you want Flux to own and continuously reconcile.
 - **Never put an `Environment` CR here.** Its controller mutates the object
   in place after processing it (masking each synced key's value in
-  `spec.env`, and — in an earlier version of this design — deleting the
-  object outright). A continuously-reconciling GitOps tool like Flux
-  enforces "live must match Git" and will keep reverting that mutation (or
-  recreating the deleted object) every reconcile interval, fighting the
-  controller forever. `Environment` is an ad-hoc, one-time `kubectl apply`
-  resource by design — see `environment_type.go` and
-  `environment_controller.go`. It also carries plaintext credentials in its
-  spec, which shouldn't be committed to Git regardless.
+  `spec.env`). A continuously-reconciling GitOps tool like Flux enforces
+  "live must match Git" and will keep reverting that mutation every
+  reconcile interval, fighting the controller forever. `Environment` is an
+  ad-hoc, one-time `kubectl apply` resource by design — see
+  `environment_type.go` and `environment_controller.go`. It also carries
+  plaintext credentials in its spec, which shouldn't be committed to Git
+  regardless.
 - **Always apply `Environment` CRs — and any hand-written `Secret` manifest
   — with `kubectl apply --server-side`, never plain `kubectl apply`.** Plain
   (client-side) `kubectl apply` copies your entire manifest, credentials
   included, into the object's
   `kubectl.kubernetes.io/last-applied-configuration` annotation — visible
   forever via `kubectl get ... -o yaml`, completely bypassing `Environment`'s
-  masking (confirmed live: this leaked the real value on both an `Environment`
-  and its generated Secret in this cluster). This isn't a `Secret`-specific
-  protection either — `kubectl describe secret` hiding values is a
-  print-time convenience that doesn't touch this annotation; the same leak
+  masking. This isn't a `Secret`-specific protection either — `kubectl
+  describe secret` hiding values is a print-time convenience that doesn't
+  touch this annotation; the same leak
   happens on a directly-applied Secret. `--server-side` doesn't create this
   annotation at all (it tracks field ownership via `managedFields` instead),
   and as a bonus it rejects an accidental reapply of an unedited file outright
@@ -56,14 +54,14 @@ too, not just the CRs themselves.
 ## Layout
 
 - `thunderidConfig.yaml` — the `ThunderIDInstance` (`thunderid-prod`) itself.
-  Promoted here from the repo root, so even standing up the instance is now
-  a `git push`, not a `kubectl apply`.
-- `organizationunit-flux-test.yaml` — throwaway OU proving commit-to-apply and
-  edit-to-apply work end to end. Safe to delete (delete the file + push) once
-  no longer needed; Flux prunes it from the cluster on the next sync.
+  Standing up the instance is a `git push`, not a `kubectl apply`.
+- `organizationunit-flux-test.yaml` — throwaway OU used to verify
+  commit-to-apply and edit-to-apply work end to end. Safe to delete (delete
+  the file + push) once you no longer need it; Flux prunes it from the
+  cluster on the next sync.
 - `demo-partner-app.yaml` / `demo-partner-app-cors.yaml` — the live-demo
-  `Application` and CORS `ServerConfig`, promoted here from the repo root so
-  edits (e.g. changing the login flow, redirect URIs) go live via `git push`.
+  `Application` and CORS `ServerConfig`; edits (e.g. changing the login
+  flow, redirect URIs) go live via `git push`.
 - `test-flow.yaml` — `test-basic-flow`, the demo login flow with the
   "Welcome to Demo Partner Portal" heading used in the modification demo.
 

@@ -40,8 +40,7 @@ spec:
           Every other key, including ones this operator\nhas never heard of, passes
           through completely untouched — including a `{{.VAR}}` token in any\nfield,
           resolved by ThunderID's own live resources.yaml loader at boot against whatever
-          the\nowning ThunderIDInstance's spec.envSecretRef Secret provides (confirmed
-          live)."
+          the\nowning ThunderIDInstance's spec.envSecretRef Secret provides."
         properties:
           apiVersion:
             description: |-

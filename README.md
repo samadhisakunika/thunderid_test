@@ -51,10 +51,10 @@ Resource CRD (spec.resource_type: application|flow|theme|organization_unit|
 ```
 
 **Key facts:**
-- Every `ThunderIDInstance` must pick a persistent backend: either `spec.dataVolumeSize` (PVC-backed SQLite — `repository/database` persists, `setup.sh` runs once on the pod's first-ever start and is skipped on every restart after that) or every `spec.config.database` scope set to `type: postgres` with `spec.config.database.secretRef` (external PostgreSQL — see [Database](#database) below; every restart re-syncs `resources.yaml` into the database via `start.sh --bootstrap-and-serve`, and `spec.dataVolumeSize` is ignored since there's no local state to persist). Setting neither is rejected — ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
+- Every `ThunderIDInstance` must pick a persistent backend: either `spec.dataVolumeSize` (PVC-backed SQLite — `repository/database` persists, `setup.sh` runs once on the pod's first-ever start and is skipped on every restart after that) or every `spec.config.database` scope set to `type: postgres` with `spec.config.database.secretRef` (external PostgreSQL — see [Database](#database) below; the base seed from `spec.resourcesConfigMap` is imported into the database once via a hash-gated bootstrap Job, not on every restart, and `spec.dataVolumeSize` is ignored since there's no local state to persist). Setting neither is rejected — ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
 - The ThunderID image bakes in its own default organization unit, user types, and flows (`default` OU, `Person` user type, `console-app-flow`, `cloud-login-flow`, etc.) — `spec.resourcesConfigMap` is **optional**, only needed if you want to seed additional base resources beyond those defaults.
 - Every `resource_type` is loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each `Resource` reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified.
-- `spec.domain` is **optional** and unset by default — every local/dev workflow in this repo reaches ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead, which is what the operator assumes when no domain is set. Setting `spec.domain` creates a real `Ingress` for external access (a real deployment with real DNS), but the `public_url` value it feeds into ThunderID's own config isn't actually a field ThunderID's schema recognizes — confirmed against the image's own `config/default.json`, which has no `public_url` anywhere. ThunderID silently ignores it either way, so this only matters for the `Ingress` routing itself, not anything ThunderID does internally.
+- `spec.domain` is **optional** and unset by default — every local/dev workflow in this repo reaches ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead, which is what the operator assumes when no domain is set. Setting `spec.domain` creates a real `Ingress` for external access (a real deployment with real DNS), but the `public_url` value it feeds into ThunderID's own config isn't actually a field ThunderID's schema recognizes (see the image's own `config/default.json`, which has no `public_url` anywhere). ThunderID silently ignores it either way, so this only matters for the `Ingress` routing itself, not anything ThunderID does internally.
 
 ---
 
@@ -105,6 +105,7 @@ kubectl get crd | grep thunderid
 
 Expected output:
 ```
+environments.apps.thunderid.io
 resources.apps.thunderid.io
 thunderidinstances.apps.thunderid.io
 ```
@@ -300,9 +301,8 @@ spec:
   plain HTTP externally.
 - For local testing without real DNS, point `domain` at a hostname you
   control via `/etc/hosts` (or Windows' `C:\Windows\System32\drivers\etc\hosts`)
-  mapped to `minikube ip`, rather than a domain that won't resolve — the
-  original bug this section replaces was exactly that: a placeholder domain
-  nothing ever pointed at.
+  mapped to `minikube ip`, rather than a domain that won't resolve — a
+  placeholder that resolves nowhere leaves the `Ingress` unreachable.
 - **Caveat:** the `Ingress` is only fully built (rules + TLS block) at
   *creation* time — if you set `domain` first and add `tlsSecret` later,
   the existing `Ingress` won't pick up the TLS block on its own. Run
@@ -439,7 +439,7 @@ spec:
 
 **Design note:** Everything under `spec` except `resource_type` is forwarded into ThunderID's own bootstrap schema for that resource type essentially as-is. The operator does **not** resolve handles, validate required fields, or otherwise interpret the content — that's ThunderID's own bootstrap loader's job. This means:
 - A mistake (missing required field, a bad ID, malformed JSON) is **not** caught at `kubectl apply` time — it's caught at ThunderID's own bootstrap time, surfaced as a `ThunderIDError`/`ThunderIDCrashed` Event on the CR (see [Checking Status](#checking-status)).
-- Cross-references (`ouId`, `authFlowId`, `themeId`, `resourceServerId`, member/assignment IDs, ...) can be literal ThunderID IDs, the same as if you were editing ThunderID's own `resources.yaml` by hand. Or use `*Handle`-style fields (`ouHandle`, `authFlowHandle`, `registrationFlowHandle`, `recoveryFlowHandle`) — ThunderID's own bootstrap loader resolves them itself, confirmed live against `ghcr.io/thunder-id/thunderid:latest` (a plain `ouHandle`/`authFlowHandle` application reached `Ready` with no ID at all). `themeHandle` is the one confirmed exception — not supported by ThunderID at all; use `themeId`.
+- Cross-references (`ouId`, `authFlowId`, `themeId`, `resourceServerId`, member/assignment IDs, ...) can be literal ThunderID IDs, the same as if you were editing ThunderID's own `resources.yaml` by hand. Or use `*Handle`-style fields (`ouHandle`, `authFlowHandle`, `registrationFlowHandle`, `recoveryFlowHandle`) — ThunderID's own bootstrap loader resolves them itself. `themeHandle` is the one exception — not supported by ThunderID at all; use `themeId`.
 - None of the field names in the table below are enforced by the operator or the CRD schema; get the exact set ThunderID's bootstrap loader accepts from its own docs/schema when in doubt.
 
 #### `resource_type` values
@@ -465,7 +465,7 @@ spec:
 
 #### Env vars & `{{.VAR}}` placeholders
 
-Any field, in any `resource_type` — a user's `credentials.password`, an application's OAuth `clientSecret`, anything — can hold a `{{.VAR}}` token instead of a literal value, so the CR itself never holds the literal secret. ThunderID's own live `resources.yaml` loader resolves these at pod **startup** (confirmed live, against `ghcr.io/thunder-id/thunderid:latest`) against the process environment — the same mechanism ThunderID's own bundled bootstrap templates use, just applied to every declarative resource this operator mounts, not only its own bootstrap-time ones.
+Any field, in any `resource_type` — a user's `credentials.password`, an application's OAuth `clientSecret`, anything — can hold a `{{.VAR}}` token instead of a literal value, so the CR itself never holds the literal secret. ThunderID's own live `resources.yaml` loader resolves these at pod **startup** against the process environment — the same mechanism ThunderID's own bundled bootstrap templates use, just applied to every declarative resource this operator mounts, not only its own bootstrap-time ones.
 
 `spec.envSecretRef` on the `ThunderIDInstance` names a single Secret in the same namespace; every key in it becomes an environment variable on the ThunderID container via `envFrom`. The operator only ever mounts this Secret whole — it never creates, reads individual keys from, or generates values into it. Two ways to author it, both producing exactly the same Secret and both fully supported:
 
@@ -481,7 +481,7 @@ stringData:
   ADMIN2_PASSWORD: change-me
 ```
 
-**Or apply an `Environment`** — a one-shot CR: the operator creates/updates a Secret of the same name from `spec.env`, then deletes the `Environment` object, leaving only the Secret behind. Re-apply the same name to change values later (it isn't there to edit — each apply is a fresh sync-then-delete). This means the value briefly exists in the `Environment` object's own `spec` in etcd before that happens — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for the short time it exists:
+**Or apply an `Environment`** — a declarative CR: the operator syncs `spec.env` into a Secret of the same name, then overwrites each synced key's value in `spec.env` with a masked marker (`thunderid-masked:<up to 4 leading chars>****:len=<n>`) so the plaintext is never visible again via `kubectl get/describe environment`. The object itself is never deleted — `status.keys` lists which keys are currently synced. To change a value later, re-apply with new plaintext for just that key; `kubectl apply`'s 3-way merge leaves already-masked sibling keys untouched. The plaintext briefly exists in the `Environment` object's own `spec` in etcd before it's masked — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for that short window. **Always apply `Environment` with `kubectl apply --server-side`**, never plain `kubectl apply` — plain apply copies the whole manifest, plaintext included, into the object's `last-applied-configuration` annotation, bypassing the masking entirely (see `operator/gitops/README.md`). Never put `Environment` under GitOps (Flux) management — a continuously-reconciling GitOps tool will fight the masking:
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
 kind: Environment
@@ -587,7 +587,7 @@ kubectl run inspect-image --image=<image tag in use> --restart=Never --command -
 kubectl exec inspect-image -- cat /opt/thunderid/bootstrap/01-default-resources.yaml
 kubectl delete pod inspect-image --wait=false
 ```
-`ouHandle`/`authFlowHandle` resolve fine at bootstrap on the current image (confirmed live) — if you'd rather not chase down IDs at all, use the handle instead.
+`ouHandle`/`authFlowHandle` resolve fine at bootstrap on the current image — if you'd rather not chase down IDs at all, use the handle instead.
 
 ### APP-1024 — Invalid OAuth configuration
 

@@ -7,9 +7,9 @@ metadata:
     thunderid.io/instance: external-pg-instance
 spec:
   # spec is forwarded as-is into ThunderID's own application bootstrap schema — the
-  # operator no longer resolves ouHandle/authFlowHandle to IDs, but ThunderID's own
-  # bootstrap loader resolves them itself (confirmed live). themeHandle is the one
-  # confirmed exception — not supported by ThunderID at all; use themeId.
+  # operator does not resolve ouHandle/authFlowHandle to IDs; ThunderID's own
+  # bootstrap loader resolves them itself. themeHandle is the one exception —
+  # not supported by ThunderID at all; use themeId.
   resource_type: application
   name: Test Web Application
   type: browser # ThunderID's own key is "type", not "template"
