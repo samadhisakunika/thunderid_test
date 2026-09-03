@@ -30,6 +30,17 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: "Resource is the generic ThunderID resource kind — its spec is
+          ThunderID's own exported\nbootstrap document, pasted in essentially as-is.
+          Paste a document like:\n\n\tresource_type: application\n\tid: 01900000-0000-7000-8000-000000000060\n\touId:
+          01900000-0000-7000-8000-000000000001\n\tname: Console\n\t...\n\ndirectly
+          under spec (dropping the id: line — the operator generates that itself).
+          The\noperator only ever reads spec.resource_type, to know which ConfigMap
+          this belongs in — that\nkey is stripped before forwarding to ThunderID.
+          Every other key, including ones this operator\nhas never heard of, passes
+          through completely untouched — including a `{{.VAR}}` token in any\nfield,
+          resolved by ThunderID's own live resources.yaml loader at boot against whatever
+          the\nowning ThunderIDInstance's spec.envSecretRef Secret provides."
         properties:
           apiVersion:
             description: |-
@@ -49,14 +60,6 @@ spec:
           metadata:
             type: object
           spec:
-            description: |-
-              spec is ThunderID's own exported bootstrap document, pasted in essentially as-is
-              (resource_type, name, ouId, ... — whatever ThunderID's bootstrap loader recognizes
-              for that resource_type). The operator only ever reads spec.resource_type, to know
-              which ConfigMap this belongs in — that key is stripped before forwarding to
-              ThunderID. Everything else passes through untouched, including a {{.VAR}} token in
-              any field, resolved by ThunderID's own live resources.yaml loader at boot against
-              whatever the owning ThunderIDInstance's spec.envSecretRef Secret provides.
             type: object
             x-kubernetes-preserve-unknown-fields: true
           status:
