@@ -8,6 +8,7 @@ A Kubernetes operator that manages [ThunderID](https://github.com/thunder-id/thu
 
 - [Prerequisites](#prerequisites)
 - [Architecture](#architecture)
+- [Namespaces](#namespaces)
 - [Quick Start](#quick-start)
   - [1. Install CRDs](#1-install-crds)
   - [2. Start ThunderID](#2-start-thunderid)
@@ -54,6 +55,35 @@ Resource CRD (spec.resource_type: application|flow|theme|organization_unit|
 - The ThunderID image bakes in its own default organization unit, user types, and flows (`default` OU, `Person` user type, `console-app-flow`, `cloud-login-flow`, etc.) — `spec.resourcesConfigMap` is **optional**, only needed if you want to seed additional base resources beyond those defaults.
 - Every `resource_type` is loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each `Resource` reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified.
 - `spec.domain` is **optional** and unset by default — every local/dev workflow in this repo reaches ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead, which is what the operator assumes when no domain is set. Setting `spec.domain` creates a real `Ingress` for external access (a real deployment with real DNS), but the `public_url` value it feeds into ThunderID's own config isn't actually a field ThunderID's schema recognizes — confirmed against the image's own `config/default.json`, which has no `public_url` anywhere. ThunderID silently ignores it either way, so this only matters for the `Ingress` routing itself, not anything ThunderID does internally.
+
+---
+
+## Namespaces
+
+The operator's RBAC is a `ClusterRole`, and `cmd/main.go` sets no `--namespace`/cache
+restriction — it watches **every namespace** on the cluster by default, not just the one it's
+deployed into.
+
+- **A namespace has to exist before you can create anything in it.** `metadata.namespace: foo` in
+  a CR only *references* `foo` — it doesn't create it. If `foo` doesn't already exist, `kubectl
+  apply` fails with `namespaces "foo" not found`. Create it first:
+  ```yaml
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: foo
+  ```
+  (`default`, `kube-system`, `kube-public`, `kube-node-lease` already exist in every cluster, no
+  setup needed.)
+- **Run multiple isolated instances side by side** by putting each in its own namespace — separate
+  teams/environments, or a throwaway namespace for testing without touching a real instance. See
+  `operator/test/load/` for a working example: two fully isolated `ThunderIDInstance`s in a
+  `loadtest` namespace, reconciled by the same operator alongside instances in `default`.
+- **A `ThunderIDInstance` and everything that belongs to it must share one namespace** — the
+  `Resource`s labeled with its name, and the Secret its `envSecretRef` names (hand-written or
+  produced by an `Environment`). The operator resolves a `Resource`'s owning instance by looking it
+  up **in the `Resource`'s own namespace** — there's no cross-namespace reference. Splitting an
+  instance's objects across namespaces just means the `Resource`s never find their instance.
 
 ---
 

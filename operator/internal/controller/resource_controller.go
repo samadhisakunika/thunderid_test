@@ -421,7 +421,15 @@ func (r *ResourceReconciler) buildResourceYAML(o appsv1alpha1.Resource, resource
 func (r *ResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1alpha1.Resource{}).
-		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.resourcesForDeployment), builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		// No GenerationChangedPredicate here (unlike the ThunderIDInstance watch below):
+		// generation only bumps on spec changes, but the whole point of watching Deployment is
+		// to react to pod-health transitions (crash <-> healthy), which are status-only changes.
+		// A GenerationChangedPredicate silently drops exactly those events, leaving Phase=Error
+		// resources permanently wedged until an unrelated spec-changing rollout happens to land
+		// while the pod's actually healthy (confirmed live). resourcesForDeployment already does
+		// its own filtering (Error: always re-check; Ready/Pending: only if unavailable), so no
+		// event-level predicate is needed on top.
+		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(r.resourcesForDeployment)).
 		Watches(&appsv1alpha1.ThunderIDInstance{}, handler.EnqueueRequestsFromMapFunc(r.resourcesForInstance),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Named("resource").
