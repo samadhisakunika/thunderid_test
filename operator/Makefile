@@ -59,9 +59,21 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+## GOTESTFLAGS passes extra flags to `go test` on top of the always-on -v - e.g. narrow to one
+## test with `make test-integration GOTESTFLAGS="-run TestFullInstanceOnMinikube"`.
+GOTESTFLAGS ?=
+
 .PHONY: test
-test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+test: manifests generate fmt vet setup-envtest ## Run unit + integration tests (see test-unit/test-integration to run just one tier).
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test -tags=integration -v $(GOTESTFLAGS) $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+.PHONY: test-unit
+test-unit: manifests generate fmt vet ## Run only fake-client unit tests - no real API server, no envtest binaries needed.
+	go test -v $(GOTESTFLAGS) $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+.PHONY: test-integration
+test-integration: manifests generate fmt vet setup-envtest ## Run the integration tier: envtest (real etcd/kube-apiserver, no kubelet - TestControllers) AND TestFullInstanceOnMinikube, which needs a real cluster already running (e.g. minikube) since it waits for an actual pod to go Ready.
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test -tags=integration -v $(GOTESTFLAGS) ./internal/controller/... -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.

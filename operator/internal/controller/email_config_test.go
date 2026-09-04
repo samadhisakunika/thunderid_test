@@ -1,0 +1,143 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/suite"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
+)
+
+type EmailConfigTestSuite struct {
+	suite.Suite
+}
+
+func TestEmailConfigTestSuite(t *testing.T) {
+	suite.Run(t, new(EmailConfigTestSuite))
+}
+
+func (suite *EmailConfigTestSuite) TestResolveEmailConfigUnset() {
+	r := newFakeReconciler()
+	instance := &appsv1alpha1.ThunderIDInstance{}
+	block, err := r.resolveEmailConfig(context.Background(), instance)
+	suite.Require().NoError(err)
+	suite.Empty(block)
+}
+
+func (suite *EmailConfigTestSuite) TestResolveEmailConfigNoAuthentication() {
+	r := newFakeReconciler()
+	instance := &appsv1alpha1.ThunderIDInstance{Spec: appsv1alpha1.ThunderIDInstanceSpec{
+		Config: appsv1alpha1.AppConfigSpec{Email: &appsv1alpha1.EmailSpec{
+			SMTP: appsv1alpha1.SMTPConfigSpec{Host: "smtp.example.com", Port: 587, FromAddress: "noreply@example.com"},
+		}},
+	}}
+	block, err := r.resolveEmailConfig(context.Background(), instance)
+	suite.Require().NoError(err)
+	suite.Contains(block, `host: "smtp.example.com"`)
+	suite.Contains(block, `port: 587`)
+	suite.Contains(block, `password: ""`)
+	suite.Contains(block, "enable_authentication: false")
+}
+
+func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationRequiresSecretRef() {
+	r := newFakeReconciler()
+	instance := &appsv1alpha1.ThunderIDInstance{Spec: appsv1alpha1.ThunderIDInstanceSpec{
+		Config: appsv1alpha1.AppConfigSpec{Email: &appsv1alpha1.EmailSpec{
+			SMTP: appsv1alpha1.SMTPConfigSpec{
+				Host: "smtp.example.com", Port: 587, FromAddress: "noreply@example.com",
+				EnableAuthentication: true,
+			},
+		}},
+	}}
+	_, err := r.resolveEmailConfig(context.Background(), instance)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "secretRef")
+}
+
+func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationSecretNotFound() {
+	r := newFakeReconciler() // no Secret seeded at all
+	instance := &appsv1alpha1.ThunderIDInstance{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+		Spec: appsv1alpha1.ThunderIDInstanceSpec{
+			Config: appsv1alpha1.AppConfigSpec{Email: &appsv1alpha1.EmailSpec{
+				SecretRef: "does-not-exist",
+				SMTP: appsv1alpha1.SMTPConfigSpec{
+					Host: "smtp.example.com", Port: 587, FromAddress: "noreply@example.com",
+					EnableAuthentication: true,
+				},
+			}},
+		},
+	}
+	_, err := r.resolveEmailConfig(context.Background(), instance)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "does-not-exist")
+}
+
+func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationMissingPasswordKey() {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "email-secret", Namespace: "default"},
+		Data:       map[string][]byte{"not-password": []byte("x")},
+	}
+	r := newFakeReconciler(secret)
+	instance := &appsv1alpha1.ThunderIDInstance{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+		Spec: appsv1alpha1.ThunderIDInstanceSpec{
+			Config: appsv1alpha1.AppConfigSpec{Email: &appsv1alpha1.EmailSpec{
+				SecretRef: "email-secret",
+				SMTP: appsv1alpha1.SMTPConfigSpec{
+					Host: "smtp.example.com", Port: 587, FromAddress: "noreply@example.com",
+					EnableAuthentication: true,
+				},
+			}},
+		},
+	}
+	_, err := r.resolveEmailConfig(context.Background(), instance)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "missing required key: password")
+}
+
+func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationSuccess() {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "email-secret", Namespace: "default"},
+		Data:       map[string][]byte{"password": []byte("hunter2")},
+	}
+	r := newFakeReconciler(secret)
+	instance := &appsv1alpha1.ThunderIDInstance{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+		Spec: appsv1alpha1.ThunderIDInstanceSpec{
+			Config: appsv1alpha1.AppConfigSpec{Email: &appsv1alpha1.EmailSpec{
+				SecretRef: "email-secret",
+				SMTP: appsv1alpha1.SMTPConfigSpec{
+					Host: "smtp.example.com", Port: 587, Username: "svc", FromAddress: "noreply@example.com",
+					EnableAuthentication: true, EnableStartTLS: true,
+				},
+			}},
+		},
+	}
+	block, err := r.resolveEmailConfig(context.Background(), instance)
+	suite.Require().NoError(err)
+	// The literal password never appears - only the file:// reference to its mount path.
+	suite.NotContains(block, "hunter2")
+	suite.Contains(block, `password: "file://`+emailPasswordMountPath+`"`)
+	suite.Contains(block, "enable_authentication: true")
+	suite.Contains(block, "enable_start_tls: true")
+}

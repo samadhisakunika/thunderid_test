@@ -1,3 +1,5 @@
+//go:build integration
+
 /*
 Copyright 2026.
 
@@ -18,8 +20,13 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,9 +78,8 @@ var _ = BeforeSuite(func() {
 		ErrorIfCRDPathMissing: true,
 	}
 
-	// Retrieve the first found binary directory to allow running tests from IDEs
-	if getFirstFoundEnvTestBinaryDir() != "" {
-		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
+	if dir := resolveEnvTestBinDir(); dir != "" {
+		testEnv.BinaryAssetsDirectory = dir
 	}
 
 	// cfg is defined in this file globally.
@@ -89,30 +95,118 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	cancel()
+	// envtest.Environment.Stop() sends a process signal Windows doesn't support ("not
+	// supported by windows"), on every run, regardless of whether teardown itself is fine —
+	// treat that specific error as success instead of retrying it for a full minute and
+	// failing the suite over an OS limitation rather than an actual problem.
 	Eventually(func() error {
-		return testEnv.Stop()
+		err := testEnv.Stop()
+		if err != nil && strings.Contains(err.Error(), "not supported by windows") {
+			return nil
+		}
+		return err
 	}, time.Minute, time.Second).Should(Succeed())
+
+	// The "not supported by windows" error above means Stop() never got past its first
+	// SIGTERM attempt (Go's os.Process.Signal only supports the special os.Kill case on
+	// Windows, so it errors out immediately instead of falling through to its own SIGKILL
+	// fallback) — etcd/kube-apiserver are left running as orphans. Finish the job ourselves,
+	// matched by exact binary path so this only ever touches the processes this suite itself
+	// started, never some unrelated etcd/kube-apiserver on the machine.
+	killOrphanedEnvtestProcesses()
 })
 
-// getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
-// ENVTEST-based tests depend on specific binaries, usually located in paths set by
-// controller-runtime. When running tests directly (e.g., via an IDE) without using
-// Makefile targets, the 'BinaryAssetsDirectory' must be explicitly configured.
-//
-// This function streamlines the process by finding the required binaries, similar to
-// setting the 'KUBEBUILDER_ASSETS' environment variable. To ensure the binaries are
-// properly set up, run 'make setup-envtest' beforehand.
-func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "bin", "k8s")
-	entries, err := os.ReadDir(basePath)
+// killOrphanedEnvtestProcesses force-kills the etcd/kube-apiserver processes this suite started,
+// working around Stop()'s inability to signal them on Windows (see the AfterSuite comment above).
+// No-op on platforms where Stop() can actually terminate its own children.
+func killOrphanedEnvtestProcesses() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	for _, path := range []string{testEnv.ControlPlane.Etcd.Path, testEnv.ControlPlane.APIServer.Path} {
+		if path == "" {
+			continue
+		}
+		// process.State stores the binary path without ".exe" (Windows only resolves that at
+		// process-start time), but a running process's own reported ExecutablePath always has
+		// it — append it here so the match actually lands.
+		script := `Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq '` + path + `.exe' } | ` +
+			`ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+		_ = exec.Command("powershell", "-NoProfile", "-Command", script).Run()
+	}
+}
+
+// envtestK8sVersion derives the same version the Makefile's ENVTEST_K8S_VERSION does (go.mod's
+// k8s.io/api "v0.<minor>.x" -> "1.<minor>"), by parsing go.mod the same way, instead of a
+// hardcoded constant - confirmed live that drifts silently: this sat at "1.31.0" while go.mod had
+// already moved to k8s.io/api v0.36.0, so `go test` and `make test-integration` were testing
+// against two different real Kubernetes API server versions without any error or warning.
+func envtestK8sVersion() (string, error) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
 	if err != nil {
-		logf.Log.Error(err, "Failed to read directory", "path", basePath)
+		return "", err
+	}
+	m := regexp.MustCompile(`k8s\.io/api\s+v\d+\.(\d+)\.\d+`).FindSubmatch(data)
+	if m == nil {
+		return "", fmt.Errorf("could not find a k8s.io/api version line in go.mod")
+	}
+	return "1." + string(m[1]), nil
+}
+
+// resolveEnvTestBinDir gets envtest's etcd/kube-apiserver/kubectl for the current OS by invoking
+// setup-envtest, the same tool the Makefile's "test"/"setup-envtest" targets already use - so
+// `make test` and a plain `go test` end up resolving binaries the same way. On every OS but
+// Windows this runs `go run ...setup-envtest@latest`, which compiles the tool natively for
+// whatever OS/arch it's invoked on - no committed per-OS binaries, no permission quirks (unlike
+// cross-fetching one OS's binaries from another's tooling, which does not reliably carry over the
+// executable bit). See below for the Windows branch.
+//
+// If KUBEBUILDER_ASSETS is already set (e.g. by `make test` itself), this is skipped entirely -
+// controller-runtime's own BinPathFinder gives that env var precedence over BinaryAssetsDirectory
+// regardless of what's returned here, so resolving it twice would just waste a subprocess call.
+func resolveEnvTestBinDir() string {
+	if os.Getenv("KUBEBUILDER_ASSETS") != "" {
 		return ""
 	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
-		}
+
+	// setup-envtest appends its own "k8s/<version>-<os>-<arch>" under whatever --bin-dir is given
+	// (confirmed live) - passing ".../k8s" here would double up into ".../k8s/k8s/...". Also must
+	// be absolute: setup-envtest echoes "--bin-dir" back verbatim in its "-p path" output rather
+	// than resolving it itself, and a relative path here would silently make
+	// killOrphanedEnvtestProcesses's later match against Windows' (always-absolute)
+	// Win32_Process ExecutablePath never fire - leaking an orphaned etcd/kube-apiserver on every
+	// run (confirmed live).
+	binDir := filepath.Join("..", "..", "bin")
+	if runtime.GOOS == "windows" {
+		binDir = filepath.Join("..", "..", "bin-win")
 	}
-	return ""
+	absBinDir, err := filepath.Abs(binDir)
+	if err != nil {
+		logf.Log.Error(err, "failed to resolve envtest bin dir")
+		return ""
+	}
+
+	k8sVersion, err := envtestK8sVersion()
+	if err != nil {
+		logf.Log.Error(err, "failed to resolve envtest k8s version from go.mod")
+		return ""
+	}
+
+	cmd := exec.Command("go", "run", "sigs.k8s.io/controller-runtime/tools/setup-envtest@latest",
+		"use", k8sVersion, "--bin-dir", absBinDir, "-p", "path")
+	if runtime.GOOS == "windows" {
+		// No `make` on Windows (see the package's Windows-constraints notes) and setup-envtest
+		// isn't installed globally either, so a prebuilt "bin-win/setup-envtest.exe" is vendored
+		// instead - the same kind of Windows-specific substitute this project already uses
+		// elsewhere (e.g. "bin-win/controller-gen.exe" in place of the Linux-ELF one committed
+		// for other platforms).
+		cmd = exec.Command(filepath.Join("..", "..", "bin-win", "setup-envtest.exe"),
+			"use", k8sVersion, "--bin-dir", absBinDir, "-p", "path")
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		logf.Log.Error(err, "failed to resolve envtest binaries via setup-envtest")
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
