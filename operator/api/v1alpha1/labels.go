@@ -16,9 +16,9 @@ limitations under the License.
 
 package v1alpha1
 
-// InstanceRefLabel is the metadata.labels key entity CRs (Application, Flow,
-// Theme, OrganizationUnit, Role, UserType, User, ResourceServer, Group,
-// ServerConfig, Translation) use to reference their owning ThunderIDInstance,
-// instead of a spec field. Keeping it out of spec means adding new entity
-// fields never requires touching the operator's schema.
+// InstanceRefLabel is the metadata.labels key a Resource (any spec.resource_type — application,
+// flow, theme, organization_unit, role, user_type, user, group,
+// translation, etc..) uses to reference its owning ThunderIDInstance, instead of a spec
+// field. Keeping it out of spec means adding a new resource_type never requires touching the
+// operator's schema.
 const InstanceRefLabel = "thunderid.io/instance"

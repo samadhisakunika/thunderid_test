@@ -92,11 +92,13 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	// Re-injected into ctx so every sub-function below gets this instance's identity on its own
+	// logf.FromContext(ctx) calls for free, without threading instance.Name through each of them.
+	log = log.WithValues("thunderIDInstance", instance.Name, "namespace", instance.Namespace)
+	ctx = logf.IntoContext(ctx, log)
 
-	// Ephemeral SQLite (neither a persistent data volume nor postgres) is no longer a supported
-	// configuration: every restart wipes and rebuilds the database from scratch, which is fine for
-	// a quick demo but not something to run for real. Require the operator to persist state one way
-	// or the other instead of silently defaulting to it.
+	// Every restart re-runs setup.sh from scratch without persistent storage — require the
+	// operator to persist state one way or the other.
 	if instance.Spec.DataVolumeSize == "" && !usingPostgres(instance) {
 		err := fmt.Errorf("spec.dataVolumeSize must be set, or every spec.config.database scope's type set to postgres")
 		log.Error(err, "invalid ThunderIDInstance spec")
@@ -136,23 +138,18 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		log.Error(err, "failed to reconcile HPA")
 		return ctrl.Result{}, err
 	}
-	// Hash includes every resource-kind's version annotation so pod rolls when any of them changes.
+	// Hash includes every resource kind's version annotation (from resourceKinds — the single
+	// registry in resource_controller.go, see its doc comment) so the pod rolls when any of
+	// them changes. resourceKinds is a fixed-order slice, not a map, so this hash is stable
+	// across calls instead of depending on Go's randomized map iteration order.
 	configHash := func() string {
 		h := sha256.New()
 		h.Write([]byte(publicURL + strconv.Itoa(int(port)) + instance.Spec.ResourcesConfigMap + databaseBlock + emailBlock + envSecretHash +
 			instance.Spec.Config.TLS.MinVersion + instance.Spec.Config.JWT.PreferredKeyID +
-			strings.Join(instance.Spec.Config.Passkey.ExtraAllowedOrigins, ",") +
-			instance.Annotations["thunderid.io/serverconfigs-version"] +
-			instance.Annotations["thunderid.io/organizationunits-version"] +
-			instance.Annotations["thunderid.io/resourceservers-version"] +
-			instance.Annotations["thunderid.io/themes-version"] +
-			instance.Annotations["thunderid.io/flows-version"] +
-			instance.Annotations["thunderid.io/usertypes-version"] +
-			instance.Annotations["thunderid.io/users-version"] +
-			instance.Annotations["thunderid.io/groups-version"] +
-			instance.Annotations["thunderid.io/roles-version"] +
-			instance.Annotations["thunderid.io/applications-version"] +
-			instance.Annotations["thunderid.io/translations-version"]))
+			strings.Join(instance.Spec.Config.Passkey.ExtraAllowedOrigins, ",")))
+		for _, k := range resourceKinds {
+			h.Write([]byte(instance.Annotations["thunderid.io/"+k.configMapSuffix+"-version"]))
+		}
 		return hex.EncodeToString(h.Sum(nil))[:16]
 	}()
 
@@ -303,13 +300,18 @@ func (r *ThunderIDInstanceReconciler) mapServingPodToInstance(ctx context.Contex
 	if !ok {
 		return nil
 	}
+	log := logf.FromContext(ctx)
 
 	jobs := &batchv1.JobList{}
 	if err := r.List(ctx, jobs, client.InNamespace(pod.Namespace),
 		client.MatchingLabels{"app": instanceName, "thunderid.io/role": "bootstrap"}); err == nil {
 		for i := range jobs.Items {
 			if bootstrapJobFailed(&jobs.Items[i]) {
-				_ = r.Delete(ctx, &jobs.Items[i], client.PropagationPolicy(metav1.DeletePropagationBackground))
+				log.Info("serving pod restarted; deleting failed bootstrap Job so bootstrap retries fresh",
+					"pod", pod.Name, "job", jobs.Items[i].Name)
+				if err := r.Delete(ctx, &jobs.Items[i], client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !errors.IsNotFound(err) {
+					log.Error(err, "failed to delete failed bootstrap Job", "job", jobs.Items[i].Name)
+				}
 			}
 		}
 	}
@@ -341,6 +343,7 @@ const (
 func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, publicURL string) (
 	resourcesContent, baseResourcesContent, databaseBlock, emailBlock string, err error) {
+	log := logf.FromContext(ctx)
 
 	databaseBlock, _, err = r.resolveDatabaseConfig(ctx, instance)
 	if err != nil {
@@ -395,22 +398,11 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	}
 	baseResourcesContent = resourcesContent
 
-	// Append custom resources from each sub-controller's ConfigMap into the same
-	// resources.yaml so ThunderID loads them in a single pass on startup.
-	for _, res := range []struct{ suffix, key string }{
-		{"-organizationunits", "organizationunits.yaml"},
-		{"-usertypes", "usertypes.yaml"},
-		{"-resourceservers", "resourceservers.yaml"},
-		{"-roles", "roles.yaml"},
-		{"-groups", "groups.yaml"},
-		{"-users", "users.yaml"},
-		{"-flows", "flows.yaml"},
-		{"-themes", "themes.yaml"},
-		{"-applications", "applications.yaml"},
-		{"-translations", "translations.yaml"},
-		{"-serverconfigs", "server_configs.yaml"},
-	} {
-		appended, err := r.appendResourceConfigMap(ctx, instance, res.suffix, res.key)
+	// Append custom resources from each sub-controller's ConfigMap into the same resources.yaml
+	// so ThunderID loads them in a single pass on startup — resourceKinds (resource_controller.go)
+	// is the single registry of which ConfigMap/key each resource_type lives in, and its order.
+	for _, k := range resourceKinds {
+		appended, err := r.appendResourceConfigMap(ctx, instance, "-"+k.configMapSuffix, k.fileKey)
 		if err != nil {
 			return "", "", "", "", err
 		}
@@ -435,6 +427,7 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 			Data: data,
 		}
 		_ = ctrl.SetControllerReference(instance, cm, r.Scheme)
+		log.Info("creating config ConfigMap", "name", cm.Name)
 		return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, r.Create(ctx, cm)
 	}
 	if err != nil {
@@ -442,8 +435,10 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	}
 	// Skip update if content is unchanged to avoid triggering unnecessary reconciles.
 	if cm.Data["deployment.yaml"] == data["deployment.yaml"] && cm.Data["resources.yaml"] == data["resources.yaml"] {
+		log.V(1).Info("config ConfigMap unchanged, skipping update", "name", cm.Name)
 		return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, nil
 	}
+	log.Info("config ConfigMap content changed, updating", "name", cm.Name)
 	updateErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		latest := &corev1.ConfigMap{}
 		if err := r.Get(ctx, types.NamespacedName{Name: instance.Name + "-config", Namespace: instance.Namespace}, latest); err != nil {
@@ -550,6 +545,7 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 	if !usingPostgres(instance) {
 		return nil
 	}
+	log := logf.FromContext(ctx)
 
 	jobName := fmt.Sprintf("%s-bootstrap-%s", instance.Name, seedHash)
 	existing := &batchv1.Job{}
@@ -563,6 +559,7 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 			// A misconfiguration (wrong password, bad host, wrong database/role name) — retrying
 			// won't fix this, only burns time against a config that will never work. Stop
 			// immediately regardless of attempt count and point at the actual cause.
+			log.Info("bootstrap Job failure looks permanent, will not retry", "job", jobName, "reason", reason)
 			r.Recorder.Eventf(instance, corev1.EventTypeWarning, "BootstrapJobFailed",
 				"bootstrap Job %s failed and will not be retried automatically: %s — "+
 					"fix spec.config.database (or its Secret), then delete the Job to retry", jobName, reason)
@@ -570,11 +567,13 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 		}
 		attempt := bootstrapAttempt(existing)
 		if attempt >= bootstrapMaxAttempts {
+			log.Info("bootstrap Job reached its retry limit, giving up", "job", jobName, "attempts", attempt)
 			r.Recorder.Eventf(instance, corev1.EventTypeWarning, "BootstrapJobFailed",
 				"bootstrap Job %s has failed %d time(s) and reached the retry limit; "+
 					"inspect its logs, then delete it to retry", jobName, attempt)
 			return nil
 		}
+		log.Info("bootstrap Job failed, retrying", "job", jobName, "nextAttempt", attempt+1, "maxAttempts", bootstrapMaxAttempts)
 		if err := r.Delete(ctx, existing, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
@@ -592,12 +591,16 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 		client.MatchingLabels{"app": instance.Name, "thunderid.io/role": "bootstrap"}); err != nil {
 		return err
 	}
+	if len(staleJobs.Items) > 0 {
+		log.Info("resources/database config changed, deleting stale bootstrap Job(s)", "count", len(staleJobs.Items))
+	}
 	for _, j := range staleJobs.Items {
 		if err := r.Delete(ctx, &j, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
 	}
 
+	log.Info("creating bootstrap Job", "job", jobName)
 	return r.createBootstrapJob(ctx, instance, jobName, securitySecretName, 1)
 }
 
@@ -649,21 +652,25 @@ var bootstrapPermanentErrorPatterns = []struct {
 // before the watch-fed cache has caught up, making a cached lookup see zero pods and silently
 // fall back to "unknown, maybe transient" — masking a real, immediately-diagnosable error.
 func (r *ThunderIDInstanceReconciler) bootstrapPermanentFailureReason(ctx context.Context, job *batchv1.Job) string {
+	log := logf.FromContext(ctx)
 	selector := fmt.Sprintf("app=%s,thunderid.io/role=bootstrap,%s=%s",
 		job.Labels["app"], bootstrapAttemptLabel, job.Labels[bootstrapAttemptLabel])
 	pods, err := r.KubeClient.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil || len(pods.Items) == 0 {
+		log.V(1).Info("could not find the bootstrap Job's pod to check for a permanent failure reason, treating as possibly transient", "job", job.Name)
 		return ""
 	}
 
 	req := r.KubeClient.CoreV1().Pods(job.Namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: "bootstrap"})
 	rc, err := req.Stream(ctx)
 	if err != nil {
+		log.V(1).Info("could not fetch bootstrap pod logs, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
 		return ""
 	}
 	defer rc.Close()
 	data, err := io.ReadAll(rc)
 	if err != nil {
+		log.V(1).Info("could not read bootstrap pod logs, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
 		return ""
 	}
 
@@ -673,6 +680,7 @@ func (r *ThunderIDInstanceReconciler) bootstrapPermanentFailureReason(ctx contex
 			return p.reason
 		}
 	}
+	log.V(1).Info("bootstrap pod logs matched no known permanent-failure pattern, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
 	return ""
 }
 
@@ -917,6 +925,7 @@ func thunderidReadinessProbe(port int32) *corev1.Probe {
 func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, configHash string, hasResources bool,
 	securitySecretName string) error {
+	log := logf.FromContext(ctx)
 	replicas := instance.Spec.Replicas
 	configMapName := instance.Name + "-config"
 	port := instance.Spec.Config.Port
@@ -1238,40 +1247,19 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			},
 		}
 		_ = ctrl.SetControllerReference(instance, dep, r.Scheme)
+		log.Info("creating Deployment", "replicas", replicas, "image", instance.Spec.Image)
 		return r.Create(ctx, dep)
 	}
 	if err != nil {
 		return err
 	}
 
-	// Snapshot before mutating — used for targeted diff below.
-	originalHash := dep.Spec.Template.Annotations["thunderid.io/config-hash"]
-	originalImage := dep.Spec.Template.Spec.Containers[0].Image
-	originalCmd := ""
-	if len(dep.Spec.Template.Spec.Containers[0].Command) == 3 {
-		originalCmd = dep.Spec.Template.Spec.Containers[0].Command[2]
-	}
-	originalResources := dep.Spec.Template.Spec.Containers[0].Resources.DeepCopy()
-	originalReplicas := dep.Spec.Replicas
-	originalStartupProbe := dep.Spec.Template.Spec.Containers[0].StartupProbe.DeepCopy()
-	originalLivenessProbe := dep.Spec.Template.Spec.Containers[0].LivenessProbe.DeepCopy()
-	originalReadinessProbe := dep.Spec.Template.Spec.Containers[0].ReadinessProbe.DeepCopy()
-	originalSecurityContext := dep.Spec.Template.Spec.SecurityContext.DeepCopy()
-	originalInitContainers := dep.Spec.Template.Spec.InitContainers
-
-	// A leftover "bootstrap" volume needs cleanup, and the security volume must reference the
-	// current securitySecretName — either means an update is needed even if nothing else about
-	// the Deployment changed.
-	hasBootstrapVolume := false
-	securityVolumeCurrent := false
-	for _, v := range dep.Spec.Template.Spec.Volumes {
-		if v.Name == "bootstrap" {
-			hasBootstrapVolume = true
-		}
-		if v.Name == "security" && v.Secret != nil && v.Secret.SecretName == securitySecretName {
-			securityVolumeCurrent = true
-		}
-	}
+	// Snapshot the whole object before mutating, so the diff below covers every field this
+	// function manages — adding a new field to the Deployment template later is automatically
+	// picked up, instead of needing a matching addition to a hand-picked comparison list. A
+	// stale "bootstrap" volume, or a security volume pointing at the wrong Secret, are just
+	// ordinary diffs against this snapshot — Volumes is replaced wholesale below either way.
+	original := dep.DeepCopy()
 
 	if instance.Spec.AutoScaling == nil && instance.Spec.Replicas > 0 {
 		r := instance.Spec.Replicas
@@ -1300,31 +1288,21 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	}
 	dep.Spec.Template.Annotations["thunderid.io/config-hash"] = configHash
 
-	// Compare only the fields we actively manage — avoids false diffs from
-	// Kubernetes-defaulted fields (DefaultMode, MountPropagation, etc.).
-	//
-	// securityContext and initContainers need normalizing before comparison, unlike the
-	// field-by-field checks above: the API server round-trips a nil *PodSecurityContext into a
-	// non-nil empty one, and defaults each container's terminationMessagePath/Policy — a freshly
-	// built literal never sets those, so a raw DeepEqual against the fetched "original" mismatches
-	// on every single reconcile, forcing an update (and, since Deployment is Owned() with
+	// original and dep both descend from the same fetch, so any field this function didn't
+	// touch above is guaranteed identical on both sides already — the comparison only needs to
+	// normalize the handful of fields replaced wholesale with a freshly built Go value (Strategy,
+	// SecurityContext, InitContainers) rather than mutated field-by-field on the existing object:
+	// those fresh literals leave fields at their Go zero value that the API server represents
+	// differently once persisted (nil *PodSecurityContext round-trips to a non-nil empty one, an
+	// unset Strategy round-trips to the fully-defaulted RollingUpdate/25%, a freshly built
+	// container never sets terminationMessagePath/Policy) — comparing those raw would mismatch on
+	// every single reconcile, forcing an update (and, since Deployment is Owned() with
 	// GenerationChangedPredicate, an immediate re-reconcile) forever.
-	replicasMatch := instance.Spec.AutoScaling != nil || instance.Spec.Replicas == 0 ||
-		(originalReplicas != nil && *originalReplicas == instance.Spec.Replicas)
-	if !hasBootstrapVolume &&
-		securityVolumeCurrent &&
-		originalHash == configHash &&
-		originalImage == instance.Spec.Image &&
-		originalCmd == startCmd &&
-		equality.Semantic.DeepEqual(originalResources, &instance.Spec.Resources) &&
-		equality.Semantic.DeepEqual(originalStartupProbe, dep.Spec.Template.Spec.Containers[0].StartupProbe) &&
-		equality.Semantic.DeepEqual(originalLivenessProbe, dep.Spec.Template.Spec.Containers[0].LivenessProbe) &&
-		equality.Semantic.DeepEqual(originalReadinessProbe, dep.Spec.Template.Spec.Containers[0].ReadinessProbe) &&
-		equality.Semantic.DeepEqual(normalizePodSecurityContext(originalSecurityContext), normalizePodSecurityContext(podSecurityContext)) &&
-		equality.Semantic.DeepEqual(normalizeContainersForDiff(originalInitContainers), normalizeContainersForDiff(initContainers)) &&
-		replicasMatch {
+	if equality.Semantic.DeepEqual(normalizeDeploymentSpecForDiff(original.Spec), normalizeDeploymentSpecForDiff(dep.Spec)) {
+		log.V(1).Info("Deployment unchanged, skipping update")
 		return nil
 	}
+	log.Info("Deployment spec drifted, updating", "image", instance.Spec.Image)
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		latest := &appsv1.Deployment{}
 		if err := r.Get(ctx, types.NamespacedName{Name: dep.Name, Namespace: dep.Namespace}, latest); err != nil {
@@ -1359,8 +1337,41 @@ func normalizeContainersForDiff(containers []corev1.Container) []corev1.Containe
 	return out
 }
 
+// normalizeDeploymentSpecForDiff normalizes the fields reconcileDeployment replaces wholesale
+// with a freshly built Go value every reconcile (as opposed to mutating field-by-field on the
+// already-fetched object) — Strategy and SecurityContext can be left at their Go zero value,
+// and InitContainers is a completely fresh slice, so each needs the same "compare what the API
+// server would actually persist" treatment as normalizePodSecurityContext/
+// normalizeContainersForDiff above.
+func normalizeDeploymentSpecForDiff(spec appsv1.DeploymentSpec) appsv1.DeploymentSpec {
+	spec.Strategy = normalizeDeploymentStrategyForDiff(spec.Strategy)
+	spec.Template.Spec.SecurityContext = normalizePodSecurityContext(spec.Template.Spec.SecurityContext)
+	spec.Template.Spec.InitContainers = normalizeContainersForDiff(spec.Template.Spec.InitContainers)
+	return spec
+}
+
+// normalizeDeploymentStrategyForDiff fills in apps/v1's own default RollingUpdate values
+// (Type: RollingUpdate, MaxUnavailable/MaxSurge: 25%) for a zero-valued Strategy — every
+// reconcile of a non-PVC instance leaves Strategy at its Go zero value, but the API server
+// always persists that as the fully-defaulted RollingUpdate, never as empty.
+func normalizeDeploymentStrategyForDiff(s appsv1.DeploymentStrategy) appsv1.DeploymentStrategy {
+	if s.Type != "" {
+		return s
+	}
+	maxUnavailable := intstr.FromString("25%")
+	maxSurge := intstr.FromString("25%")
+	return appsv1.DeploymentStrategy{
+		Type: appsv1.RollingUpdateDeploymentStrategyType,
+		RollingUpdate: &appsv1.RollingUpdateDeployment{
+			MaxUnavailable: &maxUnavailable,
+			MaxSurge:       &maxSurge,
+		},
+	}
+}
+
 func (r *ThunderIDInstanceReconciler) reconcileService(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) error {
+	log := logf.FromContext(ctx)
 	port := instance.Spec.Config.Port
 	if port == 0 {
 		port = 8090
@@ -1368,6 +1379,7 @@ func (r *ThunderIDInstanceReconciler) reconcileService(
 	svc := &corev1.Service{}
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, svc)
 	if errors.IsNotFound(err) {
+		log.Info("creating Service", "port", port)
 		svc = &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      instance.Name,
@@ -1396,6 +1408,7 @@ func (r *ThunderIDInstanceReconciler) reconcileService(
 	if len(svc.Spec.Ports) == 1 && svc.Spec.Ports[0].Port == port && svc.Spec.Ports[0].TargetPort == intstr.FromInt32(port) {
 		return nil
 	}
+	log.Info("Service port drifted, updating", "port", port)
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
 			Port:       port,
@@ -1408,6 +1421,7 @@ func (r *ThunderIDInstanceReconciler) reconcileService(
 
 func (r *ThunderIDInstanceReconciler) reconcileIngress(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) error {
+	log := logf.FromContext(ctx)
 	port := instance.Spec.Config.Port
 	if port == 0 {
 		port = 8090
@@ -1421,12 +1435,14 @@ func (r *ThunderIDInstanceReconciler) reconcileIngress(
 	// orphaned pointing at a host nobody configured anymore.
 	if instance.Spec.Domain == "" {
 		if err == nil {
+			log.Info("spec.domain cleared, deleting Ingress")
 			return r.Delete(ctx, ing)
 		}
 		return client.IgnoreNotFound(err)
 	}
 
 	if errors.IsNotFound(err) {
+		log.Info("creating Ingress", "domain", instance.Spec.Domain)
 		ing = &networkingv1.Ingress{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      instance.Name,
@@ -1482,17 +1498,20 @@ func (r *ThunderIDInstanceReconciler) reconcileIngress(
 		ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number == port {
 		return nil
 	}
+	log.Info("Ingress backend port drifted, updating", "port", port)
 	ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number = port
 	return r.Update(ctx, ing)
 }
 
 func (r *ThunderIDInstanceReconciler) reconcileHPA(ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) error {
+	log := logf.FromContext(ctx)
 	hpaKey := types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}
 
 	if instance.Spec.AutoScaling == nil {
 		// No autoscaling desired — delete HPA if it exists.
 		existing := &autoscalingv2.HorizontalPodAutoscaler{}
 		if err := r.Get(ctx, hpaKey, existing); err == nil {
+			log.Info("spec.autoScaling cleared, deleting HPA")
 			return r.Delete(ctx, existing)
 		}
 		return nil
@@ -1522,6 +1541,7 @@ func (r *ThunderIDInstanceReconciler) reconcileHPA(ctx context.Context, instance
 	existing := &autoscalingv2.HorizontalPodAutoscaler{}
 	err := r.Get(ctx, hpaKey, existing)
 	if errors.IsNotFound(err) {
+		log.Info("creating HPA", "minReplicas", as.MinReplicas, "maxReplicas", as.MaxReplicas)
 		return r.Create(ctx, desired)
 	}
 	if err != nil {
@@ -1531,6 +1551,7 @@ func (r *ThunderIDInstanceReconciler) reconcileHPA(ctx context.Context, instance
 	if equality.Semantic.DeepEqual(existing.Spec, desired.Spec) {
 		return nil
 	}
+	log.Info("HPA spec drifted, updating", "minReplicas", as.MinReplicas, "maxReplicas", as.MaxReplicas)
 	patch := client.MergeFrom(existing.DeepCopy())
 	existing.Spec = desired.Spec
 	return r.Patch(ctx, existing, patch)

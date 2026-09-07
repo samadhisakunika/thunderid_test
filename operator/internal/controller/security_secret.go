@@ -38,6 +38,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
 )
@@ -75,6 +76,7 @@ var securityAllKeys = append(append([]string{}, securityCertMountKeys...), secur
 // stable across pod restarts and across replicas.
 func (r *ThunderIDInstanceReconciler) reconcileSecuritySecret(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) (string, error) {
+	log := logf.FromContext(ctx)
 	// A user-supplied Secret is used as-is and never generated or modified by the operator —
 	// but it must carry every key our volume mounts reference by name, or the pod will fail to
 	// start with an opaque "references non-existent secret key" event.
@@ -98,6 +100,7 @@ func (r *ThunderIDInstanceReconciler) reconcileSecuritySecret(
 			return "", fmt.Errorf("spec.securitySecret %q is missing required key(s): %s",
 				instance.Spec.SecuritySecret, strings.Join(missing, ", "))
 		}
+		log.V(1).Info("using user-supplied security Secret as-is", "name", instance.Spec.SecuritySecret)
 		return instance.Spec.SecuritySecret, nil
 	}
 
@@ -106,12 +109,14 @@ func (r *ThunderIDInstanceReconciler) reconcileSecuritySecret(
 	existing := &corev1.Secret{}
 	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: instance.Namespace}, existing)
 	if err == nil {
+		log.V(1).Info("security Secret already exists, reusing (never regenerated - see reconcileSecuritySecret's own doc comment)", "name", secretName)
 		return secretName, nil
 	}
 	if !errors.IsNotFound(err) {
 		return "", err
 	}
 
+	log.Info("generating new security Secret (self-signed certs, JWT signing keys, encryption key) - one-time, will not be regenerated on future reconciles", "name", secretName)
 	serverCert, serverKey, err := generateSelfSignedCert("rsa")
 	if err != nil {
 		return "", fmt.Errorf("generating server TLS cert: %w", err)

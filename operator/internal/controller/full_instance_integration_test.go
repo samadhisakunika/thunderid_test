@@ -31,6 +31,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
@@ -51,6 +53,13 @@ import (
 // Runs in its own generated namespace, torn down at the end either way, specifically so this can
 // never collide with a real deployed instance (e.g. thunderid-prod) sitting in the same cluster.
 func TestFullInstanceOnMinikube(t *testing.T) {
+	// Only suite_test.go's BeforeSuite calls logf.SetLogger, and Go runs Test funcs in the order
+	// their source files sort alphabetically - "full_instance..." sorts before "suite_test.go", so
+	// running this test alone (or even bundled - it still runs first) would otherwise reconcile
+	// against controller-runtime's default no-op logger, silently discarding every log line this
+	// test exists partly to let you watch live while debugging a real instance boot.
+	logf.SetLogger(zap.New(zap.UseDevMode(true)))
+
 	cfg, err := ctrl.GetConfig()
 	require.NoError(t, err, "no reachable cluster via the ambient kubeconfig - this test needs a "+
 		"real cluster (e.g. minikube) already running, since it proves a pod actually boots, "+

@@ -16,7 +16,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
 )
@@ -91,12 +91,16 @@ type EnvironmentReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;create;update;patch
 
 func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	obj := &appsv1alpha1.Environment{}
 	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	// Re-injected into ctx so every sub-function below gets this Environment's identity on its
+	// own logf.FromContext(ctx) calls for free, without threading obj.Name through each of them.
+	log = log.WithValues("environment", obj.Name, "namespace", obj.Namespace)
+	ctx = logf.IntoContext(ctx, log)
 
 	keys, maskedAny, err := r.syncSecretAndMask(ctx, obj)
 	if err != nil {
@@ -148,6 +152,7 @@ func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *apps
 	data := make(map[string][]byte, len(obj.Spec.Env))
 	maskedSpec := make(map[string]string, len(obj.Spec.Env))
 	keys := make([]string, 0, len(obj.Spec.Env))
+	var newlyMasked []string
 	maskedAny := false
 
 	for k, v := range obj.Spec.Env {
@@ -168,6 +173,7 @@ func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *apps
 		data[k] = []byte(v)
 		maskedSpec[k] = maskValue(v)
 		maskedAny = true
+		newlyMasked = append(newlyMasked, k)
 	}
 	sort.Strings(keys)
 
@@ -176,6 +182,11 @@ func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *apps
 	}
 
 	if maskedAny {
+		// Key names only, never values — same "names are safe, values never are" rule this
+		// controller's own status.keys field already follows.
+		sort.Strings(newlyMasked)
+		logf.FromContext(ctx).Info("synced new plaintext key(s) to the Secret and masked them in spec.env",
+			"newlyMaskedKeys", newlyMasked, "totalKeys", len(keys))
 		if err := r.maskSpec(ctx, obj, maskedSpec); err != nil {
 			return nil, false, err
 		}
@@ -185,6 +196,7 @@ func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *apps
 }
 
 func (r *EnvironmentReconciler) upsertSecret(ctx context.Context, obj *appsv1alpha1.Environment, found bool, existing *corev1.Secret, data map[string][]byte) error {
+	log := logf.FromContext(ctx)
 	managedKeys := make([]string, 0, len(data))
 	for k := range data {
 		managedKeys = append(managedKeys, k)
@@ -193,6 +205,7 @@ func (r *EnvironmentReconciler) upsertSecret(ctx context.Context, obj *appsv1alp
 	managedKeysValue := strings.Join(managedKeys, ",")
 
 	if !found {
+		log.Info("creating Secret", "managedKeys", managedKeys)
 		return r.Create(ctx, &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        obj.Name,
@@ -224,6 +237,7 @@ func (r *EnvironmentReconciler) upsertSecret(ctx context.Context, obj *appsv1alp
 	}
 
 	if existing.Annotations[managedKeysAnnotation] == "" && len(existing.Data) > 0 {
+		log.Info("Secret already existed with unmanaged key(s), adopting only the keys spec.env names", "managedKeys", managedKeys)
 		r.Recorder.Eventf(obj, corev1.EventTypeWarning, "AdoptedExistingSecret",
 			"Secret %q already existed with key(s) not previously managed by this Environment; "+
 				"those are left untouched — only %v are now managed by this Environment.",
@@ -231,9 +245,11 @@ func (r *EnvironmentReconciler) upsertSecret(ctx context.Context, obj *appsv1alp
 	}
 
 	if reflect.DeepEqual(existing.Data, finalData) && existing.Annotations[managedKeysAnnotation] == managedKeysValue {
+		log.V(1).Info("Secret unchanged, skipping update")
 		return nil
 	}
 
+	log.Info("Secret content changed, updating", "managedKeys", managedKeys)
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		latest := &corev1.Secret{}
 		if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Name}, latest); err != nil {
@@ -258,7 +274,15 @@ func (r *EnvironmentReconciler) maskSpec(ctx context.Context, obj *appsv1alpha1.
 			return err
 		}
 		latest.Spec.Env = maskedSpec
-		return r.Update(ctx, latest)
+		if err := r.Update(ctx, latest); err != nil {
+			return err
+		}
+		// Write the now-current ResourceVersion (and any other metadata) back into the
+		// caller's obj — Reconcile's subsequent Status().Update(ctx, obj) would otherwise use
+		// the ResourceVersion from before this Update and always lose a conflict against the
+		// spec change just made here.
+		*obj = *latest
+		return nil
 	})
 }
 

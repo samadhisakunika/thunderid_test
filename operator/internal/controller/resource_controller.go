@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -34,29 +34,50 @@ import (
 
 const resourceFinalizer = "thunderid.io/resource-cleanup"
 
-// resourceTypeMeta maps spec.resource_type (ThunderID's own resource_type string) to the
-// ConfigMap suffix/key this operator writes it into. Adding a new ThunderID resource kind means
-// adding one line here — no new Go type, no new CRD, no new controller file.
-var resourceTypeMeta = map[string]struct {
+// resourceKinds is the single registry of every ThunderID resource kind (spec.resource_type
+// value) this operator forwards — adding a new kind means adding one entry here, full stop.
+// Both reconcileConfigMap's resources.yaml merge (thunderidinstance_controller.go) and
+// configHash's per-type version hashing read this same slice directly instead of each keeping
+// their own hand-copied list — the three used to drift independently, which is exactly how
+// "server_config" ended up with mismatched keys between resourceTypeMeta and the merge loop
+// (fileKey "serverconfigs.yaml" here, "server_configs.yaml" there) and silently never reached
+// resources.yaml at all.
+//
+// Order matters: the merge loop appends each kind's ConfigMap content in this slice's order,
+// and ThunderID's own bootstrap loader wants that in dependency order (organization units
+// first, since everything else can reference ouId).
+var resourceKinds = []struct {
+	resourceType    string
 	configMapSuffix string
 	fileKey         string
 }{
-	"application":       {"applications", "applications.yaml"},
-	"flow":              {"flows", "flows.yaml"},
-	"theme":             {"themes", "themes.yaml"},
-	"organization_unit": {"organizationunits", "organizationunits.yaml"},
-	"role":              {"roles", "roles.yaml"},
-	"user_type":         {"usertypes", "usertypes.yaml"},
-	"user":              {"users", "users.yaml"},
-	"resource_server":   {"resourceservers", "resourceservers.yaml"},
-	"group":             {"groups", "groups.yaml"},
-	"server_config":     {"serverconfigs", "serverconfigs.yaml"},
-	"translation":       {"translations", "translations.yaml"},
+	{"organization_unit", "organizationunits", "organizationunits.yaml"},
+	{"user_type", "usertypes", "usertypes.yaml"},
+	{"resource_server", "resourceservers", "resourceservers.yaml"},
+	{"role", "roles", "roles.yaml"},
+	{"group", "groups", "groups.yaml"},
+	{"user", "users", "users.yaml"},
+	{"flow", "flows", "flows.yaml"},
+	{"theme", "themes", "themes.yaml"},
+	{"application", "applications", "applications.yaml"},
+	{"translation", "translations", "translations.yaml"},
+	{"server_config", "serverconfigs", "serverconfigs.yaml"},
 }
 
-// parseResourceSpec decodes obj.Spec.Raw into a generic map, pulling out the one operator-only
-// key (resource_type) that lives alongside ThunderID's own fields — spec is otherwise forwarded
-// to ThunderID essentially as-is (see resource_type.go's doc comment).
+// resourceTypeMeta indexes resourceKinds by resource_type for the O(1) lookups below — built
+// once from the single ordered list above, never maintained separately.
+var resourceTypeMeta = func() map[string]struct{ configMapSuffix, fileKey string } {
+	m := make(map[string]struct{ configMapSuffix, fileKey string }, len(resourceKinds))
+	for _, k := range resourceKinds {
+		m[k.resourceType] = struct{ configMapSuffix, fileKey string }{k.configMapSuffix, k.fileKey}
+	}
+	return m
+}()
+
+// parseResourceSpec decodes obj.Spec.Raw into a generic map and reads resource_type out of it —
+// the one key the operator itself acts on, to know which ConfigMap this belongs in. The key stays
+// in the returned map and is forwarded to ThunderID along with everything else (see
+// resource_type.go's doc comment).
 func parseResourceSpec(raw runtime.RawExtension) (resourceType string, data map[string]interface{}, err error) {
 	data = map[string]interface{}{}
 	if len(raw.Raw) > 0 {
@@ -85,25 +106,33 @@ type ResourceReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 
 func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	obj := &appsv1alpha1.Resource{}
 	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	// Re-injected into ctx so every sub-function below gets this resource's identity on its own
+	// logf.FromContext(ctx) calls for free, without threading obj.Name through each of them.
+	log = log.WithValues("resource", obj.Name, "namespace", obj.Namespace)
+	ctx = logf.IntoContext(ctx, log)
 
 	resourceType, _, err := parseResourceSpec(obj.Spec)
 	if err != nil {
 		if !obj.DeletionTimestamp.IsZero() {
+			log.Info("deleting Resource with an invalid spec, dropping finalizer without syncing")
 			obj.Finalizers = removeString(obj.Finalizers, resourceFinalizer)
 			return ctrl.Result{}, r.Update(ctx, obj)
 		}
+		log.Error(err, "invalid Resource spec")
 		r.Recorder.Event(obj, corev1.EventTypeWarning, "InvalidSpec", err.Error())
 		obj.Status.Phase = "Error"
 		obj.Status.Synced = false
 		_ = r.Status().Update(ctx, obj)
 		return ctrl.Result{}, nil
 	}
+	log = log.WithValues("resourceType", resourceType)
+	ctx = logf.IntoContext(ctx, log)
 
 	// Deletion is handled before the instance lookup below: once the owning ThunderIDInstance
 	// is itself gone, that lookup would return NotFound forever and this finalizer could never
@@ -117,8 +146,12 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				}
 				// Owning instance already gone — its ConfigMaps are gone with it, nothing left
 				// to remove this resource from. Fall through to just drop the finalizer.
-			} else if _, err := r.rebuildResourcesConfigMap(ctx, instance, resourceType, string(obj.UID)); err != nil {
-				return ctrl.Result{}, err
+				log.Info("owning ThunderIDInstance already gone, dropping finalizer without syncing")
+			} else {
+				log.Info("Resource deleted, removing it from the resources ConfigMap")
+				if _, err := r.rebuildResourcesConfigMap(ctx, instance, resourceType, string(obj.UID)); err != nil {
+					return ctrl.Result{}, err
+				}
 			}
 			obj.Finalizers = removeString(obj.Finalizers, resourceFinalizer)
 			if err := r.Update(ctx, obj); err != nil {
@@ -129,6 +162,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if _, ok := resourceTypeMeta[resourceType]; !ok {
+		log.Info("unknown spec.resource_type")
 		r.Recorder.Eventf(obj, corev1.EventTypeWarning, "UnknownType", "spec.resource_type %q is not a known ThunderID resource_type", resourceType)
 		obj.Status.Phase = "Error"
 		obj.Status.Synced = false
@@ -198,7 +232,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *appsv1alpha1.Resource, instance *appsv1alpha1.ThunderIDInstance) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
 	podList := &corev1.PodList{}
 	if err := r.List(ctx, podList, client.InNamespace(instance.Namespace), client.MatchingLabels{"app": instance.Name}); err != nil {
@@ -410,7 +444,6 @@ func (r *ResourceReconciler) buildResourceYAML(o appsv1alpha1.Resource, resource
 	} else {
 		data["id"] = string(o.UID)
 	}
-
 	var buf bytes.Buffer
 	writeYAMLMapBody(&buf, "", data)
 	return buf.String(), nil
