@@ -1,7 +1,6 @@
 name: Lint
 
 on:
-  push:
   pull_request:
 
 permissions: {}
@@ -25,6 +24,12 @@ jobs:
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: operator/go.mod
+
+      - name: Cache tool binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: operator/bin
+          key: ${{ runner.os }}-operator-tools-${{ hashFiles('operator/Makefile') }}
 
       - name: Check linter configuration
         run: make lint-config

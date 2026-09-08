@@ -1,7 +1,6 @@
 name: E2E Tests
 
 on:
-  push:
   pull_request:
 
 permissions: {}
@@ -26,6 +25,12 @@ jobs:
         with:
           go-version-file: operator/go.mod
 
+      - name: Cache tool binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: operator/bin
+          key: ${{ runner.os }}-operator-tools-${{ hashFiles('operator/Makefile') }}
+
       - name: Install the latest version of kind
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
@@ -39,7 +44,7 @@ jobs:
         env:
           # No webhooks are defined in this operator (config/default/kustomization.yaml has every
           # [WEBHOOK] section commented out), so cert-manager - which only exists to provision
-          # webhook TLS certs - is unnecessary. Skipping it removes ~190s of a ~230s e2e run.
+          # webhook TLS certs - is unnecessary. Skipping it removes a small amount of setup time.
           CERT_MANAGER_INSTALL_SKIP: "true"
         run: |
           go mod tidy
