@@ -189,7 +189,7 @@ func main() {
 	if err := (&controller.ThunderIDInstanceReconciler{
 		Client:     mgr.GetClient(),
 		Scheme:     mgr.GetScheme(),
-		Recorder:   mgr.GetEventRecorderFor("thunderidinstance-controller"),
+		Recorder:   mgr.GetEventRecorderFor("thunderidinstance-controller"), //nolint:staticcheck
 		KubeClient: kubeClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "thunderidinstance")
@@ -199,7 +199,7 @@ func main() {
 	if err := (&controller.ResourceReconciler{
 		Client:     mgr.GetClient(),
 		Scheme:     mgr.GetScheme(),
-		Recorder:   mgr.GetEventRecorderFor("resource-controller"),
+		Recorder:   mgr.GetEventRecorderFor("resource-controller"), //nolint:staticcheck
 		KubeClient: kubeClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "resource")
@@ -209,7 +209,7 @@ func main() {
 	if err := (&controller.EnvironmentReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("environment-controller"),
+		Recorder: mgr.GetEventRecorderFor("environment-controller"), //nolint:staticcheck
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "environment")
 		os.Exit(1)
