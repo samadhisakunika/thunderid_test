@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -141,7 +142,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		if !obj.DeletionTimestamp.IsZero() {
 			log.Info("deleting Resource with an invalid spec, dropping finalizer without syncing")
-			obj.Finalizers = removeString(obj.Finalizers, resourceFinalizer)
+			obj.Finalizers = slices.DeleteFunc(obj.Finalizers, func(f string) bool { return f == resourceFinalizer })
 			return ctrl.Result{}, r.Update(ctx, obj)
 		}
 		log.Error(err, "invalid Resource spec")
@@ -158,7 +159,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// is itself gone, that lookup would return NotFound forever and this finalizer could never
 	// clear (the object would be stuck Terminating indefinitely) if it were checked first.
 	if !obj.DeletionTimestamp.IsZero() {
-		if containsString(obj.Finalizers, resourceFinalizer) {
+		if slices.Contains(obj.Finalizers, resourceFinalizer) {
 			instance := &appsv1alpha1.ThunderIDInstance{}
 			if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
 				if client.IgnoreNotFound(err) != nil {
@@ -173,7 +174,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 					return ctrl.Result{}, err
 				}
 			}
-			obj.Finalizers = removeString(obj.Finalizers, resourceFinalizer)
+			obj.Finalizers = slices.DeleteFunc(obj.Finalizers, func(f string) bool { return f == resourceFinalizer })
 			if err := r.Update(ctx, obj); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -200,7 +201,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	if !containsString(obj.Finalizers, resourceFinalizer) {
+	if !slices.Contains(obj.Finalizers, resourceFinalizer) {
 		obj.Finalizers = append(obj.Finalizers, resourceFinalizer)
 		if err := r.Update(ctx, obj); err != nil {
 			return ctrl.Result{}, err
@@ -447,6 +448,25 @@ func (r *ResourceReconciler) rebuildResourcesConfigMap(ctx context.Context, inst
 	}
 	instance.Annotations[versionAnnotation] = version
 	return true, r.Patch(ctx, instance, patch)
+}
+
+// renderResourceYAML renders data (a decoded JSON document — so only string/bool/nil/float64/
+// map[string]any/[]any values appear in it) as a YAML document via gopkg.in/yaml.v3, the same
+// library ThunderID's own declarative resource parsers (application, theme, flow, ou, role, ...)
+// use to read it back. An earlier version of this function hand-wrote YAML instead, because every
+// library tried — including this one — escapes non-BMP runes (emoji) in a marshaled string as
+// \Uxxxxxxxx, and ThunderID's parser was believed unable to read that escape form (APP-1018).
+// Confirmed live against a running ThunderID instance (2026-09-08) that this is no longer true:
+// yaml.v3 both produces and correctly decodes \Uxxxxxxxx scalars today, so the hand-rolled writer
+// is no longer needed. Marshal errors are not handled because data only ever contains values that
+// came out of encoding/json.Unmarshal, all of which are directly encodable.
+func renderResourceYAML(data map[string]any) string {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	_ = enc.Encode(data)
+	_ = enc.Close()
+	return buf.String()
 }
 
 // buildResourceYAML generates a YAML document for a single resource in the format ThunderID's
