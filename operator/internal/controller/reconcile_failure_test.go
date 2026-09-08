@@ -41,9 +41,9 @@ import (
 // interceptor. Where the only way to fail is a write genuinely erroring, WithInterceptorFuncs
 // forces exactly one call to fail without touching any of the others in the same Reconcile.
 
-func baselineSQLiteInstance(name string) *appsv1alpha1.ThunderIDInstance {
+func baselineSQLiteInstance() *appsv1alpha1.ThunderIDInstance {
 	return &appsv1alpha1.ThunderIDInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
 		Spec: appsv1alpha1.ThunderIDInstanceSpec{
 			Image:          "thunderid:latest",
 			DataVolumeSize: "1Gi",
@@ -60,7 +60,7 @@ func TestReconcileFailureTestSuite(t *testing.T) {
 }
 
 func (suite *ReconcileFailureTestSuite) TestReconcileConfigMapErrorPropagates() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	wantErr := errors.New("simulated ConfigMap create failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
 		Create: func(ctx context.Context, c client.WithWatch, o client.Object, opts ...client.CreateOption) error {
@@ -72,24 +72,24 @@ func (suite *ReconcileFailureTestSuite) TestReconcileConfigMapErrorPropagates() 
 	}, instance)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("inst", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
 
 func (suite *ReconcileFailureTestSuite) TestResolveEnvSecretHashErrorPropagates() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	instance.Spec.EnvSecretRef = "missing-secret"
 	r := newFakeReconciler(instance)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("inst", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "envSecretRef")
 }
 
 func (suite *ReconcileFailureTestSuite) TestReconcileHPAErrorPropagates() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	instance.Spec.AutoScaling = &appsv1alpha1.AutoScalingSpec{MinReplicas: 1, MaxReplicas: 3}
 	wantErr := errors.New("simulated HPA create failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
@@ -102,24 +102,24 @@ func (suite *ReconcileFailureTestSuite) TestReconcileHPAErrorPropagates() {
 	}, instance)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("inst", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
 
 func (suite *ReconcileFailureTestSuite) TestReconcileSecuritySecretErrorPropagates() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	instance.Spec.SecuritySecret = "missing-secret"
 	r := newFakeReconciler(instance)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("inst", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "securitySecret")
 }
 
 func (suite *ReconcileFailureTestSuite) TestReconcileBootstrapJobErrorPropagates() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	dbSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "db-secret", Namespace: "default"},
 		Data:       map[string][]byte{"password": []byte("hunter2")},
@@ -135,24 +135,24 @@ func (suite *ReconcileFailureTestSuite) TestReconcileBootstrapJobErrorPropagates
 	}, instance, dbSecret)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("inst", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
 
 func (suite *ReconcileFailureTestSuite) TestReconcileDataVolumeErrorPropagates() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	instance.Spec.DataVolumeSize = "not-a-valid-quantity"
 	r := newFakeReconciler(instance)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("inst", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "dataVolumeSize")
 }
 
 func (suite *ReconcileFailureTestSuite) TestReconcileDeploymentErrorPropagates() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	wantErr := errors.New("simulated Deployment create failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
 		Create: func(ctx context.Context, c client.WithWatch, o client.Object, opts ...client.CreateOption) error {
@@ -164,13 +164,13 @@ func (suite *ReconcileFailureTestSuite) TestReconcileDeploymentErrorPropagates()
 	}, instance)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("inst", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
 
 func (suite *ReconcileFailureTestSuite) TestReconcileServiceErrorPropagates() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	wantErr := errors.New("simulated Service create failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
 		Create: func(ctx context.Context, c client.WithWatch, o client.Object, opts ...client.CreateOption) error {
@@ -182,13 +182,13 @@ func (suite *ReconcileFailureTestSuite) TestReconcileServiceErrorPropagates() {
 	}, instance)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("inst", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
 
 func (suite *ReconcileFailureTestSuite) TestReconcileIngressErrorPropagates() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	instance.Spec.Domain = "id.example.com"
 	wantErr := errors.New("simulated Ingress create failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
@@ -201,13 +201,13 @@ func (suite *ReconcileFailureTestSuite) TestReconcileIngressErrorPropagates() {
 	}, instance)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("inst", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
 
 func (suite *ReconcileFailureTestSuite) TestReconcileStatusUpdateRetryGetFailure() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	wantErr := errors.New("simulated re-fetch failure")
 
 	// ThunderIDInstance is fetched by Get exactly twice in one successful Reconcile: once at
@@ -228,7 +228,7 @@ func (suite *ReconcileFailureTestSuite) TestReconcileStatusUpdateRetryGetFailure
 	}, instance)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("inst", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }

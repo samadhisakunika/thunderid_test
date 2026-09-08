@@ -134,8 +134,8 @@ func fakeRecorder() record.EventRecorder {
 	return record.NewFakeRecorder(20)
 }
 
-func reconcileRequest(name, namespace string) reconcile.Request {
-	return reconcile.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: namespace}}
+func reconcileRequest(name string) reconcile.Request {
+	return reconcile.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: "default"}}
 }
 
 func rawSpec(json string) runtime.RawExtension {

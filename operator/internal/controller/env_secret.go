@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"sort"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -35,7 +35,7 @@ func (r *ThunderIDInstanceReconciler) resolveEnvSecretHash(
 	for k := range secret.Data {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	h := sha256.New()
 	for _, k := range keys {

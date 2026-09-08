@@ -35,12 +35,14 @@ spec:
           Paste a document like:\n\n\tresource_type: application\n\tid: 01900000-0000-7000-8000-000000000060\n\touId:
           01900000-0000-7000-8000-000000000001\n\tname: Console\n\t...\n\ndirectly
           under spec (dropping the id: line — the operator generates that itself).
-          The\noperator only ever reads spec.resource_type, to know which ConfigMap
-          this belongs in — that\nkey is stripped before forwarding to ThunderID.
-          Every other key, including ones this operator\nhas never heard of, passes
-          through completely untouched — including a `{{.VAR}}` token in any\nfield,
-          resolved by ThunderID's own live resources.yaml loader at boot against whatever
-          the\nowning ThunderIDInstance's spec.envSecretRef Secret provides."
+          The\noperator reads spec.resource_type to know which ConfigMap this belongs
+          in, and forwards it to\nThunderID along with everything else — ThunderID's
+          own bootstrap loader needs that same field\nto identify which resource kind
+          a given YAML block in resources.yaml represents. Every other\nkey, including
+          ones this operator has never heard of, passes through completely untouched
+          —\nincluding a `{{.VAR}}` token in any field, resolved by ThunderID's own
+          live resources.yaml\nloader at boot against whatever the owning ThunderIDInstance's
+          spec.envSecretRef Secret provides."
         properties:
           apiVersion:
             description: |-

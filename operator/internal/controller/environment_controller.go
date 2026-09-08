@@ -3,9 +3,10 @@ package controller
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -46,7 +47,7 @@ func managedKeySet(secret *corev1.Secret) map[string]bool {
 	if raw == "" {
 		return set
 	}
-	for _, k := range strings.Split(raw, ",") {
+	for k := range strings.SplitSeq(raw, ",") {
 		if k != "" {
 			set[k] = true
 		}
@@ -59,13 +60,7 @@ func managedKeySet(secret *corev1.Secret) map[string]bool {
 // eyeball "is this the value I think it is" without the full secret ever living in etcd.
 func maskValue(v string) string {
 	n := len(v)
-	reveal := 4
-	if reveal > n-1 {
-		reveal = n - 1
-	}
-	if reveal < 0 {
-		reveal = 0
-	}
+	reveal := max(min(4, n-1), 0)
 	masked := v[:reveal] + strings.Repeat("*", n-reveal)
 	return fmt.Sprintf("%s%s:len=%d", maskPrefix, masked, n)
 }
@@ -106,7 +101,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		log.Error(err, "failed to sync Secret from Environment")
 		r.Recorder.Event(obj, corev1.EventTypeWarning, "SyncFailed", err.Error())
-		obj.Status.Phase = "Error"
+		obj.Status.Phase = phaseError
 		obj.Status.Synced = false
 		obj.Status.SecretName = obj.Name
 		_ = r.Status().Update(ctx, obj)
@@ -175,7 +170,7 @@ func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *apps
 		maskedAny = true
 		newlyMasked = append(newlyMasked, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	if err := r.upsertSecret(ctx, obj, found, existing, data); err != nil {
 		return nil, false, err
@@ -184,7 +179,7 @@ func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *apps
 	if maskedAny {
 		// Key names only, never values — same "names are safe, values never are" rule this
 		// controller's own status.keys field already follows.
-		sort.Strings(newlyMasked)
+		slices.Sort(newlyMasked)
 		logf.FromContext(ctx).Info("synced new plaintext key(s) to the Secret and masked them in spec.env",
 			"newlyMaskedKeys", newlyMasked, "totalKeys", len(keys))
 		if err := r.maskSpec(ctx, obj, maskedSpec); err != nil {
@@ -201,7 +196,7 @@ func (r *EnvironmentReconciler) upsertSecret(ctx context.Context, obj *appsv1alp
 	for k := range data {
 		managedKeys = append(managedKeys, k)
 	}
-	sort.Strings(managedKeys)
+	slices.Sort(managedKeys)
 	managedKeysValue := strings.Join(managedKeys, ",")
 
 	if !found {
@@ -224,17 +219,13 @@ func (r *EnvironmentReconciler) upsertSecret(ctx context.Context, obj *appsv1alp
 	// foreign key) is never touched.
 	previouslyManaged := managedKeySet(existing)
 	finalData := make(map[string][]byte, len(existing.Data)+len(data))
-	for k, v := range existing.Data {
-		finalData[k] = v
-	}
+	maps.Copy(finalData, existing.Data)
 	for k := range previouslyManaged {
 		if _, stillWanted := data[k]; !stillWanted {
 			delete(finalData, k)
 		}
 	}
-	for k, v := range data {
-		finalData[k] = v
-	}
+	maps.Copy(finalData, data)
 
 	if existing.Annotations[managedKeysAnnotation] == "" && len(existing.Data) > 0 {
 		log.Info("Secret already existed with unmanaged key(s), adopting only the keys spec.env names", "managedKeys", managedKeys)

@@ -181,7 +181,7 @@ func (suite *EnvironmentControllerTestSuite) TestReconcileSetsSyncedStatus() {
 	r := newFakeEnvironmentReconciler(obj)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("env", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("env"))
 	suite.Require().NoError(err)
 
 	updated := &appsv1alpha1.Environment{}
@@ -225,7 +225,7 @@ func (suite *EnvironmentControllerTestSuite) TestReconcileSyncFailureSetsErrorSt
 
 	r := &EnvironmentReconciler{Client: fakeClient, Scheme: scheme, Recorder: fakeRecorder()}
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("env", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("env"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 
@@ -247,7 +247,7 @@ func (suite *EnvironmentControllerTestSuite) TestReconcileGetErrorPropagates() {
 		},
 	})
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("env", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("env"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -268,7 +268,7 @@ func (suite *EnvironmentControllerTestSuite) TestReconcileSuccessStatusUpdateErr
 	}, obj)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("env", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("env"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }

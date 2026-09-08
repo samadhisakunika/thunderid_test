@@ -41,7 +41,7 @@ func TestBootstrapJobInternalsTestSuite(t *testing.T) {
 }
 
 func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobInitialGetErrorPropagates() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	wantErr := errors.New("simulated job get failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
 		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, o client.Object, opts ...client.GetOption) error {
@@ -58,7 +58,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobInitialGet
 }
 
 func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobRetryDeleteErrorPropagates() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	failedJob := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "inst-bootstrap-seed1", Namespace: "default",
@@ -83,7 +83,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobRetryDelet
 }
 
 func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobStaleListErrorPropagates() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	wantErr := errors.New("simulated list failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
 		List: func(ctx context.Context, c client.WithWatch, l client.ObjectList, opts ...client.ListOption) error {
@@ -100,7 +100,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobStaleListE
 }
 
 func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobStaleDeleteErrorPropagates() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	staleJob := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
 		Name: "inst-bootstrap-old-seed", Namespace: "default",
 		Labels: map[string]string{"app": "inst", "thunderid.io/role": "bootstrap", bootstrapAttemptLabel: "1"},
@@ -138,7 +138,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestBootstrapPermanentFailureReason
 }
 
 func (suite *BootstrapJobInternalsTestSuite) TestCreateBootstrapJobEmailAuthMountsEmailVolume() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	instance.Spec.Config.Email = &appsv1alpha1.EmailSpec{
 		SecretRef: "email-secret",
 		SMTP: appsv1alpha1.SMTPConfigSpec{

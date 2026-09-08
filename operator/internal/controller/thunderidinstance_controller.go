@@ -243,8 +243,8 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.WithPredicates(predicate.Funcs{
 				CreateFunc: func(e event.CreateEvent) bool {
 					labels := e.Object.GetLabels()
-					_, hasApp := labels["app"]
-					return hasApp && labels["thunderid.io/role"] != "bootstrap"
+					_, hasApp := labels[appLabelKey]
+					return hasApp && labels[bootstrapRoleLabelKey] != bootstrapRoleLabelValue
 				},
 				UpdateFunc:  func(event.UpdateEvent) bool { return false },
 				DeleteFunc:  func(event.DeleteEvent) bool { return false },
@@ -304,7 +304,7 @@ func (r *ThunderIDInstanceReconciler) mapServingPodToInstance(ctx context.Contex
 
 	jobs := &batchv1.JobList{}
 	if err := r.List(ctx, jobs, client.InNamespace(pod.Namespace),
-		client.MatchingLabels{"app": instanceName, "thunderid.io/role": "bootstrap"}); err == nil {
+		client.MatchingLabels{appLabelKey: instanceName, bootstrapRoleLabelKey: bootstrapRoleLabelValue}); err == nil {
 		for i := range jobs.Items {
 			if bootstrapJobFailed(&jobs.Items[i]) {
 				log.Info("serving pod restarted; deleting failed bootstrap Job so bootstrap retries fresh",
@@ -410,7 +410,7 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	}
 
 	data := map[string]string{
-		"deployment.yaml": configContent,
+		deploymentYAMLKey: configContent,
 	}
 	if resourcesContent != "" {
 		data["resources.yaml"] = resourcesContent
@@ -434,7 +434,7 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 		return "", "", "", "", err
 	}
 	// Skip update if content is unchanged to avoid triggering unnecessary reconciles.
-	if cm.Data["deployment.yaml"] == data["deployment.yaml"] && cm.Data["resources.yaml"] == data["resources.yaml"] {
+	if cm.Data[deploymentYAMLKey] == data[deploymentYAMLKey] && cm.Data["resources.yaml"] == data["resources.yaml"] {
 		log.V(1).Info("config ConfigMap unchanged, skipping update", "name", cm.Name)
 		return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, nil
 	}
@@ -537,6 +537,34 @@ func (r *ThunderIDInstanceReconciler) reconcileDataVolume(
 const (
 	bootstrapAttemptLabel = "thunderid.io/bootstrap-attempt"
 	bootstrapMaxAttempts  = 3
+
+	bootstrapRoleLabelKey   = "thunderid.io/role"
+	bootstrapRoleLabelValue = "bootstrap"
+	bootstrapContainerName  = "bootstrap"
+)
+
+// Volume/VolumeMount/container names shared across reconcileDeployment and createBootstrapJob -
+// both build near-identical mounts for the same underlying Secrets/ConfigMap.
+const (
+	volumeNameConfig   = "config"
+	volumeNameSecurity = "security"
+	volumeNameSecrets  = "secrets"
+	volumeNameDatabase = "database"
+	volumeNameEmail    = "email"
+	volumeNameData     = "data"
+
+	deploymentYAMLKey = "deployment.yaml"
+	secretsMountPath  = "/opt/thunderid/config/secrets"
+
+	shBinPath   = "/bin/sh"
+	bashBinPath = "/bin/bash"
+
+	adminUsernameEnvKey = "ADMIN_USERNAME"
+	adminPasswordEnvKey = "ADMIN_PASSWORD"
+
+	// defaultAdminCredential is the bootstrap admin username/password ThunderID's own setup.sh
+	// creates when neither env var above is overridden - same literal value for both.
+	defaultAdminCredential = "admin"
 )
 
 func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
@@ -588,7 +616,7 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 	// exactly one exists per instance at a time instead of accumulating forever.
 	staleJobs := &batchv1.JobList{}
 	if err := r.List(ctx, staleJobs, client.InNamespace(instance.Namespace),
-		client.MatchingLabels{"app": instance.Name, "thunderid.io/role": "bootstrap"}); err != nil {
+		client.MatchingLabels{appLabelKey: instance.Name, bootstrapRoleLabelKey: bootstrapRoleLabelValue}); err != nil {
 		return err
 	}
 	if len(staleJobs.Items) > 0 {
@@ -661,13 +689,13 @@ func (r *ThunderIDInstanceReconciler) bootstrapPermanentFailureReason(ctx contex
 		return ""
 	}
 
-	req := r.KubeClient.CoreV1().Pods(job.Namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: "bootstrap"})
+	req := r.KubeClient.CoreV1().Pods(job.Namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: bootstrapContainerName})
 	rc, err := req.Stream(ctx)
 	if err != nil {
 		log.V(1).Info("could not fetch bootstrap pod logs, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
 		return ""
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	data, err := io.ReadAll(rc)
 	if err != nil {
 		log.V(1).Info("could not read bootstrap pod logs, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
@@ -712,31 +740,31 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 	bootstrapCmd := "./setup.sh"
 
 	volumeMounts := []corev1.VolumeMount{
-		{Name: "config", MountPath: "/opt/thunderid/deployment.yaml", SubPath: "deployment.yaml"},
+		{Name: volumeNameConfig, MountPath: "/opt/thunderid/deployment.yaml", SubPath: deploymentYAMLKey},
 	}
 	// Same cert mounts as the serving container's postgres branch (reconcileDeployment): certs are
 	// always pre-supplied read-only. direct_auth_secret is handled separately below — it needs a
 	// writable location (see the bootstrapCmd comment above), unlike these.
 	for _, f := range securityCertMountKeys {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name: "security", MountPath: "/opt/thunderid/config/certs/" + f, SubPath: f,
+			Name: volumeNameSecurity, MountPath: "/opt/thunderid/config/certs/" + f, SubPath: f,
 		})
 	}
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name:      "secrets",
-		MountPath: "/opt/thunderid/config/secrets",
+		Name:      volumeNameSecrets,
+		MountPath: secretsMountPath,
 	})
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name:      "database",
+		Name:      volumeNameDatabase,
 		MountPath: "/opt/thunderid/" + databasePasswordMountPath,
-		SubPath:   "password",
+		SubPath:   databaseSecretKeyPassword,
 		ReadOnly:  true,
 	})
 	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "email",
+			Name:      volumeNameEmail,
 			MountPath: "/opt/thunderid/" + emailPasswordMountPath,
-			SubPath:   "password",
+			SubPath:   databaseSecretKeyPassword,
 			ReadOnly:  true,
 		})
 	}
@@ -744,7 +772,7 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 	defaultMode := int32(0644)
 	volumes := []corev1.Volume{
 		{
-			Name: "config",
+			Name: volumeNameConfig,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{Name: instance.Name + "-config"},
@@ -753,7 +781,7 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 			},
 		},
 		{
-			Name: "security",
+			Name: volumeNameSecurity,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{SecretName: securitySecretName, DefaultMode: &defaultMode},
 			},
@@ -763,26 +791,26 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 			// Secret by the seed-direct-auth-secret init container below. emptyDir is enough here
 			// (unlike the serving Deployment's PVC-backed equivalent): this Job runs once and exits,
 			// so there's nothing that needs to survive beyond its own pod's lifetime.
-			Name:         "secrets",
+			Name:         volumeNameSecrets,
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		},
 		{
-			Name: "database",
+			Name: volumeNameDatabase,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: instance.Spec.Config.Database.SecretRef,
-					Items:      []corev1.KeyToPath{{Key: databaseSecretKeyPassword, Path: "password"}},
+					Items:      []corev1.KeyToPath{{Key: databaseSecretKeyPassword, Path: databaseSecretKeyPassword}},
 				},
 			},
 		},
 	}
 	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumes = append(volumes, corev1.Volume{
-			Name: "email",
+			Name: volumeNameEmail,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: instance.Spec.Config.Email.SecretRef,
-					Items:      []corev1.KeyToPath{{Key: emailSecretKeyPassword, Path: "password"}},
+					Items:      []corev1.KeyToPath{{Key: emailSecretKeyPassword, Path: databaseSecretKeyPassword}},
 				},
 			},
 		})
@@ -803,18 +831,18 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 			Name:            "seed-direct-auth-secret",
 			Image:           initContainerImage,
 			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-c", seedDirectAuthSecretCmd},
+			Command:         []string{shBinPath, "-c", seedDirectAuthSecretCmd},
 			SecurityContext: &corev1.SecurityContext{RunAsUser: &thunderidUID},
 			VolumeMounts: []corev1.VolumeMount{
-				{Name: "security", MountPath: "/run/security-seed", ReadOnly: true},
-				{Name: "secrets", MountPath: "/opt/thunderid/config/secrets"},
+				{Name: volumeNameSecurity, MountPath: "/run/security-seed", ReadOnly: true},
+				{Name: volumeNameSecrets, MountPath: secretsMountPath},
 			},
 		},
 	}
 
 	labels := map[string]string{
-		"app":                 instance.Name,
-		"thunderid.io/role":   "bootstrap",
+		appLabelKey:           instance.Name,
+		bootstrapRoleLabelKey: bootstrapRoleLabelValue,
 		bootstrapAttemptLabel: strconv.Itoa(attempt),
 	}
 
@@ -844,12 +872,12 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 					InitContainers: initContainers,
 					Containers: []corev1.Container{
 						{
-							Name:    "bootstrap",
+							Name:    bootstrapContainerName,
 							Image:   instance.Spec.Image,
-							Command: []string{"/bin/bash", "-c", "cd /opt/thunderid && " + bootstrapCmd},
+							Command: []string{bashBinPath, "-c", "cd /opt/thunderid && " + bootstrapCmd},
 							Env: []corev1.EnvVar{
-								{Name: "ADMIN_USERNAME", Value: "admin"},
-								{Name: "ADMIN_PASSWORD", Value: "admin"},
+								{Name: adminUsernameEnvKey, Value: defaultAdminCredential},
+								{Name: adminPasswordEnvKey, Value: defaultAdminCredential},
 							},
 							VolumeMounts: volumeMounts,
 						},
@@ -994,14 +1022,14 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 
 	volumeMounts := []corev1.VolumeMount{
 		{
-			Name:      "config",
+			Name:      volumeNameConfig,
 			MountPath: "/opt/thunderid/deployment.yaml",
-			SubPath:   "deployment.yaml",
+			SubPath:   deploymentYAMLKey,
 		},
 	}
 	if hasResources {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "config",
+			Name:      volumeNameConfig,
 			MountPath: "/opt/thunderid/resources.yaml",
 			SubPath:   "resources.yaml",
 		})
@@ -1015,7 +1043,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	// across pod restarts and across replicas.
 	for _, f := range securityCertMountKeys {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "security",
+			Name:      volumeNameSecurity,
 			MountPath: "/opt/thunderid/config/certs/" + f,
 			SubPath:   f,
 		})
@@ -1031,17 +1059,17 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		// emptyDir: this makes seeding a true one-time cost, since the file persists across
 		// restarts instead of vanishing with the pod like an emptyDir would.
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "data",
-			MountPath: "/opt/thunderid/config/secrets",
+			Name:      volumeNameData,
+			MountPath: secretsMountPath,
 			SubPath:   "secrets",
 		})
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "data",
+			Name:      volumeNameData,
 			MountPath: "/opt/thunderid/repository/database",
 		})
 	} else {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "security",
+			Name:      volumeNameSecurity,
 			MountPath: "/opt/thunderid/config/secrets/" + securityKeyDirectAuth,
 			SubPath:   securityKeyDirectAuth,
 			ReadOnly:  true,
@@ -1055,17 +1083,17 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 		// resolveDatabaseConfig), matching how ThunderID resolves file:// values for its other
 		// secrets (direct_auth_secret, crypto.key).
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "database",
+			Name:      volumeNameDatabase,
 			MountPath: "/opt/thunderid/" + databasePasswordMountPath,
-			SubPath:   "password",
+			SubPath:   databaseSecretKeyPassword,
 			ReadOnly:  true,
 		})
 	}
 	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "email",
+			Name:      volumeNameEmail,
 			MountPath: "/opt/thunderid/" + emailPasswordMountPath,
-			SubPath:   "password",
+			SubPath:   databaseSecretKeyPassword,
 			ReadOnly:  true,
 		})
 	}
@@ -1073,7 +1101,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	defaultMode := int32(0644)
 	volumes := []corev1.Volume{
 		{
-			Name: "config",
+			Name: volumeNameConfig,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
@@ -1082,7 +1110,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			},
 		},
 		{
-			Name: "security",
+			Name: volumeNameSecurity,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  securitySecretName,
@@ -1093,7 +1121,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	}
 	if hasDataVolume {
 		volumes = append(volumes, corev1.Volume{
-			Name: "data",
+			Name: volumeNameData,
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: instance.Name + "-data",
@@ -1103,22 +1131,22 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	}
 	if usingPostgres(instance) {
 		volumes = append(volumes, corev1.Volume{
-			Name: "database",
+			Name: volumeNameDatabase,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: instance.Spec.Config.Database.SecretRef,
-					Items:      []corev1.KeyToPath{{Key: databaseSecretKeyPassword, Path: "password"}},
+					Items:      []corev1.KeyToPath{{Key: databaseSecretKeyPassword, Path: databaseSecretKeyPassword}},
 				},
 			},
 		})
 	}
 	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumes = append(volumes, corev1.Volume{
-			Name: "email",
+			Name: volumeNameEmail,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: instance.Spec.Config.Email.SecretRef,
-					Items:      []corev1.KeyToPath{{Key: emailSecretKeyPassword, Path: "password"}},
+					Items:      []corev1.KeyToPath{{Key: emailSecretKeyPassword, Path: databaseSecretKeyPassword}},
 				},
 			},
 		})
@@ -1145,7 +1173,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			Name:            "fix-data-volume-permissions",
 			Image:           initContainerImage,
 			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command: []string{"/bin/sh", "-c",
+			Command: []string{shBinPath, "-c",
 				// mkdir+chown here is a cheap, non-recursive, always-run step — kept separate
 				// from the owner check below so it isn't skipped on a PVC whose top-level dir
 				// already shows owner 10001 but doesn't yet have this secrets subdirectory.
@@ -1155,7 +1183,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 					`[ "$owner" = "10001" ] || chown -R 10001:10001 /opt/thunderid/repository/database`},
 			SecurityContext: &corev1.SecurityContext{RunAsUser: &root},
 			VolumeMounts: []corev1.VolumeMount{
-				{Name: "data", MountPath: "/opt/thunderid/repository/database"},
+				{Name: volumeNameData, MountPath: "/opt/thunderid/repository/database"},
 			},
 		})
 	}
@@ -1178,11 +1206,11 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			Name:            "seed-direct-auth-secret",
 			Image:           initContainerImage,
 			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-c", seedDirectAuthSecretCmd},
+			Command:         []string{shBinPath, "-c", seedDirectAuthSecretCmd},
 			SecurityContext: &corev1.SecurityContext{RunAsUser: &thunderidUID},
 			VolumeMounts: []corev1.VolumeMount{
-				{Name: "security", MountPath: "/run/security-seed", ReadOnly: true},
-				{Name: "data", MountPath: "/opt/thunderid/config/secrets", SubPath: "secrets"},
+				{Name: volumeNameSecurity, MountPath: "/run/security-seed", ReadOnly: true},
+				{Name: volumeNameData, MountPath: secretsMountPath, SubPath: "secrets"},
 			},
 		})
 	}
@@ -1213,11 +1241,11 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 				Replicas: &replicas,
 				Strategy: strategy,
 				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app": instance.Name},
+					MatchLabels: map[string]string{appLabelKey: instance.Name},
 				},
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
-						Labels:      map[string]string{"app": instance.Name},
+						Labels:      map[string]string{appLabelKey: instance.Name},
 						Annotations: map[string]string{"thunderid.io/config-hash": configHash},
 					},
 					Spec: corev1.PodSpec{
@@ -1225,12 +1253,12 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 						InitContainers:  initContainers,
 						Containers: []corev1.Container{
 							{
-								Name:    "thunderid",
+								Name:    thunderidContainerName,
 								Image:   instance.Spec.Image,
-								Command: []string{"/bin/bash", "-c", startCmd},
+								Command: []string{bashBinPath, "-c", startCmd},
 								Env: []corev1.EnvVar{
-									{Name: "ADMIN_USERNAME", Value: "admin"},
-									{Name: "ADMIN_PASSWORD", Value: "admin"},
+									{Name: adminUsernameEnvKey, Value: defaultAdminCredential},
+									{Name: adminPasswordEnvKey, Value: defaultAdminCredential},
 								},
 								EnvFrom:        envFrom,
 								Ports:          []corev1.ContainerPort{{ContainerPort: port, Protocol: corev1.ProtocolTCP}},
@@ -1268,10 +1296,10 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	dep.Spec.Strategy = strategy
 
 	dep.Spec.Template.Spec.Containers[0].Image = instance.Spec.Image
-	dep.Spec.Template.Spec.Containers[0].Command = []string{"/bin/bash", "-c", startCmd}
+	dep.Spec.Template.Spec.Containers[0].Command = []string{bashBinPath, "-c", startCmd}
 	dep.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{
-		{Name: "ADMIN_USERNAME", Value: "admin"},
-		{Name: "ADMIN_PASSWORD", Value: "admin"},
+		{Name: adminUsernameEnvKey, Value: defaultAdminCredential},
+		{Name: adminPasswordEnvKey, Value: defaultAdminCredential},
 	}
 	dep.Spec.Template.Spec.Containers[0].EnvFrom = envFrom
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
@@ -1386,7 +1414,7 @@ func (r *ThunderIDInstanceReconciler) reconcileService(
 				Namespace: instance.Namespace,
 			},
 			Spec: corev1.ServiceSpec{
-				Selector: map[string]string{"app": instance.Name},
+				Selector: map[string]string{appLabelKey: instance.Name},
 				Ports: []corev1.ServicePort{
 					{
 						Port:       port,

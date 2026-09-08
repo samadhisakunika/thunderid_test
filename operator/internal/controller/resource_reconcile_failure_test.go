@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,7 +68,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestReconcileDeletionInstanceGet
 		},
 	}, obj)
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -94,7 +95,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestReconcileDeletionRebuildConf
 		},
 	}, instance, obj)
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -121,7 +122,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestReconcileDeletionFinalizerUp
 		},
 	}, instance, obj)
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -141,7 +142,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestReconcileInstanceGetErrorPro
 		},
 	}, obj)
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -162,7 +163,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestReconcileAddFinalizerUpdateE
 		},
 	}, instance, obj)
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -180,7 +181,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestReconcilePendingPastWindowRu
 	r := newFakeResourceReconciler(instance, obj)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 
 	// Backdate LastSyncTime past the 30s window without touching spec (content stays
@@ -192,7 +193,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestReconcilePendingPastWindowRu
 	current.Status.LastSyncTime = &old
 	suite.Require().NoError(r.Status().Update(context.Background(), current))
 
-	_, err = r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err = r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 
 	updated := &appsv1alpha1.Resource{}
@@ -213,7 +214,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestReconcileUnchangedReadyIsNoo
 	r := newFakeResourceReconciler(instance, obj)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 
 	current := &appsv1alpha1.Resource{}
@@ -222,7 +223,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestReconcileUnchangedReadyIsNoo
 	current.Status.Synced = true
 	suite.Require().NoError(r.Status().Update(context.Background(), current))
 
-	_, err = r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err = r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 
 	updated := &appsv1alpha1.Resource{}
@@ -252,7 +253,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestReconcileFirstSyncStatusUpda
 	}, instance, obj)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -480,10 +481,11 @@ func (suite *ResourceReconcileFailureTestSuite) TestFetchAndEmitPodErrorsCapsAtF
 	fr := record.NewFakeRecorder(20)
 	r.Recorder = fr
 	cs := k8sfake.NewSimpleClientset()
-	content := ""
-	for i := 0; i < 7; i++ {
-		content += "level=ERROR msg=\"boom\"\n"
+	var contentBuilder strings.Builder
+	for range 7 {
+		contentBuilder.WriteString("level=ERROR msg=\"boom\"\n")
 	}
+	content := contentBuilder.String()
 	cs.PrependReactor("get", "pods", podLogsReactor(content, nil))
 	r.KubeClient = cs
 

@@ -9,3 +9,7 @@
 # Re-include Go module files
 !go.mod
 !go.sum
+
+# Re-include files pulled in via //go:embed - not matched by the *.go rule above since they
+# aren't Go source themselves.
+!internal/controller/deployment-config.yaml

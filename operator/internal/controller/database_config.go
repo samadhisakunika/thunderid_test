@@ -22,16 +22,23 @@ const (
 	databasePasswordMountPath = "config/secrets/db_password"
 
 	sqliteConnOptionsDefault = "_journal_mode=WAL&_busy_timeout=5000&_pragma=foreign_keys(1)"
+
+	// The four database scopes ThunderID's own deployment.yaml "database:" section has - see
+	// DatabaseSpec's doc comment for why these four and not one shared connection.
+	databaseScopeConfig            = "config"
+	databaseScopeRuntimeTransient  = "runtime_transient"
+	databaseScopeEntity            = "entity"
+	databaseScopeRuntimePersistent = "runtime_persistent"
 )
 
 // databaseScopeDefaultPath is the sqlite file each scope falls back to when its own
 // spec.config.database.<scope>.sqlite.path is unset — the image's own convention, and what
 // deployment-config.yaml's static default section (staticSQLiteDatabaseSection) already uses.
 var databaseScopeDefaultPath = map[string]string{
-	"config":             "repository/database/configdb.db",
-	"runtime_transient":  "repository/database/runtime_transient.db",
-	"entity":             "repository/database/entitydb.db",
-	"runtime_persistent": "repository/database/runtime_persistent.db",
+	databaseScopeConfig:            "repository/database/configdb.db",
+	databaseScopeRuntimeTransient:  "repository/database/runtime_transient.db",
+	databaseScopeEntity:            "repository/database/entitydb.db",
+	databaseScopeRuntimePersistent: "repository/database/runtime_persistent.db",
 }
 
 // staticSQLiteDatabaseSection is the literal "database:" body deployment-config.yaml carries by
@@ -122,10 +129,10 @@ func (r *ThunderIDInstanceReconciler) resolveDatabaseConfig(
 		name string
 		spec appsv1alpha1.DatabaseBackendSpec
 	}{
-		{"config", db.Config},
-		{"runtime_transient", db.RuntimeTransient},
-		{"entity", db.Entity},
-		{"runtime_persistent", db.RuntimePersistent},
+		{databaseScopeConfig, db.Config},
+		{databaseScopeRuntimeTransient, db.RuntimeTransient},
+		{databaseScopeEntity, db.Entity},
+		{databaseScopeRuntimePersistent, db.RuntimePersistent},
 	}
 
 	// No "database:\n" header here — staticSQLiteDatabaseSection (the search target in
@@ -147,9 +154,9 @@ func (r *ThunderIDInstanceReconciler) resolveDatabaseConfig(
 // camelCase field name, for error messages.
 func scopeJSONName(scope string) string {
 	switch scope {
-	case "runtime_transient":
+	case databaseScopeRuntimeTransient:
 		return "runtimeTransient"
-	case "runtime_persistent":
+	case databaseScopeRuntimePersistent:
 		return "runtimePersistent"
 	default:
 		return scope

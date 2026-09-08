@@ -31,12 +31,12 @@ import (
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
 )
 
-func postgresInstance(name string) *appsv1alpha1.ThunderIDInstance {
+func postgresInstance() *appsv1alpha1.ThunderIDInstance {
 	pg := appsv1alpha1.DatabaseBackendSpec{Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
 		Hostname: "h", Username: "u", Name: "n",
 	}}
 	return &appsv1alpha1.ThunderIDInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
 		Spec: appsv1alpha1.ThunderIDInstanceSpec{
 			Image: "thunderid:latest",
 			Config: appsv1alpha1.AppConfigSpec{Database: &appsv1alpha1.DatabaseSpec{
@@ -65,7 +65,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobSkippedWithoutPostg
 }
 
 func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobStillRunningIsLeftAlone() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	existing := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
 		Name: "inst-bootstrap-seed1", Namespace: "default",
 		Labels: map[string]string{"app": "inst", "thunderid.io/role": "bootstrap", bootstrapAttemptLabel: "1"},
@@ -80,7 +80,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobStillRunningIsLeftA
 }
 
 func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobPermanentFailureStopsRetrying() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	failedJob := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "inst-bootstrap-seed1", Namespace: "default",
@@ -110,7 +110,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobPermanentFailureSto
 }
 
 func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobRetryLimitReached() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	failedJob := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "inst-bootstrap-seed1", Namespace: "default",
@@ -130,7 +130,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobRetryLimitReached()
 }
 
 func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobRetriesBelowLimit() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	failedJob := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "inst-bootstrap-seed1", Namespace: "default",
@@ -150,7 +150,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobRetriesBelowLimit()
 }
 
 func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobHashChangeReplacesStaleJob() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	staleJob := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
 		Name: "inst-bootstrap-old-seed", Namespace: "default",
 		Labels: map[string]string{"app": "inst", "thunderid.io/role": "bootstrap", bootstrapAttemptLabel: "1"},
@@ -166,7 +166,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobHashChangeReplacesS
 }
 
 func (suite *BootstrapJobTestSuite) TestBootstrapPermanentFailureReasonNoMatchingPod() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
 		Name: "j", Namespace: "default",
 		Labels: map[string]string{"app": "inst", bootstrapAttemptLabel: "1"},

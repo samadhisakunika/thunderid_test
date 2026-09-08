@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,6 +34,33 @@ import (
 
 const resourceFinalizer = "thunderid.io/resource-cleanup"
 
+// appLabelKey selects a serving pod/Deployment by instance name - the same "app: <instance name>"
+// label thunderidinstance_controller.go's reconcileDeployment stamps on the Deployment/pod
+// template, used here to find the pods belonging to a given instance.
+const appLabelKey = "app"
+
+// thunderidContainerName is the serving container's name in the Deployment built by
+// reconcileDeployment - matched here against a pod's container statuses to find its health.
+const thunderidContainerName = "thunderid"
+
+// Resource.Status.Phase values (a plain string field, not a typed enum - see ResourceStatus).
+// phaseError is also used by EnvironmentReconciler for the same "something went wrong" meaning
+// on Environment.Status.Phase.
+const (
+	phaseError   = "Error"
+	phasePending = "Pending"
+	phaseReady   = "Ready"
+)
+
+// resourceTypeFlow/resourceTypeTheme name the two resource_type values buildResourceYAML
+// special-cases below - see its own comment for why.
+const (
+	resourceTypeFlow  = "flow"
+	resourceTypeTheme = "theme"
+
+	rolesFileKey = "roles.yaml"
+)
+
 // resourceKinds is the single registry of every ThunderID resource kind (spec.resource_type
 // value) this operator forwards — adding a new kind means adding one entry here, full stop.
 // Both reconcileConfigMap's resources.yaml merge (thunderidinstance_controller.go) and
@@ -54,11 +81,11 @@ var resourceKinds = []struct {
 	{"organization_unit", "organizationunits", "organizationunits.yaml"},
 	{"user_type", "usertypes", "usertypes.yaml"},
 	{"resource_server", "resourceservers", "resourceservers.yaml"},
-	{"role", "roles", "roles.yaml"},
+	{"role", "roles", rolesFileKey},
 	{"group", "groups", "groups.yaml"},
 	{"user", "users", "users.yaml"},
-	{"flow", "flows", "flows.yaml"},
-	{"theme", "themes", "themes.yaml"},
+	{resourceTypeFlow, "flows", "flows.yaml"},
+	{resourceTypeTheme, "themes", "themes.yaml"},
 	{"application", "applications", "applications.yaml"},
 	{"translation", "translations", "translations.yaml"},
 	{"server_config", "serverconfigs", "serverconfigs.yaml"},
@@ -78,8 +105,8 @@ var resourceTypeMeta = func() map[string]struct{ configMapSuffix, fileKey string
 // the one key the operator itself acts on, to know which ConfigMap this belongs in. The key stays
 // in the returned map and is forwarded to ThunderID along with everything else (see
 // resource_type.go's doc comment).
-func parseResourceSpec(raw runtime.RawExtension) (resourceType string, data map[string]interface{}, err error) {
-	data = map[string]interface{}{}
+func parseResourceSpec(raw runtime.RawExtension) (resourceType string, data map[string]any, err error) {
+	data = map[string]any{}
 	if len(raw.Raw) > 0 {
 		if err := json.Unmarshal(raw.Raw, &data); err != nil {
 			return "", nil, fmt.Errorf("spec: %w", err)
@@ -126,7 +153,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		log.Error(err, "invalid Resource spec")
 		r.Recorder.Event(obj, corev1.EventTypeWarning, "InvalidSpec", err.Error())
-		obj.Status.Phase = "Error"
+		obj.Status.Phase = phaseError
 		obj.Status.Synced = false
 		_ = r.Status().Update(ctx, obj)
 		return ctrl.Result{}, nil
@@ -164,7 +191,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if _, ok := resourceTypeMeta[resourceType]; !ok {
 		log.Info("unknown spec.resource_type")
 		r.Recorder.Eventf(obj, corev1.EventTypeWarning, "UnknownType", "spec.resource_type %q is not a known ThunderID resource_type", resourceType)
-		obj.Status.Phase = "Error"
+		obj.Status.Phase = phaseError
 		obj.Status.Synced = false
 		_ = r.Status().Update(ctx, obj)
 		return ctrl.Result{}, nil
@@ -193,12 +220,12 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		log.Error(err, "failed to sync resources ConfigMap")
 		r.Recorder.Event(obj, corev1.EventTypeWarning, "SyncFailed", err.Error())
 		r.Recorder.Event(instance, corev1.EventTypeWarning, "ResourceSyncFailed", fmt.Sprintf("Resource %s (%s): %v", obj.Name, resourceType, err))
-		obj.Status.Phase = "Error"
+		obj.Status.Phase = phaseError
 		obj.Status.Synced = false
 		_ = r.Status().Update(ctx, obj)
 		return ctrl.Result{}, err
 	}
-	if obj.Status.Phase == "Pending" && !changed {
+	if obj.Status.Phase == phasePending && !changed {
 		if obj.Status.LastSyncTime != nil {
 			elapsed := time.Since(obj.Status.LastSyncTime.Time)
 			if elapsed < 30*time.Second {
@@ -208,17 +235,17 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.checkThunderIDHealth(ctx, obj, instance)
 	}
 
-	if obj.Status.Phase == "Error" && !changed {
+	if obj.Status.Phase == phaseError && !changed {
 		return r.checkThunderIDHealth(ctx, obj, instance)
 	}
 
-	if !changed && obj.Status.Phase == "Ready" {
+	if !changed && obj.Status.Phase == phaseReady {
 		return r.checkThunderIDHealth(ctx, obj, instance)
 	}
 
 	now := metav1.Now()
 	r.Recorder.Event(obj, corev1.EventTypeNormal, "Synced", "Resource synced to ConfigMap, waiting for ThunderID to apply")
-	obj.Status.Phase = "Pending"
+	obj.Status.Phase = phasePending
 	obj.Status.Synced = false
 	obj.Status.LastSyncTime = &now
 	obj.Status.ID = string(obj.UID)
@@ -235,13 +262,13 @@ func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *apps
 	log := logf.FromContext(ctx)
 
 	podList := &corev1.PodList{}
-	if err := r.List(ctx, podList, client.InNamespace(instance.Namespace), client.MatchingLabels{"app": instance.Name}); err != nil {
+	if err := r.List(ctx, podList, client.InNamespace(instance.Namespace), client.MatchingLabels{appLabelKey: instance.Name}); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	for _, pod := range podList.Items {
 		for _, cs := range pod.Status.ContainerStatuses {
-			if cs.Name != "thunderid" {
+			if cs.Name != thunderidContainerName {
 				continue
 			}
 			inCrashLoop := cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff"
@@ -257,8 +284,8 @@ func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *apps
 				(!cs.Ready && cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.ExitCode != 0)
 			if crashed {
 				log.Info("ThunderID pod has crashed", "pod", pod.Name)
-				if obj.Status.Phase != "Error" {
-					obj.Status.Phase = "Error"
+				if obj.Status.Phase != phaseError {
+					obj.Status.Phase = phaseError
 					obj.Status.Synced = false
 					_ = r.Status().Update(ctx, obj)
 				}
@@ -271,9 +298,9 @@ func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *apps
 		}
 	}
 
-	if obj.Status.Phase != "Ready" || !obj.Status.Synced {
+	if obj.Status.Phase != phaseReady || !obj.Status.Synced {
 		r.Recorder.Event(obj, corev1.EventTypeNormal, "Ready", "ThunderID is healthy; resource is active")
-		obj.Status.Phase = "Ready"
+		obj.Status.Phase = phaseReady
 		obj.Status.Synced = true
 		if err := r.Status().Update(ctx, obj); err != nil {
 			return ctrl.Result{}, err
@@ -286,12 +313,12 @@ func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *apps
 func (r *ResourceReconciler) fetchAndEmitPodErrors(ctx context.Context, obj *appsv1alpha1.Resource, namespace, podName string) {
 	req := r.KubeClient.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
 		Previous:  true,
-		Container: "thunderid",
+		Container: thunderidContainerName,
 	})
 	rc, err := req.Stream(ctx)
 	if err != nil {
 		req = r.KubeClient.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
-			Container: "thunderid",
+			Container: thunderidContainerName,
 		})
 		rc, err = req.Stream(ctx)
 	}
@@ -300,7 +327,7 @@ func (r *ResourceReconciler) fetchAndEmitPodErrors(ctx context.Context, obj *app
 			fmt.Sprintf("pod %s is in CrashLoopBackOff (could not fetch logs: %v)", podName, err))
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	data, err := io.ReadAll(rc)
 	if err != nil {
@@ -351,8 +378,8 @@ func (r *ResourceReconciler) rebuildResourcesConfigMap(ctx context.Context, inst
 	if err := r.List(ctx, list, client.InNamespace(instance.Namespace)); err != nil {
 		return false, err
 	}
-	sort.Slice(list.Items, func(i, j int) bool {
-		return list.Items[i].Name < list.Items[j].Name
+	slices.SortFunc(list.Items, func(a, b appsv1alpha1.Resource) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	var buf bytes.Buffer
@@ -373,12 +400,8 @@ func (r *ResourceReconciler) rebuildResourcesConfigMap(ctx context.Context, inst
 		if !o.DeletionTimestamp.IsZero() {
 			continue
 		}
-		yamlDoc, err := r.buildResourceYAML(o, itemType, itemData)
-		if err != nil {
-			return false, fmt.Errorf("failed to build YAML for resource %s: %w", o.Name, err)
-		}
 		buf.WriteString("---\n")
-		buf.WriteString(yamlDoc)
+		buf.WriteString(r.buildResourceYAML(o, itemType, itemData))
 	}
 	content := buf.String()
 
@@ -436,17 +459,17 @@ func (r *ResourceReconciler) rebuildResourcesConfigMap(ctx context.Context, inst
 // buildResourceYAML generates a YAML document for a single resource in the format ThunderID's
 // declarative resource loader expects. data is o.Spec already decoded (see parseResourceSpec) —
 // the caller parses once and passes it in rather than every item re-parsing its own spec twice.
-func (r *ResourceReconciler) buildResourceYAML(o appsv1alpha1.Resource, resourceType string, data map[string]interface{}) (string, error) {
+func (r *ResourceReconciler) buildResourceYAML(o appsv1alpha1.Resource, resourceType string, data map[string]any) string {
 	// flow/theme need a UUIDv7-shaped id — ThunderID requires it for these two kinds
 	// specifically; every other kind accepts the k8s object's own (v4) UID as-is.
-	if resourceType == "flow" || resourceType == "theme" {
+	if resourceType == resourceTypeFlow || resourceType == resourceTypeTheme {
 		data["id"] = deterministicUUIDv7(o.ObjectMeta)
 	} else {
 		data["id"] = string(o.UID)
 	}
 	var buf bytes.Buffer
 	writeYAMLMapBody(&buf, "", data)
-	return buf.String(), nil
+	return buf.String()
 }
 
 func (r *ResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -485,11 +508,11 @@ func (r *ResourceReconciler) resourcesForDeployment(ctx context.Context, obj cli
 			continue
 		}
 		switch o.Status.Phase {
-		case "Error":
+		case phaseError:
 			reqs = append(reqs, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: o.Name, Namespace: o.Namespace},
 			})
-		case "Ready", "Pending":
+		case phaseReady, phasePending:
 			if dep.Status.UnavailableReplicas > 0 {
 				reqs = append(reqs, reconcile.Request{
 					NamespacedName: types.NamespacedName{Name: o.Name, Namespace: o.Namespace},

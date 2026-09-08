@@ -41,7 +41,7 @@ func TestReconcileDeploymentInternalsTestSuite(t *testing.T) {
 }
 
 func (suite *ReconcileDeploymentInternalsTestSuite) TestEnvSecretRefPopulatesEnvFrom() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	instance.Spec.EnvSecretRef = "env-secret"
 	r := newFakeReconciler(instance)
 
@@ -54,7 +54,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestEnvSecretRefPopulatesEnv
 }
 
 func (suite *ReconcileDeploymentInternalsTestSuite) TestSQLiteWithResourcesUsesSetupAndResourcesArg() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	r := newFakeReconciler(instance)
 
 	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", true, "inst-security"))
@@ -67,7 +67,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestSQLiteWithResourcesUsesS
 }
 
 func (suite *ReconcileDeploymentInternalsTestSuite) TestPostgresWithResourcesUsesPlainServeArg() {
-	instance := postgresInstance("inst")
+	instance := postgresInstance()
 	r := newFakeReconciler(instance)
 
 	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", true, "inst-security"))
@@ -88,7 +88,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestPostgresWithResourcesUse
 }
 
 func (suite *ReconcileDeploymentInternalsTestSuite) TestEmailAuthMountsEmailVolume() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	instance.Spec.Config.Email = &appsv1alpha1.EmailSpec{
 		SecretRef: "email-secret",
 		SMTP: appsv1alpha1.SMTPConfigSpec{
@@ -119,7 +119,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestEmailAuthMountsEmailVolu
 }
 
 func (suite *ReconcileDeploymentInternalsTestSuite) TestInitialGetErrorPropagates() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	wantErr := errors.New("simulated deployment get failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
 		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, o client.Object, opts ...client.GetOption) error {
@@ -136,7 +136,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestInitialGetErrorPropagate
 }
 
 func (suite *ReconcileDeploymentInternalsTestSuite) TestStaticReplicasUpdatedOnDrift() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	instance.Spec.Replicas = 3
 	r := newFakeReconciler(instance)
 
@@ -151,7 +151,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestStaticReplicasUpdatedOnD
 }
 
 func (suite *ReconcileDeploymentInternalsTestSuite) TestNilTemplateAnnotationsInitialized() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	// Simulates a Deployment created before this operator started stamping the config-hash
 	// annotation, or otherwise missing Template.Annotations entirely.
 	existing := &appsv1.Deployment{
@@ -176,7 +176,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestNilTemplateAnnotationsIn
 }
 
 func (suite *ReconcileDeploymentInternalsTestSuite) TestUpdateRetryGetErrorPropagates() {
-	instance := baselineSQLiteInstance("inst")
+	instance := baselineSQLiteInstance()
 	r := newFakeReconciler(instance)
 	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security"))
 

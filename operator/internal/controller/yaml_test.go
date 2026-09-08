@@ -71,7 +71,7 @@ func (suite *YAMLTestSuite) TestYAMLSingleQuoteRoundTrips() {
 func (suite *YAMLTestSuite) TestYAMLScalar() {
 	cases := []struct {
 		name string
-		in   interface{}
+		in   any
 		want string
 	}{
 		{"string", "abc", "'abc'"},
@@ -93,15 +93,15 @@ func (suite *YAMLTestSuite) TestYAMLScalar() {
 
 func (suite *YAMLTestSuite) TestWriteYAMLMapBody() {
 	var buf bytes.Buffer
-	writeYAMLMapBody(&buf, "", map[string]interface{}{
+	writeYAMLMapBody(&buf, "", map[string]any{
 		"name": "console",
 		"port": float64(8090),
-		"tags": []interface{}{"a", "b"},
-		"nested": map[string]interface{}{
+		"tags": []any{"a", "b"},
+		"nested": map[string]any{
 			"inner": true,
 		},
-		"empty_map":  map[string]interface{}{},
-		"empty_list": []interface{}{},
+		"empty_map":  map[string]any{},
+		"empty_list": []any{},
 	})
 
 	// Keys are written sorted, regardless of map iteration order.
@@ -119,7 +119,7 @@ func (suite *YAMLTestSuite) TestWriteYAMLMapBody() {
 
 func (suite *YAMLTestSuite) TestWriteYAMLListItemMapAlignment() {
 	var buf bytes.Buffer
-	writeYAMLListItem(&buf, "", map[string]interface{}{
+	writeYAMLListItem(&buf, "", map[string]any{
 		"id":   "1",
 		"name": "first",
 	})
@@ -128,19 +128,19 @@ func (suite *YAMLTestSuite) TestWriteYAMLListItemMapAlignment() {
 
 func (suite *YAMLTestSuite) TestWriteYAMLListItemEmptyMap() {
 	var buf bytes.Buffer
-	writeYAMLListItem(&buf, "", map[string]interface{}{})
+	writeYAMLListItem(&buf, "", map[string]any{})
 	suite.Equal("- {}\n", buf.String())
 }
 
 func (suite *YAMLTestSuite) TestWriteYAMLListItemEmptyNestedList() {
 	var buf bytes.Buffer
-	writeYAMLListItem(&buf, "", []interface{}{})
+	writeYAMLListItem(&buf, "", []any{})
 	suite.Equal("- []\n", buf.String())
 }
 
 func (suite *YAMLTestSuite) TestWriteYAMLListItemNonEmptyNestedList() {
 	var buf bytes.Buffer
-	writeYAMLListItem(&buf, "", []interface{}{"a", "b"})
+	writeYAMLListItem(&buf, "", []any{"a", "b"})
 	suite.Equal("-\n  - 'a'\n  - 'b'\n", buf.String())
 }
 

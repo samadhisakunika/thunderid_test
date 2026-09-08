@@ -20,6 +20,8 @@ import (
 
 var scheme = runtime.NewScheme()
 
+const resourceKind = "Resource"
+
 func init() {
 	utilruntime.Must(appsv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
@@ -65,7 +67,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "all":
-		allCmd.Parse(os.Args[2:])
+		_ = allCmd.Parse(os.Args[2:]) // flag.ExitOnError already exits the process on a parse failure
 		runAll(ctx, c, *allNS)
 	default:
 		runFiles(ctx, c, os.Args[1:])
@@ -139,7 +141,7 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 	}
 
 	var errs []refError
-	for _, doc := range bytes.Split(data, []byte("\n---")) {
+	for doc := range bytes.SplitSeq(data, []byte("\n---")) {
 		doc = bytes.TrimSpace(doc)
 		if len(doc) == 0 {
 			continue
@@ -153,21 +155,24 @@ func validateFile(ctx context.Context, c client.Client, path string) []refError 
 			} `json:"metadata"`
 			Spec runtime.RawExtension `json:"spec"`
 		}
-		if err := yaml.Unmarshal(doc, &obj); err != nil || obj.Kind != "Resource" {
+		if err := yaml.Unmarshal(doc, &obj); err != nil || obj.Kind != resourceKind {
 			continue
 		}
 		ns := obj.Metadata.Namespace
 		if ns == "" {
 			ns = "default"
 		}
-		errs = append(errs, checkResource(ctx, c, obj.Metadata.Name, ns, obj.Metadata.Labels[appsv1alpha1.InstanceRefLabel], obj.Spec)...)
+		errs = append(errs, checkResource(ctx, c, obj.Metadata.Name, ns,
+			obj.Metadata.Labels[appsv1alpha1.InstanceRefLabel], obj.Spec)...)
 	}
 	return errs
 }
 
 // checkResource validates the two k8s-level things the operator itself relies on: the
 // thunderid.io/instance label names a real ThunderIDInstance, and spec.resource_type is set.
-func checkResource(ctx context.Context, c client.Client, name, ns, instanceRef string, spec runtime.RawExtension) []refError {
+func checkResource(
+	ctx context.Context, c client.Client, name, ns, instanceRef string, spec runtime.RawExtension,
+) []refError {
 	var errs []refError
 	errs = append(errs, checkInstanceRef(ctx, c, name, ns, instanceRef)...)
 
@@ -178,14 +183,20 @@ func checkResource(ctx context.Context, c client.Client, name, ns, instanceRef s
 		_ = yaml.Unmarshal(spec.Raw, &body)
 	}
 	if body.ResourceType == "" {
-		errs = append(errs, refError{kind: "Resource", name: name, field: "spec.resource_type", ref: "(empty)", detail: "spec.resource_type is required"})
+		errs = append(errs, refError{
+			kind: resourceKind, name: name, field: "spec.resource_type",
+			ref: "(empty)", detail: "spec.resource_type is required",
+		})
 	}
 	return errs
 }
 
 func checkInstanceRef(ctx context.Context, c client.Client, name, ns, ref string) []refError {
 	if ref == "" {
-		return []refError{{kind: "Resource", name: name, field: "thunderid.io/instance", ref: "(empty)", detail: "thunderid.io/instance label is required"}}
+		return []refError{{
+			kind: resourceKind, name: name, field: appsv1alpha1.InstanceRefLabel,
+			ref: "(empty)", detail: appsv1alpha1.InstanceRefLabel + " label is required",
+		}}
 	}
 	target := &appsv1alpha1.ThunderIDInstance{}
 	err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: ref}, target)
@@ -193,7 +204,10 @@ func checkInstanceRef(ctx context.Context, c client.Client, name, ns, ref string
 		return nil
 	}
 	if k8serrors.IsNotFound(err) {
-		return []refError{{kind: "Resource", name: name, field: "thunderid.io/instance", ref: ref}}
+		return []refError{{kind: resourceKind, name: name, field: appsv1alpha1.InstanceRefLabel, ref: ref}}
 	}
-	return []refError{{kind: "Resource", name: name, field: "thunderid.io/instance", ref: ref, detail: err.Error()}}
+	return []refError{{
+		kind: resourceKind, name: name, field: appsv1alpha1.InstanceRefLabel,
+		ref: ref, detail: err.Error(),
+	}}
 }

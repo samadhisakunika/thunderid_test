@@ -61,8 +61,7 @@ func (suite *ResourceControllerTestSuite) TestBuildResourceYAMLUsesK8sUIDForOrdi
 	r := newFakeResourceReconciler()
 	obj := appsv1alpha1.Resource{ObjectMeta: metav1.ObjectMeta{UID: types.UID("11111111-1111-1111-1111-111111111111")}}
 
-	got, err := r.buildResourceYAML(obj, "application", map[string]interface{}{"name": "Console"})
-	suite.Require().NoError(err)
+	got := r.buildResourceYAML(obj, "application", map[string]any{"name": "Console"})
 	suite.Contains(got, "id: '11111111-1111-1111-1111-111111111111'")
 }
 
@@ -74,8 +73,7 @@ func (suite *ResourceControllerTestSuite) TestBuildResourceYAMLUsesUUIDv7ForFlow
 	}}
 
 	for _, resourceType := range []string{"flow", "theme"} {
-		got, err := r.buildResourceYAML(obj, resourceType, map[string]interface{}{"name": "x"})
-		suite.Require().NoError(err)
+		got := r.buildResourceYAML(obj, resourceType, map[string]any{"name": "x"})
 		want := deterministicUUIDv7(obj.ObjectMeta)
 		suite.Contains(got, "id: '"+want+"'")
 		// Must not be the raw k8s UID for these two kinds.
@@ -189,7 +187,7 @@ func (suite *ResourceControllerTestSuite) TestResourcesForDeploymentFiltersByPha
 	}
 	reqs := r.resourcesForDeployment(context.Background(), dep)
 
-	var names []string
+	names := make([]string, 0, len(reqs))
 	for _, req := range reqs {
 		names = append(names, req.Name)
 	}

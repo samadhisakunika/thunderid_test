@@ -43,7 +43,7 @@ func TestResourceReconcileTestSuite(t *testing.T) {
 
 func (suite *ResourceReconcileTestSuite) TestReconcileNotFound() {
 	r := newFakeResourceReconciler()
-	_, err := r.Reconcile(context.Background(), reconcileRequest("missing", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("missing"))
 	suite.NoError(err)
 }
 
@@ -67,7 +67,7 @@ func (suite *ResourceReconcileTestSuite) TestReconcileDeletionInstanceGoneStillC
 		Spec: rawSpec(`{"resource_type":"role","name":"x"}`),
 	}
 	r := newFakeResourceReconciler(obj)
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.NoError(err, "owning instance already gone must not block finalizer removal")
 }
 
@@ -80,7 +80,7 @@ func (suite *ResourceReconcileTestSuite) TestReconcileUnknownResourceType() {
 	r := newFakeResourceReconciler(instance, obj)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.NoError(err)
 
 	updated := &appsv1alpha1.Resource{}
@@ -95,7 +95,7 @@ func (suite *ResourceReconcileTestSuite) TestReconcileInstanceNotFoundRequeues()
 	}
 	r := newFakeResourceReconciler(obj)
 
-	res, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	res, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 	suite.Greater(res.RequeueAfter.Seconds(), 0.0)
 }
@@ -108,7 +108,7 @@ func (suite *ResourceReconcileTestSuite) TestReconcileAddsFinalizerBeforeSyncing
 	}
 	r := newFakeResourceReconciler(instance, obj)
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 
 	updated := &appsv1alpha1.Resource{}
@@ -141,7 +141,7 @@ func (suite *ResourceReconcileTestSuite) TestReconcileSyncFailureSetsErrorAndRet
 	r := newFakeResourceReconciler(instance, obj, sibling)
 	r.Recorder = fakeRecorder()
 
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Error(err)
 
 	updated := &appsv1alpha1.Resource{}
@@ -162,7 +162,7 @@ func (suite *ResourceReconcileTestSuite) TestReconcileFirstSyncSetsPendingAndReq
 	r := newFakeResourceReconciler(instance, obj)
 	r.Recorder = fakeRecorder()
 
-	res, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	res, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 	suite.InDelta(30, res.RequeueAfter.Seconds(), 1)
 
@@ -188,14 +188,14 @@ func (suite *ResourceReconcileTestSuite) TestReconcilePendingWithinWindowSkipsHe
 	r.Recorder = fakeRecorder()
 
 	// First reconcile: nothing synced yet, so this sets Phase=Pending.
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 
 	// Second reconcile immediately after: content is unchanged (changed=false) and
 	// LastSyncTime is seconds old, well within the 30s window — must requeue without ever
 	// calling checkThunderIDHealth (which, given zero matching pods, would flip this straight
 	// to Ready and prove the guard didn't hold).
-	res, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	res, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 	suite.Greater(res.RequeueAfter.Seconds(), 0.0)
 
@@ -218,7 +218,7 @@ func (suite *ResourceReconcileTestSuite) TestReconcileUnchangedErrorRunsHealthCh
 	r.Recorder = fakeRecorder()
 
 	// First reconcile actually syncs the content (changed=true), landing on Phase=Pending.
-	_, err := r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 
 	// Flip to Error out-of-band, as a pod crash would via checkThunderIDHealth — without
@@ -231,7 +231,7 @@ func (suite *ResourceReconcileTestSuite) TestReconcileUnchangedErrorRunsHealthCh
 	// Second reconcile: content is unchanged (changed=false), so the Phase=="Error" branch
 	// must run checkThunderIDHealth directly — no matching pods means no crash found, so it
 	// should flip to Ready.
-	_, err = r.Reconcile(context.Background(), reconcileRequest("r", "default"))
+	_, err = r.Reconcile(context.Background(), reconcileRequest("r"))
 	suite.Require().NoError(err)
 
 	updated := &appsv1alpha1.Resource{}

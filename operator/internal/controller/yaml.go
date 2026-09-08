@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -25,7 +25,7 @@ func yamlSingleQuote(s string) string {
 
 // yamlScalar renders v (a leaf value out of a decoded JSON document — so only
 // string/bool/nil/float64 ever reach here) as a YAML scalar.
-func yamlScalar(v interface{}) string {
+func yamlScalar(v any) string {
 	switch val := v.(type) {
 	case string:
 		return yamlSingleQuote(val)
@@ -46,12 +46,12 @@ func yamlScalar(v interface{}) string {
 }
 
 // writeYAMLMapBody writes each of data's keys, sorted, as "<indent><key>: ...\n" lines.
-func writeYAMLMapBody(buf *bytes.Buffer, indent string, data map[string]interface{}) {
+func writeYAMLMapBody(buf *bytes.Buffer, indent string, data map[string]any) {
 	keys := make([]string, 0, len(data))
 	for k := range data {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, k := range keys {
 		writeYAMLField(buf, indent, k, data[k])
 	}
@@ -59,16 +59,16 @@ func writeYAMLMapBody(buf *bytes.Buffer, indent string, data map[string]interfac
 
 // writeYAMLField writes one "<indent><key>: <scalar>\n" line, or "<indent><key>:\n"
 // followed by the nested map/list content for a composite value.
-func writeYAMLField(buf *bytes.Buffer, indent, key string, v interface{}) {
+func writeYAMLField(buf *bytes.Buffer, indent, key string, v any) {
 	switch val := v.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		if len(val) == 0 {
 			fmt.Fprintf(buf, "%s%s: {}\n", indent, key)
 			return
 		}
 		fmt.Fprintf(buf, "%s%s:\n", indent, key)
 		writeYAMLMapBody(buf, indent+"  ", val)
-	case []interface{}:
+	case []any:
 		if len(val) == 0 {
 			fmt.Fprintf(buf, "%s%s: []\n", indent, key)
 			return
@@ -85,9 +85,9 @@ func writeYAMLField(buf *bytes.Buffer, indent, key string, v interface{}) {
 // writeYAMLListItem writes one "<indent>- ..." block-sequence entry. A map item's first
 // field shares the "- " line; the rest align two spaces past it, matching the style every
 // hand-written list in this package (permissions, members, resources, ...) already used.
-func writeYAMLListItem(buf *bytes.Buffer, indent string, v interface{}) {
+func writeYAMLListItem(buf *bytes.Buffer, indent string, v any) {
 	switch val := v.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		if len(val) == 0 {
 			fmt.Fprintf(buf, "%s- {}\n", indent)
 			return
@@ -105,7 +105,7 @@ func writeYAMLListItem(buf *bytes.Buffer, indent string, v interface{}) {
 				buf.WriteString(line)
 			}
 		}
-	case []interface{}:
+	case []any:
 		if len(val) == 0 {
 			fmt.Fprintf(buf, "%s- []\n", indent)
 			return
@@ -143,12 +143,7 @@ func deterministicUUIDv7(meta metav1.ObjectMeta) string {
 }
 
 func containsString(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, s)
 }
 
 func removeString(slice []string, s string) []string {
