@@ -52,14 +52,7 @@ const (
 	phaseReady   = "Ready"
 )
 
-// resourceTypeFlow/resourceTypeTheme name the two resource_type values buildResourceYAML
-// special-cases below - see its own comment for why.
-const (
-	resourceTypeFlow  = "flow"
-	resourceTypeTheme = "theme"
-
-	rolesFileKey = "roles.yaml"
-)
+const rolesFileKey = "roles.yaml"
 
 // resourceKinds is the single registry of every ThunderID resource kind (spec.resource_type
 // value) this operator forwards — adding a new kind means adding one entry here, full stop.
@@ -84,8 +77,8 @@ var resourceKinds = []struct {
 	{"role", "roles", rolesFileKey},
 	{"group", "groups", "groups.yaml"},
 	{"user", "users", "users.yaml"},
-	{resourceTypeFlow, "flows", "flows.yaml"},
-	{resourceTypeTheme, "themes", "themes.yaml"},
+	{"flow", "flows", "flows.yaml"},
+	{"theme", "themes", "themes.yaml"},
 	{"application", "applications", "applications.yaml"},
 	{"translation", "translations", "translations.yaml"},
 	{"server_config", "serverconfigs", "serverconfigs.yaml"},
@@ -401,7 +394,7 @@ func (r *ResourceReconciler) rebuildResourcesConfigMap(ctx context.Context, inst
 			continue
 		}
 		buf.WriteString("---\n")
-		buf.WriteString(r.buildResourceYAML(o, itemType, itemData))
+		buf.WriteString(r.buildResourceYAML(o, itemData))
 	}
 	content := buf.String()
 
@@ -459,17 +452,9 @@ func (r *ResourceReconciler) rebuildResourcesConfigMap(ctx context.Context, inst
 // buildResourceYAML generates a YAML document for a single resource in the format ThunderID's
 // declarative resource loader expects. data is o.Spec already decoded (see parseResourceSpec) —
 // the caller parses once and passes it in rather than every item re-parsing its own spec twice.
-func (r *ResourceReconciler) buildResourceYAML(o appsv1alpha1.Resource, resourceType string, data map[string]any) string {
-	// flow/theme need a UUIDv7-shaped id — ThunderID requires it for these two kinds
-	// specifically; every other kind accepts the k8s object's own (v4) UID as-is.
-	if resourceType == resourceTypeFlow || resourceType == resourceTypeTheme {
-		data["id"] = deterministicUUIDv7(o.ObjectMeta)
-	} else {
-		data["id"] = string(o.UID)
-	}
-	var buf bytes.Buffer
-	writeYAMLMapBody(&buf, "", data)
-	return buf.String()
+func (r *ResourceReconciler) buildResourceYAML(o appsv1alpha1.Resource, data map[string]any) string {
+	data["id"] = string(o.UID)
+	return renderResourceYAML(data)
 }
 
 func (r *ResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {

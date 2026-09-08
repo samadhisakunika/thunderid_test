@@ -446,7 +446,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapNil
 
 	cm := &corev1.ConfigMap{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst-roles", Namespace: "default"}, cm))
-	suite.Contains(cm.Data["roles.yaml"], "name: 'x'")
+	suite.Contains(cm.Data["roles.yaml"], "name: x")
 }
 
 func (suite *ResourceReconcileFailureTestSuite) TestCheckThunderIDHealthIgnoresOtherContainers() {
