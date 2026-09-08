@@ -17,15 +17,9 @@ limitations under the License.
 package controller
 
 import (
-	"bytes"
-	"math"
-	"regexp"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/suite"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/yaml"
 )
 
@@ -37,63 +31,8 @@ func TestYAMLTestSuite(t *testing.T) {
 	suite.Run(t, new(YAMLTestSuite))
 }
 
-func (suite *YAMLTestSuite) TestYAMLSingleQuote() {
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{"plain", "hello", "'hello'"},
-		{"empty", "", "''"},
-		{"single quote escaped", "it's", "'it''s'"},
-		{"multiple quotes", "''", "''''''"},
-		{"emoji passes through untouched", "👨‍💻", "'👨‍💻'"},
-	}
-	for _, c := range cases {
-		suite.Run(c.name, func() {
-			suite.Equal(c.want, yamlSingleQuote(c.in))
-		})
-	}
-}
-
-func (suite *YAMLTestSuite) TestYAMLSingleQuoteRoundTrips() {
-	// The whole point of hand-writing scalars (see yaml.go's doc comment, APP-1018) is that a
-	// value containing non-BMP runes still parses back to the exact original string.
-	in := "emoji:👨‍💻 and 'quotes'"
-	quoted := yamlSingleQuote(in)
-	doc := "key: " + quoted + "\n"
-
-	var parsed map[string]string
-	suite.Require().NoError(yaml.Unmarshal([]byte(doc), &parsed))
-	suite.Equal(in, parsed["key"])
-}
-
-func (suite *YAMLTestSuite) TestYAMLScalar() {
-	cases := []struct {
-		name string
-		in   any
-		want string
-	}{
-		{"string", "abc", "'abc'"},
-		{"bool true", true, "true"},
-		{"bool false", false, "false"},
-		{"nil", nil, "null"},
-		{"whole float renders without .0", float64(42), "42"},
-		{"negative whole float", float64(-7), "-7"},
-		{"fractional float keeps precision", float64(3.5), "3.5"},
-		{"infinite float skips the whole-number path", math.Inf(1), "+Inf"},
-		{"any other type falls through to %v", []string{"x"}, "[x]"},
-	}
-	for _, c := range cases {
-		suite.Run(c.name, func() {
-			suite.Equal(c.want, yamlScalar(c.in))
-		})
-	}
-}
-
-func (suite *YAMLTestSuite) TestWriteYAMLMapBody() {
-	var buf bytes.Buffer
-	writeYAMLMapBody(&buf, "", map[string]any{
+func (suite *YAMLTestSuite) TestRenderResourceYAML() {
+	got := renderResourceYAML(map[string]any{
 		"name": "console",
 		"port": float64(8090),
 		"tags": []any{"a", "b"},
@@ -107,60 +46,63 @@ func (suite *YAMLTestSuite) TestWriteYAMLMapBody() {
 	// Keys are written sorted, regardless of map iteration order.
 	want := "empty_list: []\n" +
 		"empty_map: {}\n" +
-		"name: 'console'\n" +
+		"name: console\n" +
 		"nested:\n" +
 		"  inner: true\n" +
 		"port: 8090\n" +
 		"tags:\n" +
-		"- 'a'\n" +
-		"- 'b'\n"
-	suite.Equal(want, buf.String())
+		"  - a\n" +
+		"  - b\n"
+	suite.Equal(want, got)
 }
 
-func (suite *YAMLTestSuite) TestWriteYAMLListItemMapAlignment() {
-	var buf bytes.Buffer
-	writeYAMLListItem(&buf, "", map[string]any{
-		"id":   "1",
-		"name": "first",
+func (suite *YAMLTestSuite) TestRenderResourceYAMLEmojiRoundTrips() {
+	// The whole point of switching to a real YAML library (see yaml.go's doc comment, APP-1018)
+	// only worked once it was confirmed live that ThunderID's own parser can decode a non-BMP
+	// rune (emoji) scalar today; this checks the operator's own render+parse round trip stays
+	// exact regardless.
+	in := "emoji:👨‍💻 and 'quotes'"
+	doc := renderResourceYAML(map[string]any{"key": in})
+
+	var parsed map[string]string
+	suite.Require().NoError(yaml.Unmarshal([]byte(doc), &parsed))
+	suite.Equal(in, parsed["key"])
+}
+
+func (suite *YAMLTestSuite) TestRenderResourceYAMLScalarTypes() {
+	got := renderResourceYAML(map[string]any{
+		"str":             "abc",
+		"boolTrue":        true,
+		"boolFalse":       false,
+		"nilVal":          nil,
+		"wholeFloat":      float64(42),
+		"negativeFloat":   float64(-7),
+		"fractionalFloat": float64(3.5),
 	})
-	suite.Equal("- id: '1'\n  name: 'first'\n", buf.String())
+
+	want := "boolFalse: false\n" +
+		"boolTrue: true\n" +
+		"fractionalFloat: 3.5\n" +
+		"negativeFloat: -7\n" +
+		"nilVal: null\n" +
+		"str: abc\n" +
+		"wholeFloat: 42\n"
+	suite.Equal(want, got)
 }
 
-func (suite *YAMLTestSuite) TestWriteYAMLListItemEmptyMap() {
-	var buf bytes.Buffer
-	writeYAMLListItem(&buf, "", map[string]any{})
-	suite.Equal("- {}\n", buf.String())
-}
+func (suite *YAMLTestSuite) TestRenderResourceYAMLAmbiguousStringsRoundTrip() {
+	// Strings that look like other YAML types must still decode back to strings.
+	got := renderResourceYAML(map[string]any{
+		"looksBool": "true",
+		"looksNum":  "123",
+		"looksNull": "null",
+	})
 
-func (suite *YAMLTestSuite) TestWriteYAMLListItemEmptyNestedList() {
-	var buf bytes.Buffer
-	writeYAMLListItem(&buf, "", []any{})
-	suite.Equal("- []\n", buf.String())
-}
-
-func (suite *YAMLTestSuite) TestWriteYAMLListItemNonEmptyNestedList() {
-	var buf bytes.Buffer
-	writeYAMLListItem(&buf, "", []any{"a", "b"})
-	suite.Equal("-\n  - 'a'\n  - 'b'\n", buf.String())
-}
-
-func (suite *YAMLTestSuite) TestDeterministicUUIDv7() {
-	ts := metav1.NewTime(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
-	meta := metav1.ObjectMeta{UID: types.UID("11111111-1111-4111-8111-111111111111"), CreationTimestamp: ts}
-
-	got := deterministicUUIDv7(meta)
-
-	pattern := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-	suite.Regexp(pattern, got, "does not look like a UUIDv7")
-
-	// Same UID + same creation time must always map to the same id (idempotency across
-	// reconciles is the entire reason this function exists instead of generating randomly).
-	suite.Equal(got, deterministicUUIDv7(meta))
-
-	// A different UID must map to a different id.
-	other := meta
-	other.UID = types.UID("22222222-2222-4222-8222-222222222222")
-	suite.NotEqual(got, deterministicUUIDv7(other))
+	var parsed map[string]any
+	suite.Require().NoError(yaml.Unmarshal([]byte(got), &parsed))
+	suite.Equal("true", parsed["looksBool"])
+	suite.Equal("123", parsed["looksNum"])
+	suite.Equal("null", parsed["looksNull"])
 }
 
 func (suite *YAMLTestSuite) TestContainsAndRemoveString() {

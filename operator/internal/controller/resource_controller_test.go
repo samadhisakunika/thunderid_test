@@ -57,27 +57,15 @@ func (suite *ResourceControllerTestSuite) TestParseResourceSpecMalformedJSON() {
 	suite.Error(err)
 }
 
-func (suite *ResourceControllerTestSuite) TestBuildResourceYAMLUsesK8sUIDForOrdinaryTypes() {
+func (suite *ResourceControllerTestSuite) TestBuildResourceYAMLUsesK8sUIDForEveryResourceType() {
 	r := newFakeResourceReconciler()
 	obj := appsv1alpha1.Resource{ObjectMeta: metav1.ObjectMeta{UID: types.UID("11111111-1111-1111-1111-111111111111")}}
 
-	got := r.buildResourceYAML(obj, "application", map[string]any{"name": "Console"})
-	suite.Contains(got, "id: '11111111-1111-1111-1111-111111111111'")
-}
-
-func (suite *ResourceControllerTestSuite) TestBuildResourceYAMLUsesUUIDv7ForFlowAndTheme() {
-	r := newFakeResourceReconciler()
-	obj := appsv1alpha1.Resource{ObjectMeta: metav1.ObjectMeta{
-		UID:               types.UID("11111111-1111-1111-1111-111111111111"),
-		CreationTimestamp: metav1.Now(),
-	}}
-
-	for _, resourceType := range []string{"flow", "theme"} {
-		got := r.buildResourceYAML(obj, resourceType, map[string]any{"name": "x"})
-		want := deterministicUUIDv7(obj.ObjectMeta)
-		suite.Contains(got, "id: '"+want+"'")
-		// Must not be the raw k8s UID for these two kinds.
-		suite.NotContains(got, "id: '11111111-1111-1111-1111-111111111111'")
+	// Every resource_type uses the k8s object's own UID as id - ThunderID's own ID validation
+	// is version-agnostic (confirmed live 2026-09-08), so there is no per-type special case.
+	for _, resourceType := range []string{"application", "flow", "theme"} {
+		got := r.buildResourceYAML(obj, map[string]any{"name": "x", "resource_type": resourceType})
+		suite.Contains(got, "id: 11111111-1111-1111-1111-111111111111")
 	}
 }
 
@@ -98,7 +86,7 @@ func (suite *ResourceControllerTestSuite) TestRebuildResourcesConfigMapCreatesAn
 
 	cm := &corev1.ConfigMap{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst-applications", Namespace: "default"}, cm))
-	suite.Contains(cm.Data["applications.yaml"], "name: 'Console'")
+	suite.Contains(cm.Data["applications.yaml"], "name: Console")
 
 	// The version annotation landed on the instance, so a second call with identical input
 	// is a no-op (this is what keeps an unrelated resource_type's reconcile from restarting
