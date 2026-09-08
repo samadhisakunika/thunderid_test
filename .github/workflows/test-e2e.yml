@@ -36,6 +36,11 @@ jobs:
         run: kind version
 
       - name: Running Test e2e
+        env:
+          # No webhooks are defined in this operator (config/default/kustomization.yaml has every
+          # [WEBHOOK] section commented out), so cert-manager - which only exists to provision
+          # webhook TLS certs - is unnecessary. Skipping it removes ~190s of a ~230s e2e run.
+          CERT_MANAGER_INSTALL_SKIP: "true"
         run: |
           go mod tidy
           make test-e2e

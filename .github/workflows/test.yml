@@ -26,6 +26,12 @@ jobs:
         with:
           go-version-file: operator/go.mod
 
+      - name: Verify Helm chart CRDs are in sync with config/crd/bases
+        run: |
+          make manifests
+          git diff --exit-code -- config/crd/bases charts/thunderid-operator/crds || \
+            (echo "::error::Generated CRDs and/or charts/thunderid-operator/crds are out of date. Run 'make manifests' locally and commit the result." && exit 1)
+
       - name: Running Tests
         run: |
           go mod tidy

@@ -46,6 +46,11 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(MAKE) sync-crds
+
+.PHONY: sync-crds
+sync-crds: ## Copy generated CRD YAML into the Helm chart (charts/ mirrors config/crd/bases/ by hand otherwise).
+	@cp config/crd/bases/apps.thunderid.io_*.yaml charts/thunderid-operator/crds/
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
