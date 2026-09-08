@@ -1,7 +1,6 @@
 name: Build and Push Image
 
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       version:
@@ -27,11 +26,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
-      # Skipped on pull_request: a fork PR's workflow run doesn't get repo secrets/GITHUB_TOKEN
-      # write access, so login would fail there anyway - the build step below still runs and
-      # validates the Dockerfile builds, just without push:true.
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -43,21 +38,15 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/thunderid-operator
-          # No git ref to derive a version from on workflow_dispatch (unlike a push/tag event) -
-          # the caller names the version explicitly instead. Both lines are gated on
-          # workflow_dispatch: on a pull_request run inputs.version doesn't exist, so an
-          # unconditional type=raw,value=${{ inputs.version }} would resolve to an empty (invalid)
-          # tag - gating leaves the tag list empty instead, and the build-and-push step below
-          # builds untagged there anyway, since it never pushes on pull_request.
           tags: |
-            type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=${{ inputs.version }}
+            type=raw,value=latest
 
       - name: Build and push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./operator
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
