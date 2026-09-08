@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/yaml"
 
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
 )
@@ -67,6 +68,80 @@ func (suite *ResourceControllerTestSuite) TestBuildResourceYAMLUsesK8sUIDForEver
 		got := r.buildResourceYAML(obj, map[string]any{"name": "x", "resource_type": resourceType})
 		suite.Contains(got, "id: 11111111-1111-1111-1111-111111111111")
 	}
+}
+
+func (suite *ResourceControllerTestSuite) TestRenderResourceYAML() {
+	got := renderResourceYAML(map[string]any{
+		"name": "console",
+		"port": float64(8090),
+		"tags": []any{"a", "b"},
+		"nested": map[string]any{
+			"inner": true,
+		},
+		"empty_map":  map[string]any{},
+		"empty_list": []any{},
+	})
+
+	// Keys are written sorted, regardless of map iteration order.
+	want := "empty_list: []\n" +
+		"empty_map: {}\n" +
+		"name: console\n" +
+		"nested:\n" +
+		"  inner: true\n" +
+		"port: 8090\n" +
+		"tags:\n" +
+		"  - a\n" +
+		"  - b\n"
+	suite.Equal(want, got)
+}
+
+func (suite *ResourceControllerTestSuite) TestRenderResourceYAMLEmojiRoundTrips() {
+	// The whole point of switching to a real YAML library (see renderResourceYAML's doc comment,
+	// APP-1018) only worked once it was confirmed live that ThunderID's own parser can decode a
+	// non-BMP rune (emoji) scalar today; this checks the operator's own render+parse round trip
+	// stays exact regardless.
+	in := "emoji:👨‍💻 and 'quotes'"
+	doc := renderResourceYAML(map[string]any{"key": in})
+
+	var parsed map[string]string
+	suite.Require().NoError(yaml.Unmarshal([]byte(doc), &parsed))
+	suite.Equal(in, parsed["key"])
+}
+
+func (suite *ResourceControllerTestSuite) TestRenderResourceYAMLScalarTypes() {
+	got := renderResourceYAML(map[string]any{
+		"str":             "abc",
+		"boolTrue":        true,
+		"boolFalse":       false,
+		"nilVal":          nil,
+		"wholeFloat":      float64(42),
+		"negativeFloat":   float64(-7),
+		"fractionalFloat": float64(3.5),
+	})
+
+	want := "boolFalse: false\n" +
+		"boolTrue: true\n" +
+		"fractionalFloat: 3.5\n" +
+		"negativeFloat: -7\n" +
+		"nilVal: null\n" +
+		"str: abc\n" +
+		"wholeFloat: 42\n"
+	suite.Equal(want, got)
+}
+
+func (suite *ResourceControllerTestSuite) TestRenderResourceYAMLAmbiguousStringsRoundTrip() {
+	// Strings that look like other YAML types must still decode back to strings.
+	got := renderResourceYAML(map[string]any{
+		"looksBool": "true",
+		"looksNum":  "123",
+		"looksNull": "null",
+	})
+
+	var parsed map[string]any
+	suite.Require().NoError(yaml.Unmarshal([]byte(got), &parsed))
+	suite.Equal("true", parsed["looksBool"])
+	suite.Equal("123", parsed["looksNum"])
+	suite.Equal("null", parsed["looksNull"])
 }
 
 func (suite *ResourceControllerTestSuite) TestRebuildResourcesConfigMapCreatesAndSkipsUnchanged() {
