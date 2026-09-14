@@ -1,0 +1,8 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Environment
+metadata:
+  name: test
+  namespace: default
+spec:
+  env:
+    TEST_RESOURCE_USER_PASSWORD: duplicate-name-secret
