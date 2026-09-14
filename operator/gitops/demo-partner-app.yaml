@@ -11,7 +11,7 @@ spec:
   description: Sample partner integration for the live-update demo
   type: browser
   ouHandle: default
-  authFlowHandle: default-flow
+  authFlowHandle: test-basic-flow
   logoUrl: "emoji:👨‍💻"
   themeId: "01900000-0000-7000-8000-000000000073"
   isRegistrationFlowEnabled: false
