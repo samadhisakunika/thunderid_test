@@ -26,6 +26,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -210,6 +211,28 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
+	// Poll the serving pod's own container status — previously this status was never checked at
+	// all, so a pod wedged on e.g. a missing envSecretRef Secret (CreateContainerConfigError,
+	// never a crash/termination) would sit here reporting Phase=Running forever. See pod_health.go
+	// for what diagnosePod/diagnoseMissingSecret actually detect.
+	phase := "Running"
+	var healthReason, healthMessage string
+	podList := &corev1.PodList{}
+	if err := r.List(ctx, podList, client.InNamespace(instance.Namespace), client.MatchingLabels{appLabelKey: instance.Name}); err != nil {
+		log.Error(err, "failed to list pods for health check")
+	} else {
+		for _, pod := range podList.Items {
+			if unhealthy, issue := diagnosePod(&pod); unhealthy {
+				phase = phaseError
+				healthReason, healthMessage = issue.reason, issue.message
+				if extra := diagnoseMissingSecret(ctx, r.Client, instance, issue); extra != "" {
+					healthMessage = extra
+				}
+				break
+			}
+		}
+	}
+
 	// Re-fetch before status update — annotations may have been patched by sub-controllers.
 	// Skip the write if status is already correct to avoid triggering a reconcile loop.
 	statusErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -217,11 +240,11 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
-		if latest.Status.URL == publicURL && latest.Status.Phase == "Running" {
+		if latest.Status.URL == publicURL && latest.Status.Phase == phase {
 			return nil
 		}
 		latest.Status.URL = publicURL
-		latest.Status.Phase = "Running"
+		latest.Status.Phase = phase
 		return r.Status().Update(ctx, latest)
 	})
 	if statusErr != nil {
@@ -229,8 +252,16 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, statusErr
 	}
 
+	if phase == phaseError {
+		if healthMessage != "" {
+			r.Recorder.Event(instance, corev1.EventTypeWarning, healthReason, healthMessage)
+		}
+		log.Info("ThunderIDInstance pod unhealthy", "reason", healthReason, "message", healthMessage)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
 	log.Info("reconciled ThunderIDInstance", "url", publicURL)
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

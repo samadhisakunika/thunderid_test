@@ -292,35 +292,32 @@ func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *apps
 	}
 
 	for _, pod := range podList.Items {
-		for _, cs := range pod.Status.ContainerStatuses {
-			if cs.Name != thunderidContainerName {
-				continue
-			}
-			inCrashLoop := cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff"
-			// LastTerminationState reflects the most recent termination ever, not the current
-			// state — it stays populated forever after a single past crash, even once the
-			// container has been Ready and healthy for hours since. Gating on !cs.Ready keeps
-			// this catching the narrow window right after a crash but before Kubernetes has
-			// escalated to CrashLoopBackOff (which inCrashLoop alone would miss), without
-			// permanently flagging a fully-recovered container as still crashed — without this
-			// guard, a pod that crashed once and fully recovered would stay stuck re-polling
-			// every 10s and reporting Error forever.
-			crashed := inCrashLoop ||
-				(!cs.Ready && cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.ExitCode != 0)
-			if crashed {
-				log.Info("ThunderID pod has crashed", "pod", pod.Name)
-				if obj.Status.Phase != phaseError {
-					obj.Status.Phase = phaseError
-					obj.Status.Synced = false
-					_ = r.Status().Update(ctx, obj)
-				}
-				if !inCrashLoop {
-					return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-				}
-				r.fetchAndEmitPodErrors(ctx, obj, instance.Namespace, pod.Name)
-				return ctrl.Result{}, nil
-			}
+		unhealthy, issue := diagnosePod(&pod)
+		if !unhealthy {
+			continue
 		}
+		log.Info("ThunderID pod is unhealthy", "pod", pod.Name, "reason", issue.reason)
+
+		message := issue.message
+		if extra := diagnoseMissingSecret(ctx, r.Client, instance, issue); extra != "" {
+			message = extra
+		}
+		if obj.Status.Phase != phaseError {
+			obj.Status.Phase = phaseError
+			obj.Status.Synced = false
+			_ = r.Status().Update(ctx, obj)
+		}
+		if message != "" {
+			r.Recorder.Event(obj, corev1.EventTypeWarning, issue.reason, message)
+		}
+		// CrashLoopBackOff is the only reason with real container logs worth fetching; every
+		// other reason (a config-resolution failure, or a crash not yet escalated to
+		// CrashLoopBackOff) keeps polling instead.
+		if issue.reason != reasonCrashLoopBackOff {
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+		r.fetchAndEmitPodErrors(ctx, obj, instance.Namespace, pod.Name)
+		return ctrl.Result{}, nil
 	}
 
 	// No crash found - mark Ready if not already.
