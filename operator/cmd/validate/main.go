@@ -1,3 +1,19 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package main
 
 import (
@@ -27,6 +43,7 @@ func init() {
 	utilruntime.Must(corev1.AddToScheme(scheme))
 }
 
+// refError is one validation failure against a single Resource's field.
 type refError struct {
 	kind   string
 	name   string
@@ -35,6 +52,7 @@ type refError struct {
 	detail string
 }
 
+// String formats e as "detail" when set, or "not found" when e.ref simply doesn't resolve.
 func (e refError) String() string {
 	if e.detail != "" {
 		return fmt.Sprintf("  [%s/%s] %s %q: %s", e.kind, e.name, e.field, e.ref, e.detail)
@@ -134,6 +152,8 @@ func runFiles(ctx context.Context, c client.Client, files []string) {
 	fmt.Println("All references valid.")
 }
 
+// validateFile reads path as one or more "---"-separated YAML documents and runs checkResource
+// against every document whose kind is Resource, ignoring everything else in the file.
 func validateFile(ctx context.Context, c client.Client, path string) []refError {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -191,6 +211,8 @@ func checkResource(
 	return errs
 }
 
+// checkInstanceRef reports a refError when ref is empty or names a ThunderIDInstance that
+// doesn't exist in namespace ns.
 func checkInstanceRef(ctx context.Context, c client.Client, name, ns, ref string) []refError {
 	if ref == "" {
 		return []refError{{

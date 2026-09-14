@@ -1,3 +1,19 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package v1alpha1
 
 import (
@@ -5,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// EnvironmentSpec defines the desired state of Environment.
 type EnvironmentSpec struct {
 	// Env holds this environment's key-value pairs, mirrored into the generated Secret's Data.
 	// Plaintext only until the next reconcile: the controller overwrites each key's value here
@@ -17,6 +34,7 @@ type EnvironmentSpec struct {
 	Env map[string]string `json:"env,omitempty"`
 }
 
+// EnvironmentStatus defines the observed state of Environment.
 type EnvironmentStatus struct {
 	// +optional
 	Phase string `json:"phase,omitempty"`
@@ -67,6 +85,7 @@ type Environment struct {
 
 // +kubebuilder:object:root=true
 
+// EnvironmentList contains a list of Environment.
 type EnvironmentList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

@@ -1,3 +1,19 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package controller
 
 import (
@@ -41,6 +57,8 @@ func isMasked(v string) bool {
 // treating the Secret's Data as a full replace.
 const managedKeysAnnotation = "thunderid.io/managed-keys"
 
+// managedKeySet parses secret's managedKeysAnnotation into a set of key names, or an empty set
+// if the annotation is absent (a Secret this controller has never written to).
 func managedKeySet(secret *corev1.Secret) map[string]bool {
 	set := map[string]bool{}
 	raw := secret.Annotations[managedKeysAnnotation]
@@ -85,9 +103,12 @@ type EnvironmentReconciler struct {
 // +kubebuilder:rbac:groups=apps.thunderid.io,resources=environments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;create;update;patch
 
+// Reconcile syncs an Environment's spec.env into a same-named Secret and masks each newly-synced
+// key's value in place, then reflects the result (Phase/Synced/SecretName/Keys) in its status.
 func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
+	// Fetch the Environment.
 	obj := &appsv1alpha1.Environment{}
 	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -97,6 +118,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log = log.WithValues("environment", obj.Name, "namespace", obj.Namespace)
 	ctx = logf.IntoContext(ctx, log)
 
+	// Sync spec.env into the Secret and mask any newly-synced keys.
 	keys, maskedAny, err := r.syncSecretAndMask(ctx, obj)
 	if err != nil {
 		log.Error(err, "failed to sync Secret from Environment")
@@ -108,6 +130,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Reflect the result in status.
 	obj.Status.Phase = "Synced"
 	obj.Status.Synced = true
 	obj.Status.SecretName = obj.Name
@@ -135,6 +158,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // only when at least one key held new plaintext this pass, so a fully-masked object converges
 // instead of looping.
 func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *appsv1alpha1.Environment) ([]string, bool, error) {
+	// Fetch the existing Secret, if any.
 	existing := &corev1.Secret{}
 	err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Name}, existing)
 	found := true
@@ -150,6 +174,7 @@ func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *apps
 	var newlyMasked []string
 	maskedAny := false
 
+	// Split spec.env into already-masked (carry over) and new-plaintext (write and mask) keys.
 	for k, v := range obj.Spec.Env {
 		keys = append(keys, k)
 		if isMasked(v) {
@@ -172,6 +197,7 @@ func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *apps
 	}
 	slices.Sort(keys)
 
+	// Write the Secret.
 	if err := r.upsertSecret(ctx, obj, found, existing, data); err != nil {
 		return nil, false, err
 	}
@@ -190,8 +216,12 @@ func (r *EnvironmentReconciler) syncSecretAndMask(ctx context.Context, obj *apps
 	return keys, maskedAny, nil
 }
 
+// upsertSecret creates the Secret if it doesn't exist yet, or otherwise merges data into it:
+// keys this controller previously managed but no longer wants are dropped, this pass's data is
+// laid on top, and any other pre-existing key (never managed by this Environment) is left alone.
 func (r *EnvironmentReconciler) upsertSecret(ctx context.Context, obj *appsv1alpha1.Environment, found bool, existing *corev1.Secret, data map[string][]byte) error {
 	log := logf.FromContext(ctx)
+	// Track which keys this pass manages, for managedKeysAnnotation.
 	managedKeys := make([]string, 0, len(data))
 	for k := range data {
 		managedKeys = append(managedKeys, k)
@@ -199,6 +229,7 @@ func (r *EnvironmentReconciler) upsertSecret(ctx context.Context, obj *appsv1alp
 	slices.Sort(managedKeys)
 	managedKeysValue := strings.Join(managedKeys, ",")
 
+	// Create if it doesn't exist yet.
 	if !found {
 		log.Info("creating Secret", "managedKeys", managedKeys)
 		return r.Create(ctx, &corev1.Secret{
@@ -277,6 +308,7 @@ func (r *EnvironmentReconciler) maskSpec(ctx context.Context, obj *appsv1alpha1.
 	})
 }
 
+// SetupWithManager sets up the controller with the Manager.
 func (r *EnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1alpha1.Environment{}).
