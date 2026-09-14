@@ -9,7 +9,7 @@ createRoot(document.getElementById('root')).render(
     <ThunderIDProvider
       clientId="DEMO_PARTNER_APP"
       applicationId="2e8a7989-709b-47d3-a815-6dc1d929793c"
-      baseUrl="https://localhost:8090"
+      baseUrl="https://localhost:8091"
     >
       <App />
     </ThunderIDProvider>

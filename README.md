@@ -80,10 +80,16 @@ deployed into.
   `operator/test/load/` for a working example: two fully isolated `ThunderIDInstance`s in a
   `loadtest` namespace, reconciled by the same operator alongside instances in `default`.
 - **A `ThunderIDInstance` and everything that belongs to it must share one namespace** — the
-  `Resource`s labeled with its name, and the Secret its `envSecretRef` names (hand-written or
-  produced by an `Environment`). The operator resolves a `Resource`'s owning instance by looking it
-  up **in the `Resource`'s own namespace** — there's no cross-namespace reference. Splitting an
-  instance's objects across namespaces just means the `Resource`s never find their instance.
+  `Resource`s labeled with its name, and every Secret it names: `spec.envSecretRef`,
+  `spec.config.database.secretRef`, `spec.config.email.secretRef` (hand-written or, for
+  `envSecretRef`, produced by an `Environment`). The operator resolves a `Resource`'s owning
+  instance by looking it up **in the `Resource`'s own namespace** — there's no cross-namespace
+  reference. Splitting an instance's objects across namespaces just means the `Resource`s never
+  find their instance; splitting a Secret from its instance means the pod can't find *it* either —
+  `envFrom`/Secret volume mounts are namespace-scoped in Kubernetes itself, not an operator
+  limitation. A Secret in the wrong namespace fails the pod with `CreateContainerConfigError`, not
+  a `kubectl apply`-time error, so it's easy to miss — see
+  [Pod never reaches Ready](#pod-never-reaches-ready-after-applying-thunderidinstance).
 
 ---
 
@@ -612,13 +618,24 @@ kubectl delete pod inspect-image --wait=false
 
 ### Pod never reaches Ready after applying ThunderIDInstance
 
-**Cause:** The operator is not running, or it cannot reach the cluster.
+**Cause 1:** The operator is not running, or it cannot reach the cluster.
 
 **Fix:** Check that `make run` is still active in your terminal, or check the operator pod logs if deployed in-cluster:
 
 ```bash
 kubectl logs -n system deployment/controller-manager
 ```
+
+**Cause 2:** `spec.envSecretRef`, `spec.config.database.secretRef`, or `spec.config.email.secretRef`
+names a Secret that doesn't exist **in the instance's own namespace** — see
+[Namespaces](#namespaces). Most often the Secret does exist, just in the wrong namespace (e.g. an
+`Environment`-generated one left in `default` while the instance itself is elsewhere).
+
+**Fix:** `kubectl describe pod <pod>` — look for `CreateContainerConfigError` and a
+`secret "X" not found` message. `kubectl get events` also shows a `CreateContainerConfigError`
+event on the `ThunderIDInstance` naming the missing Secret, and — if a same-named Secret exists
+somewhere else in the cluster — which namespace it's actually in. Move or recreate the Secret in
+the instance's namespace, or fix the `*SecretRef` field.
 
 ### HPA stuck, pod never scales up from 0
 
