@@ -299,7 +299,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapCre
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
 	res := &appsv1alpha1.Resource{
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default", Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"}},
-		Spec:       rawSpec(`{"resource_type":"role","name":"x"}`),
+		Spec:       rawSpec(`{"resource_type":"resource_server","name":"x"}`),
 	}
 	wantErr := errors.New("simulated ConfigMap create failure")
 	r := newFakeResourceReconcilerWithInterceptor(interceptor.Funcs{
@@ -311,7 +311,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapCre
 		},
 	}, instance, res)
 
-	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "role", "")
+	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "resource_server", "")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -320,7 +320,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapGet
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
 	res := &appsv1alpha1.Resource{
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default", Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"}},
-		Spec:       rawSpec(`{"resource_type":"role","name":"x"}`),
+		Spec:       rawSpec(`{"resource_type":"organization_unit","name":"x"}`),
 	}
 	wantErr := errors.New("simulated ConfigMap get failure")
 	r := newFakeResourceReconcilerWithInterceptor(interceptor.Funcs{
@@ -332,7 +332,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapGet
 		},
 	}, instance, res)
 
-	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "role", "")
+	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "organization_unit", "")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -341,11 +341,11 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapUpd
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
 	res := &appsv1alpha1.Resource{
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default", Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"}},
-		Spec:       rawSpec(`{"resource_type":"role","name":"x"}`),
+		Spec:       rawSpec(`{"resource_type":"translation","name":"x"}`),
 	}
 	existingCM := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "inst-roles", Namespace: "default"},
-		Data:       map[string]string{"roles.yaml": "stale content that will differ from the freshly rendered version"},
+		ObjectMeta: metav1.ObjectMeta{Name: "inst-translations", Namespace: "default"},
+		Data:       map[string]string{"translations.yaml": "stale content that will differ from the freshly rendered version"},
 	}
 	wantErr := errors.New("simulated ConfigMap update failure")
 	r := newFakeResourceReconcilerWithInterceptor(interceptor.Funcs{
@@ -357,7 +357,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapUpd
 		},
 	}, instance, res, existingCM)
 
-	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "role", "")
+	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "translation", "")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -401,11 +401,11 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapRet
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
 	res := &appsv1alpha1.Resource{
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default", Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"}},
-		Spec:       rawSpec(`{"resource_type":"role","name":"x"}`),
+		Spec:       rawSpec(`{"resource_type":"server_config","name":"x"}`),
 	}
 	existingCM := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "inst-roles", Namespace: "default"},
-		Data:       map[string]string{"roles.yaml": "stale content"},
+		ObjectMeta: metav1.ObjectMeta{Name: "inst-serverconfigs", Namespace: "default"},
+		Data:       map[string]string{"serverconfigs.yaml": "stale content"},
 	}
 	wantErr := errors.New("simulated retry-get failure")
 	// The first Get of *ConfigMap ("does it exist yet") must succeed and find existingCM, so
@@ -424,7 +424,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapRet
 		},
 	}, instance, res, existingCM)
 
-	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "role", "")
+	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "server_config", "")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -433,20 +433,20 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapNil
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
 	res := &appsv1alpha1.Resource{
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default", Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"}},
-		Spec:       rawSpec(`{"resource_type":"role","name":"x"}`),
+		Spec:       rawSpec(`{"resource_type":"theme","name":"x"}`),
 	}
 	// Data left nil (not just empty) - the update path must initialize it rather than panic on
 	// a nil-map write.
-	existingCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "inst-roles", Namespace: "default"}}
+	existingCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "inst-themes", Namespace: "default"}}
 	r := newFakeResourceReconciler(instance, res, existingCM)
 
-	changed, err := r.rebuildResourcesConfigMap(context.Background(), instance, "role", "")
+	changed, err := r.rebuildResourcesConfigMap(context.Background(), instance, "theme", "")
 	suite.Require().NoError(err)
 	suite.True(changed)
 
 	cm := &corev1.ConfigMap{}
-	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst-roles", Namespace: "default"}, cm))
-	suite.Contains(cm.Data["roles.yaml"], "name: x")
+	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst-themes", Namespace: "default"}, cm))
+	suite.Contains(cm.Data["themes.yaml"], "name: x")
 }
 
 func (suite *ResourceReconcileFailureTestSuite) TestCheckThunderIDHealthIgnoresOtherContainers() {

@@ -216,7 +216,7 @@ func (suite *BootstrapJobTestSuite) TestAppendResourceConfigMapMissingConfigMapI
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
 	r := newFakeReconciler(instance)
 
-	content, err := r.appendResourceConfigMap(context.Background(), instance, "-roles", "roles.yaml")
+	content, err := r.appendResourceConfigMap(context.Background(), instance, "-agenttypes", "agenttypes.yaml")
 	suite.Require().NoError(err)
 	suite.Empty(content)
 }
@@ -224,22 +224,22 @@ func (suite *BootstrapJobTestSuite) TestAppendResourceConfigMapMissingConfigMapI
 func (suite *BootstrapJobTestSuite) TestAppendResourceConfigMapReturnsContentWithLeadingNewline() {
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
 	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "inst-roles", Namespace: "default"},
-		Data:       map[string]string{"roles.yaml": "---\nname: 'admin'\n"},
+		ObjectMeta: metav1.ObjectMeta{Name: "inst-layouts", Namespace: "default"},
+		Data:       map[string]string{"layouts.yaml": "---\nname: 'admin'\n"},
 	}
 	r := newFakeReconciler(instance, cm)
 
-	content, err := r.appendResourceConfigMap(context.Background(), instance, "-roles", "roles.yaml")
+	content, err := r.appendResourceConfigMap(context.Background(), instance, "-layouts", "layouts.yaml")
 	suite.Require().NoError(err)
 	suite.Equal("\n---\nname: 'admin'\n", content)
 }
 
 func (suite *BootstrapJobTestSuite) TestAppendResourceConfigMapEmptyKeyIsEmpty() {
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
-	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "inst-roles", Namespace: "default"}}
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "inst-connections", Namespace: "default"}}
 	r := newFakeReconciler(instance, cm)
 
-	content, err := r.appendResourceConfigMap(context.Background(), instance, "-roles", "roles.yaml")
+	content, err := r.appendResourceConfigMap(context.Background(), instance, "-connections", "connections.yaml")
 	suite.Require().NoError(err)
 	suite.Empty(content)
 }

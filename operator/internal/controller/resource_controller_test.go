@@ -187,11 +187,11 @@ func (suite *ResourceControllerTestSuite) TestRebuildResourcesConfigMapExcludesD
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
 	included := &appsv1alpha1.Resource{
 		ObjectMeta: metav1.ObjectMeta{Name: "keep", Namespace: "default", Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"}},
-		Spec:       rawSpec(`{"resource_type":"role","name":"keep-me"}`),
+		Spec:       rawSpec(`{"resource_type":"credential_configuration","name":"keep-me"}`),
 	}
 	otherInstance := &appsv1alpha1.Resource{
 		ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "default", Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "some-other-instance"}},
-		Spec:       rawSpec(`{"resource_type":"role","name":"not-mine"}`),
+		Spec:       rawSpec(`{"resource_type":"credential_configuration","name":"not-mine"}`),
 	}
 	otherType := &appsv1alpha1.Resource{
 		ObjectMeta: metav1.ObjectMeta{Name: "wrong-type", Namespace: "default", Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"}},
@@ -199,14 +199,15 @@ func (suite *ResourceControllerTestSuite) TestRebuildResourcesConfigMapExcludesD
 	}
 	r := newFakeResourceReconciler(instance, included, otherInstance, otherType)
 
-	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "role", "")
+	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "credential_configuration", "")
 	suite.Require().NoError(err)
 
 	cm := &corev1.ConfigMap{}
-	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst-roles", Namespace: "default"}, cm))
-	suite.Contains(cm.Data["roles.yaml"], "keep-me")
-	suite.NotContains(cm.Data["roles.yaml"], "not-mine")
-	suite.NotContains(cm.Data["roles.yaml"], "not-a-role")
+	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst-credentialconfigurations", Namespace: "default"}, cm))
+	content := cm.Data["credentialconfigurations.yaml"]
+	suite.Contains(content, "keep-me")
+	suite.NotContains(content, "not-mine")
+	suite.NotContains(content, "not-a-role")
 }
 
 func (suite *ResourceControllerTestSuite) TestRebuildResourcesConfigMapExcludesUID() {
@@ -219,16 +220,16 @@ func (suite *ResourceControllerTestSuite) TestRebuildResourcesConfigMapExcludesU
 			Name: "leaving", Namespace: "default", UID: "leaving-uid",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
 		},
-		Spec: rawSpec(`{"resource_type":"role","name":"leaving-role"}`),
+		Spec: rawSpec(`{"resource_type":"user_type","name":"leaving-role"}`),
 	}
 	r := newFakeResourceReconciler(instance, beingDeleted)
 
-	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "role", "leaving-uid")
+	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "user_type", "leaving-uid")
 	suite.Require().NoError(err)
 
 	cm := &corev1.ConfigMap{}
-	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst-roles", Namespace: "default"}, cm))
-	suite.NotContains(cm.Data["roles.yaml"], "leaving-role")
+	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst-usertypes", Namespace: "default"}, cm))
+	suite.NotContains(cm.Data["usertypes.yaml"], "leaving-role")
 }
 
 func (suite *ResourceControllerTestSuite) TestResourcesForDeploymentFiltersByPhaseAndHealth() {
