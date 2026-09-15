@@ -2,6 +2,7 @@ apiVersion: apps.thunderid.io/v1alpha1
 kind: ThunderIDInstance
 metadata:
   name: external-pg-instance
+  namespace: default
 spec:
   image: ghcr.io/thunder-id/thunderid:latest
   replicas: 1
@@ -11,7 +12,6 @@ spec:
   securitySecret: thunderid-prod-manual-security
 
   # resourcesConfigMap: thunderid-resources
-  # dataVolumeSize: "1Gi"
 
   # Every key in this Secret becomes an env var on the ThunderID container — any Resource bound
   # to this instance can reference one via a {{.KEY}} placeholder anywhere in its spec (e.g.

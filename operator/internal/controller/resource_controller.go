@@ -100,6 +100,7 @@ var resourceKinds = []struct {
 	{"layout", "layouts", "layouts.yaml"},
 	{"presentation_definition", "presentationdefinitions", "presentationdefinitions.yaml"},
 	{"credential_configuration", "credentialconfigurations", "credentialconfigurations.yaml"},
+	{"template", "templates", "templates.yaml"},
 }
 
 // resourceTypeMeta indexes resourceKinds by resource_type for the O(1) lookups below — built
