@@ -1,0 +1,71 @@
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ThunderIDInstance
+metadata:
+  name: loadtest-sqlite
+  namespace: loadtest
+spec:
+  image: ghcr.io/thunder-id/thunderid:latest
+  replicas: 1
+  dataVolumeSize: 1Gi
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+  config:
+    port: 8090
+    jwt:
+      preferredKeyId: default-key
+---
+apiVersion: apps.thunderid.io/v1alpha1
+kind: ThunderIDInstance
+metadata:
+  name: loadtest-pg
+  namespace: loadtest
+spec:
+  image: ghcr.io/thunder-id/thunderid:latest
+  replicas: 1
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+  config:
+    port: 8090
+    jwt:
+      preferredKeyId: default-key
+    # Points at the same postgres endpoint/creds external-pg-instance (default ns) already uses
+    # successfully, instead of the in-namespace loadtest-pgdb (fresh, no schema loaded — bootstrap
+    # fails with "relation SERVER_CONFIG does not exist"). Secret thunderid-db in this namespace
+    # holds the same password. Shares thunderid_config/thunderid_runtime with external-pg-instance
+    # — churn here writes into the same tables, by request.
+    database:
+      config:
+        type: postgres
+        postgres:
+          hostname: "172.19.208.1"
+          port: "5432"
+          username: postgres
+          name: thunderid_config
+          sslmode: "disable"
+      entity:
+        type: postgres
+        postgres:
+          hostname: "172.19.208.1"
+          port: "5432"
+          username: postgres
+          name: thunderid_config
+          sslmode: "disable"
+      runtimeTransient:
+        type: postgres
+        postgres:
+          hostname: "172.19.208.1"
+          port: "5432"
+          username: postgres
+          name: thunderid_runtime
+          sslmode: "disable"
+      runtimePersistent:
+        type: postgres
+        postgres:
+          hostname: "172.19.208.1"
+          port: "5432"
+          username: postgres
+          name: thunderid_runtime
+          sslmode: "disable"
+      secretRef: thunderid-db

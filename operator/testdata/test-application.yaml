@@ -6,13 +6,10 @@ metadata:
   labels:
     thunderid.io/instance: external-pg-instance
 spec:
-  # spec is forwarded as-is into ThunderID's own application bootstrap schema — the
-  # operator does not resolve ouHandle/authFlowHandle to IDs; ThunderID's own
-  # bootstrap loader resolves them itself. themeHandle is the one exception —
-  # not supported by ThunderID at all; use themeId.
+  # spec is forwarded as-is into ThunderID's own application bootstrap schema 
   resource_type: application
   name: Test Web Application
-  type: browser # ThunderID's own key is "type", not "template"
+  type: browser 
   ouHandle: default
   authFlowHandle: console-app-flow
   themeId: "01900000-0000-7000-8000-000000000073" # acrylic-orange

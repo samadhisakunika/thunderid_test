@@ -69,16 +69,11 @@ const (
 	phaseReady   = "Ready"
 )
 
-const rolesFileKey = "roles.yaml"
-
 // resourceKinds is the single registry of every ThunderID resource kind (spec.resource_type
 // value) this operator forwards — adding a new kind means adding one entry here, full stop.
 // Both reconcileConfigMap's resources.yaml merge (thunderidinstance_controller.go) and
 // configHash's per-type version hashing read this same slice directly instead of each keeping
-// their own hand-copied list — the three used to drift independently, which is exactly how
-// "server_config" ended up with mismatched keys between resourceTypeMeta and the merge loop
-// (fileKey "serverconfigs.yaml" here, "server_configs.yaml" there) and silently never reached
-// resources.yaml at all.
+// their own hand-copied list of resource types, so the operator's behavior is consistent and doesn't drift over time.
 //
 // Order matters: the merge loop appends each kind's ConfigMap content in this slice's order,
 // and ThunderID's own bootstrap loader wants that in dependency order (organization units
@@ -91,7 +86,7 @@ var resourceKinds = []struct {
 	{"organization_unit", "organizationunits", "organizationunits.yaml"},
 	{"user_type", "usertypes", "usertypes.yaml"},
 	{"resource_server", "resourceservers", "resourceservers.yaml"},
-	{"role", "roles", rolesFileKey},
+	{"role", "roles", "roles.yaml"},
 	{"group", "groups", "groups.yaml"},
 	{"user", "users", "users.yaml"},
 	{"flow", "flows", "flows.yaml"},
@@ -105,6 +100,7 @@ var resourceKinds = []struct {
 	{"layout", "layouts", "layouts.yaml"},
 	{"presentation_definition", "presentationdefinitions", "presentationdefinitions.yaml"},
 	{"credential_configuration", "credentialconfigurations", "credentialconfigurations.yaml"},
+	{"template", "templates", "templates.yaml"},
 }
 
 // resourceTypeMeta indexes resourceKinds by resource_type for the O(1) lookups below — built

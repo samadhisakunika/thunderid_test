@@ -133,7 +133,7 @@ func (suite *ReconcileConfigMapTestSuite) TestAppendResourceConfigMapLoopErrorPr
 	wantErr := errors.New("simulated per-type ConfigMap get failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
 		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, o client.Object, opts ...client.GetOption) error {
-			if key.Name == "inst-roles" {
+			if key.Name == "inst-agents" {
 				return wantErr
 			}
 			return c.Get(ctx, key, o, opts...)
@@ -199,7 +199,7 @@ func (suite *ReconcileConfigMapTestSuite) TestAppendResourceConfigMapGetErrorPro
 		},
 	}, instance)
 
-	_, err := r.appendResourceConfigMap(context.Background(), instance, "-roles", "roles.yaml")
+	_, err := r.appendResourceConfigMap(context.Background(), instance, "-presentationdefinitions", "presentationdefinitions.yaml")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
