@@ -19,4 +19,4 @@ spec:
     email: "admin@example.com"
     family_name: "User"
   credentials:
-    password: '{{.ADMIN2_PASSWORD}}' # resolved from thunderid-prod's spec.envSecretRef Secret at boot — see Admin2User_credentials.yaml
+    password: '{{.ADMIN2_PASSWORD}}' # resolved from thunderid-prod's env Secret at boot — see Admin2User_credentials.yaml

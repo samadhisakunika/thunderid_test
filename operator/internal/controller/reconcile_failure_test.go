@@ -79,13 +79,18 @@ func (suite *ReconcileFailureTestSuite) TestReconcileConfigMapErrorPropagates() 
 
 func (suite *ReconcileFailureTestSuite) TestResolveEnvSecretHashErrorPropagates() {
 	instance := baselineSQLiteInstance()
-	instance.Spec.EnvSecretRef = "missing-secret"
-	r := newFakeReconciler(instance)
+	env := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "missing-secret", Namespace: instance.Namespace,
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: instance.Name},
+		},
+	}
+	r := newFakeReconciler(instance, env)
 	r.Recorder = fakeRecorder()
 
 	_, err := r.Reconcile(context.Background(), reconcileRequest("inst"))
 	suite.Require().Error(err)
-	suite.Contains(err.Error(), "envSecretRef")
+	suite.Contains(err.Error(), "missing-secret")
 }
 
 func (suite *ReconcileFailureTestSuite) TestReconcileHPAErrorPropagates() {

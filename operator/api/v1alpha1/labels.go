@@ -21,4 +21,9 @@ package v1alpha1
 // translation, etc..) uses to reference its owning ThunderIDInstance, instead of a spec
 // field. Keeping it out of spec means adding a new resource_type never requires touching the
 // operator's schema.
+//
+// An Environment uses the same label to name the ThunderIDInstance that should mount its Secret:
+// see findEnvironment in env_secret.go. Unlike a Resource, the label is optional on an
+// Environment — its own reconcile (syncing spec.env into the Secret) doesn't need an owning
+// instance at all, the label only controls whether some ThunderIDInstance auto-discovers it.
 const InstanceRefLabel = "thunderid.io/instance"

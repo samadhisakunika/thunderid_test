@@ -11,10 +11,11 @@ spec:
   # either this or every config.database scope's type=postgres — neither set is rejected.
   dataVolumeSize: "1Gi"
 
-  # Every key in this Secret becomes an env var on the ThunderID container — any Resource bound
-  # to this instance can reference one via a {{.KEY}} placeholder anywhere in its spec (e.g.
-  # Admin2User.yaml's credentials.password). See Admin2User_credentials.yaml.
-  envSecretRef: thunderid-prod-env
+  # Every key in the Secret named by whichever Environment is labeled
+  # thunderid.io/instance: thunderid-prod becomes an env var on the ThunderID container — any
+  # Resource bound to this instance can reference one via a {{.KEY}} placeholder anywhere in its
+  # spec (e.g. Admin2User.yaml's credentials.password). See Admin2User_credentials.yaml, which
+  # carries that label.
 
   resources:
     requests:

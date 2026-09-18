@@ -212,9 +212,9 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Poll the serving pod's own container status — previously this status was never checked at
-	// all, so a pod wedged on e.g. a missing envSecretRef Secret (CreateContainerConfigError,
-	// never a crash/termination) would sit here reporting Phase=Running forever. See pod_health.go
-	// for what diagnosePod/diagnoseMissingSecret actually detect.
+	// all, so a pod wedged on e.g. a missing env Secret (CreateContainerConfigError, never a
+	// crash/termination) would sit here reporting Phase=Running forever. See pod_health.go for
+	// what diagnosePod/diagnoseMissingSecret actually detect.
 	phase := "Running"
 	var healthReason, healthMessage string
 	podList := &corev1.PodList{}
@@ -297,34 +297,47 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// only updates status, which never bumps generation. reconcileBootstrapJob needs to see
 		// that transition to retry a failed bootstrap automatically.
 		Owns(&batchv1.Job{}).
-		// Not Owns(): spec.envSecretRef names a Secret the instance doesn't own (the caller
-		// authors it directly, see EnvSecretRef's doc comment), so there's no owner reference to
-		// follow. Editing its content alone doesn't touch the ThunderIDInstance object itself —
-		// without this, resolveEnvSecretHash's new value would only ever be picked up by some
-		// unrelated reconcile trigger, not promptly when the Secret you actually changed changes.
+		// Not Owns(): the instance doesn't own its env Secret (an Environment authors it, or a
+		// human hand-writes it directly — see Environment's doc comment), so there's no owner
+		// reference to follow. Editing the Secret's content alone doesn't touch either the
+		// Environment or the ThunderIDInstance object — without this, resolveEnvSecretHash's new
+		// value would only ever be picked up by some unrelated reconcile trigger, not promptly
+		// when the Secret you actually changed changes.
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvSecret)).
+		// The label itself (not just the Secret's content) is what wires an Environment into an
+		// instance's envFrom — adding, removing, or repointing the thunderid.io/instance label
+		// needs to reach the instance just as promptly as a content change does. Update events
+		// are mapped for both the old and new object, so repointing the label from instance A to
+		// B correctly reconciles both.
+		Watches(&appsv1alpha1.Environment{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvironment)).
 		Named("thunderidinstance").
 		Complete(r)
 }
 
-// instancesForEnvSecret maps a Secret change to every ThunderIDInstance whose spec.envSecretRef
-// names it.
-func (r *ThunderIDInstanceReconciler) instancesForEnvSecret(ctx context.Context, obj client.Object) []reconcile.Request {
-	// List every ThunderIDInstance in this namespace.
-	list := &appsv1alpha1.ThunderIDInstanceList{}
-	if err := r.List(ctx, list, client.InNamespace(obj.GetNamespace())); err != nil {
+// instancesForEnvironment maps an Environment to the ThunderIDInstance named by its
+// thunderid.io/instance label, if any.
+func (r *ThunderIDInstanceReconciler) instancesForEnvironment(_ context.Context, obj client.Object) []reconcile.Request {
+	instanceName, ok := obj.GetLabels()[appsv1alpha1.InstanceRefLabel]
+	if !ok || instanceName == "" {
 		return nil
 	}
-	// Collect the ones whose spec.envSecretRef names this Secret.
-	var reqs []reconcile.Request
-	for _, instance := range list.Items {
-		if instance.Spec.EnvSecretRef == obj.GetName() {
-			reqs = append(reqs, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace},
-			})
-		}
+	return []reconcile.Request{
+		{NamespacedName: types.NamespacedName{Name: instanceName, Namespace: obj.GetNamespace()}},
 	}
-	return reqs
+}
+
+// instancesForEnvSecret maps a Secret change to the ThunderIDInstance labeled on the Environment
+// of the same name — an Environment's Secret is always same-named as it (see
+// environment_controller.go), so this just re-Gets that Environment and reuses
+// instancesForEnvironment's label lookup. A hand-written Secret with no matching Environment
+// object maps to nothing: without an Environment to carry the label, there's no instance to
+// discover it from a bare Secret change alone (see Environment's doc comment on adopting one).
+func (r *ThunderIDInstanceReconciler) instancesForEnvSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	env := &appsv1alpha1.Environment{}
+	if err := r.Get(ctx, types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}, env); err != nil {
+		return nil
+	}
+	return r.instancesForEnvironment(ctx, env)
 }
 
 // mapServingPodToInstance handles a freshly (re)created serving pod: if this instance's
@@ -1048,13 +1061,18 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	// to persist, so spec.dataVolumeSize (and the once-only setup.sh gating below) is ignored.
 	hasDataVolume := instance.Spec.DataVolumeSize != "" && !usingPostgres(instance)
 
-	// Every key in spec.envSecretRef's Secret becomes an env var on the container — resolving
-	// whatever {{.VAR}} tokens a Resource's spec holds is entirely ThunderID's own job at boot,
-	// not the operator's; see EnvSecretRef's doc comment.
+	// Every key in the Secret named by whichever Environment is labeled for this instance (see
+	// findEnvironment) becomes an env var on the container — resolving whatever {{.VAR}} tokens a
+	// Resource's spec holds is entirely ThunderID's own job at boot, not the operator's. Reconcile
+	// already called findEnvironment once via resolveEnvSecretHash and would have returned early
+	// on an ambiguous label match, so any error here can't actually happen in practice; it's
+	// still handled rather than ignored since reconcileDeployment already returns error.
 	var envFrom []corev1.EnvFromSource
-	if instance.Spec.EnvSecretRef != "" {
+	if env, err := findEnvironment(ctx, r.Client, instance); err != nil {
+		return err
+	} else if env != nil {
 		envFrom = []corev1.EnvFromSource{
-			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: instance.Spec.EnvSecretRef}}},
+			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: env.Name}}},
 		}
 	}
 

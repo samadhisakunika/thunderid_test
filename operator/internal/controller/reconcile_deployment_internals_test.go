@@ -40,10 +40,15 @@ func TestReconcileDeploymentInternalsTestSuite(t *testing.T) {
 	suite.Run(t, new(ReconcileDeploymentInternalsTestSuite))
 }
 
-func (suite *ReconcileDeploymentInternalsTestSuite) TestEnvSecretRefPopulatesEnvFrom() {
+func (suite *ReconcileDeploymentInternalsTestSuite) TestEnvironmentLabelPopulatesEnvFrom() {
 	instance := baselineSQLiteInstance()
-	instance.Spec.EnvSecretRef = "env-secret"
-	r := newFakeReconciler(instance)
+	env := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "env-secret", Namespace: "default",
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+		},
+	}
+	r := newFakeReconciler(instance, env)
 
 	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security"))
 

@@ -80,12 +80,13 @@ deployed into.
   `operator/test/load/` for a working example: two fully isolated `ThunderIDInstance`s in a
   `loadtest` namespace, reconciled by the same operator alongside instances in `default`.
 - **A `ThunderIDInstance` and everything that belongs to it must share one namespace** — the
-  `Resource`s labeled with its name, and every Secret it names: `spec.envSecretRef`,
-  `spec.config.database.secretRef`, `spec.config.email.secretRef` (hand-written or, for
-  `envSecretRef`, produced by an `Environment`). The operator resolves a `Resource`'s owning
-  instance by looking it up **in the `Resource`'s own namespace** — there's no cross-namespace
-  reference. Splitting an instance's objects across namespaces just means the `Resource`s never
-  find their instance; splitting a Secret from its instance means the pod can't find *it* either —
+  `Resource`s labeled with its name, the `Environment` (if any) labeled with its name, and every
+  Secret named directly in its spec: `spec.config.database.secretRef`,
+  `spec.config.email.secretRef` (hand-written, same rule). The operator resolves a `Resource`'s or
+  `Environment`'s owning instance by looking it up **in the `Resource`'s/`Environment`'s own
+  namespace** — there's no cross-namespace reference. Splitting an instance's objects across
+  namespaces just means the `Resource`s/`Environment` never find their instance; splitting a
+  Secret from its instance means the pod can't find *it* either —
   `envFrom`/Secret volume mounts are namespace-scoped in Kubernetes itself, not an operator
   limitation. A Secret in the wrong namespace fails the pod with `CreateContainerConfigError`, not
   a `kubectl apply`-time error, so it's easy to miss — see
@@ -254,7 +255,7 @@ The top-level resource. Creates and manages a `Deployment`, `Service`, and (opti
 | `spec.image` | Yes | ThunderID container image |
 | `spec.domain` | No | Externally-reachable hostname. When set, creates an `Ingress` (`Host: spec.domain`, TLS via `spec.tlsSecret` if set) so ThunderID is reachable without `kubectl port-forward` — e.g. a real deployment behind real DNS. When unset (the default — every local/dev workflow in this repo uses this), no `Ingress` is created; reach ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead |
 | `spec.resourcesConfigMap` | No | ConfigMap containing *additional* base resources YAML, seeded alongside the image's own built-in defaults (default OU, user types, flows). Not required for normal use |
-| `spec.envSecretRef` | No | Secret whose keys are mounted as environment variables on the ThunderID container — see [Env vars & `{{.VAR}}` placeholders](#env-vars--var-placeholders) below |
+| *(none — see `Environment`)* | — | Environment variables come from whichever `Environment` in this namespace is labeled `thunderid.io/instance: <this instance's name>`, not a spec field — see [Env vars & `{{.VAR}}` placeholders](#env-vars--var-placeholders) below |
 | `spec.config.database` | See note | Mirrors ThunderID's own `database:` section 1:1 — four independent scopes (`config`, `runtimeTransient`, `entity`, `runtimePersistent`), each with `type: sqlite` (default) or `type: postgres` and a matching `sqlite:`/`postgres:` block. Unset means the image's built-in sqlite defaults for all four. See [Database](#database) below. Unless every scope is `type: postgres`, `spec.dataVolumeSize` **must** be set — a `ThunderIDInstance` with neither is rejected |
 | `spec.config.database.secretRef` | No | Required when any scope's `type` is `postgres`: name of the Secret holding the `password` key, shared across every postgres scope |
 | `spec.tlsSecret` | No | Kubernetes Secret name for TLS |
@@ -473,9 +474,23 @@ spec:
 
 Any field, in any `resource_type` — a user's `credentials.password`, an application's OAuth `clientSecret`, anything — can hold a `{{.VAR}}` token instead of a literal value, so the CR itself never holds the literal secret. ThunderID's own live `resources.yaml` loader resolves these at pod **startup** against the process environment — the same mechanism ThunderID's own bundled bootstrap templates use, just applied to every declarative resource this operator mounts, not only its own bootstrap-time ones.
 
-`spec.envSecretRef` on the `ThunderIDInstance` names a single Secret in the same namespace; every key in it becomes an environment variable on the ThunderID container via `envFrom`. The operator only ever mounts this Secret whole — it never creates, reads individual keys from, or generates values into it. Two ways to author it, both producing exactly the same Secret and both fully supported:
+A `ThunderIDInstance` auto-discovers its env Secret the same way a `Resource` finds its owning instance, just in reverse: whichever `Environment` in the instance's namespace carries the label `thunderid.io/instance: <instance name>` is the one whose Secret gets mounted whole via `envFrom`. There's no field on `ThunderIDInstanceSpec` naming it — the reference lives on the `Environment` side. At most one `Environment` may carry a given instance's label; more than one is a config error surfaced as an `InvalidSpec` event rather than picking one arbitrarily. The operator only ever mounts this Secret whole — it never creates, reads individual keys from, or generates values into it. Two ways to author it, both producing exactly the same Secret and both fully supported:
 
-**Hand-write the Secret directly:**
+**Apply an `Environment`** — a declarative CR: the operator syncs `spec.env` into a Secret of the same name, then overwrites each synced key's value in `spec.env` with a masked marker (`thunderid-masked:<up to 4 leading chars>****:len=<n>`) so the plaintext is never visible again via `kubectl get/describe environment`. The object itself is never deleted — `status.keys` lists which keys are currently synced. To change a value later, re-apply with new plaintext for just that key; `kubectl apply`'s 3-way merge leaves already-masked sibling keys untouched. The plaintext briefly exists in the `Environment` object's own `spec` in etcd before it's masked — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for that short window. **Always apply `Environment` with `kubectl apply --server-side`**, never plain `kubectl apply` — plain apply copies the whole manifest, plaintext included, into the object's `last-applied-configuration` annotation, bypassing the masking entirely (see `operator/gitops/README.md`). Never put `Environment` under GitOps (Flux) management — a continuously-reconciling GitOps tool will fight the masking:
+```yaml
+apiVersion: apps.thunderid.io/v1alpha1
+kind: Environment
+metadata:
+  name: thunderid-env
+  namespace: default
+  labels:
+    thunderid.io/instance: thunderid-prod
+spec:
+  env:
+    ADMIN2_PASSWORD: change-me
+```
+
+**Or hand-write the Secret directly**, plus a thin `Environment` stub to carry the label (discovery is purely label-based, so even a hand-written Secret needs an `Environment` object pointing at it — its own `spec.env` stays empty and the controller adopts the existing Secret without ever touching its contents):
 ```yaml
 apiVersion: v1
 kind: Secret
@@ -485,31 +500,17 @@ metadata:
 type: Opaque
 stringData:
   ADMIN2_PASSWORD: change-me
-```
-
-**Or apply an `Environment`** — a declarative CR: the operator syncs `spec.env` into a Secret of the same name, then overwrites each synced key's value in `spec.env` with a masked marker (`thunderid-masked:<up to 4 leading chars>****:len=<n>`) so the plaintext is never visible again via `kubectl get/describe environment`. The object itself is never deleted — `status.keys` lists which keys are currently synced. To change a value later, re-apply with new plaintext for just that key; `kubectl apply`'s 3-way merge leaves already-masked sibling keys untouched. The plaintext briefly exists in the `Environment` object's own `spec` in etcd before it's masked — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for that short window. **Always apply `Environment` with `kubectl apply --server-side`**, never plain `kubectl apply` — plain apply copies the whole manifest, plaintext included, into the object's `last-applied-configuration` annotation, bypassing the masking entirely (see `operator/gitops/README.md`). Never put `Environment` under GitOps (Flux) management — a continuously-reconciling GitOps tool will fight the masking:
-```yaml
+---
 apiVersion: apps.thunderid.io/v1alpha1
 kind: Environment
 metadata:
   name: thunderid-env
   namespace: default
-spec:
-  env:
-    ADMIN2_PASSWORD: change-me
+  labels:
+    thunderid.io/instance: thunderid-prod
 ```
 
-Either way, point the instance at the resulting Secret and reference the key from a CR:
-```yaml
-apiVersion: apps.thunderid.io/v1alpha1
-kind: ThunderIDInstance
-metadata:
-  name: thunderid-prod
-spec:
-  envSecretRef: thunderid-env
-  # ...
-```
-
+Either way, reference the key from a `Resource`:
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
 kind: Resource
@@ -523,7 +524,7 @@ spec:
     password: '{{.ADMIN2_PASSWORD}}'
 ```
 
-A `{{.VAR}}` token with no matching key in `envSecretRef`'s Secret isn't caught at `kubectl apply` time — ThunderID's own boot fails with a clear `environment variable ADMIN2_PASSWORD is not set` error, surfaced the same way any other bootstrap failure is (see [Checking Status](#checking-status)).
+A `{{.VAR}}` token with no matching key in the discovered Secret isn't caught at `kubectl apply` time — ThunderID's own boot fails with a clear `environment variable ADMIN2_PASSWORD is not set` error, surfaced the same way any other bootstrap failure is (see [Checking Status](#checking-status)).
 
 ThunderID's declarative loader only reads resources and environment variables at pod **startup** — changing the Secret's content after the fact still requires the ThunderID pod to restart (triggered automatically, the same way editing `spec.config.database`/`spec.config.email` already does) before the new values take effect.
 
@@ -573,10 +574,12 @@ Look at the **Events** section. Event types:
 | `ThunderIDError` | ThunderID rejected the config — APP error code and message are shown |
 | `ThunderIDCrashed` | Pod is in CrashLoopBackOff; no structured error found in logs |
 | `UnknownType` | `spec.resource_type` isn't set, or isn't one this operator maps to a ConfigMap — see the [`resource_type` values](#resource_type-values) table |
+| `InvalidSpec` | `spec.resource_type` couldn't be parsed out of `spec` at all |
+| `SyncFailed` | Writing this resource into its ConfigMap failed (e.g. a ConfigMap `Update` conflict) |
 
 > **Tip:** `ThunderIDError` only appears after the pod reaches stable `CrashLoopBackOff`. Wait until `kubectl get pod` shows `CrashLoopBackOff` before running `kubectl describe resource`.
 
-`kubectl get thunderidinstance` additionally shows a `DEGRADED` count summarizing how many dependent `Resource`s (of any `resource_type`) currently have a sync failure, without needing to check each one individually.
+Events are per-object, not merged across `resource_type`s — `kubectl describe resource <name>` only ever shows *that* object's own events, same as before every kind was collapsed into the generic `Resource` CRD (one CR per application/flow/user/etc. still exists, `spec.resource_type` just picks the ConfigMap it renders into). For a combined view across every kind at once, `kubectl describe thunderidinstance <name>` is the place to look: a `SyncFailed` also fires a `ResourceSyncFailed` event on the owning `ThunderIDInstance` (naming the resource and its `resource_type`), so that one object's Events section becomes an aggregate feed of every dependent `Resource`'s sync failures. It additionally shows a `DEGRADED` count summarizing how many dependent `Resource`s (of any `resource_type`) currently have a sync failure, without needing to check each one individually.
 
 ---
 
@@ -626,16 +629,18 @@ kubectl delete pod inspect-image --wait=false
 kubectl logs -n system deployment/controller-manager
 ```
 
-**Cause 2:** `spec.envSecretRef`, `spec.config.database.secretRef`, or `spec.config.email.secretRef`
-names a Secret that doesn't exist **in the instance's own namespace** — see
-[Namespaces](#namespaces). Most often the Secret does exist, just in the wrong namespace (e.g. an
-`Environment`-generated one left in `default` while the instance itself is elsewhere).
+**Cause 2:** The Secret named by whichever `Environment` is labeled for this instance, or by
+`spec.config.database.secretRef`/`spec.config.email.secretRef`, doesn't exist **in the instance's
+own namespace** — see [Namespaces](#namespaces). Most often the Secret does exist, just in the
+wrong namespace (e.g. an `Environment`-generated one left in `default` while the instance itself
+is elsewhere), or the `Environment` is missing its `thunderid.io/instance` label entirely.
 
 **Fix:** `kubectl describe pod <pod>` — look for `CreateContainerConfigError` and a
 `secret "X" not found` message. `kubectl get events` also shows a `CreateContainerConfigError`
 event on the `ThunderIDInstance` naming the missing Secret, and — if a same-named Secret exists
 somewhere else in the cluster — which namespace it's actually in. Move or recreate the Secret in
-the instance's namespace, or fix the `*SecretRef` field.
+the instance's namespace, or fix the `Environment`'s `thunderid.io/instance` label / the
+`*SecretRef` field.
 
 ### HPA stuck, pod never scales up from 0
 

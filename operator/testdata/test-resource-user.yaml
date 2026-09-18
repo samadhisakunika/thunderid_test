@@ -15,4 +15,4 @@ spec:
     family_name: "User_last_name"
     given_name: "User_first_name"
   credentials:
-    password: '{{.TEST_RESOURCE_USER_PASSWORD}}' # resolved from external-pg-instance's spec.envSecretRef Secret at boot — see test-resource-user-secret.yaml
+    password: '{{.TEST_RESOURCE_USER_PASSWORD}}' # resolved from external-pg-instance's env Secret at boot — see test-resource-user-secret.yaml

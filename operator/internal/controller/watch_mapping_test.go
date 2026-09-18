@@ -42,32 +42,31 @@ func TestWatchMappingTestSuite(t *testing.T) {
 	suite.Run(t, new(WatchMappingTestSuite))
 }
 
-func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretNoMatches() {
-	instance := &appsv1alpha1.ThunderIDInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
-		Spec:       appsv1alpha1.ThunderIDInstanceSpec{EnvSecretRef: "other-secret"},
-	}
-	r := newFakeReconciler(instance)
+func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretNoMatchingEnvironment() {
+	r := newFakeReconciler()
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
 
 	reqs := r.instancesForEnvSecret(context.Background(), secret)
 	suite.Empty(reqs)
 }
 
-func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretMatchesByNameAndNamespace() {
-	matching := &appsv1alpha1.ThunderIDInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: "matching", Namespace: "default"},
-		Spec:       appsv1alpha1.ThunderIDInstanceSpec{EnvSecretRef: "env-secret"},
+func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretUnlabeledEnvironmentMapsNothing() {
+	env := &appsv1alpha1.Environment{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
+	r := newFakeReconciler(env)
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
+
+	reqs := r.instancesForEnvSecret(context.Background(), secret)
+	suite.Empty(reqs)
+}
+
+func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretMatchesByLabelOnSameNamedEnvironment() {
+	env := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "env-secret", Namespace: "default",
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "matching"},
+		},
 	}
-	differentNamespace := &appsv1alpha1.ThunderIDInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: "other-ns", Namespace: "other"},
-		Spec:       appsv1alpha1.ThunderIDInstanceSpec{EnvSecretRef: "env-secret"},
-	}
-	notReferencing := &appsv1alpha1.ThunderIDInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: "not-referencing", Namespace: "default"},
-		Spec:       appsv1alpha1.ThunderIDInstanceSpec{EnvSecretRef: "some-other-secret"},
-	}
-	r := newFakeReconciler(matching, differentNamespace, notReferencing)
+	r := newFakeReconciler(env)
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
 
 	reqs := r.instancesForEnvSecret(context.Background(), secret)
@@ -75,20 +74,42 @@ func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretMatchesByNameAndNam
 	suite.Equal("matching", reqs[0].Name)
 }
 
-func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretListErrorReturnsNil() {
-	wantErr := stderrors.New("simulated list failure")
+func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretGetErrorReturnsNil() {
+	wantErr := stderrors.New("simulated get failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
-		List: func(ctx context.Context, c client.WithWatch, l client.ObjectList, opts ...client.ListOption) error {
-			if _, ok := l.(*appsv1alpha1.ThunderIDInstanceList); ok {
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, o client.Object, opts ...client.GetOption) error {
+			if _, ok := o.(*appsv1alpha1.Environment); ok {
 				return wantErr
 			}
-			return c.List(ctx, l, opts...)
+			return c.Get(ctx, key, o, opts...)
 		},
 	})
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
 
 	reqs := r.instancesForEnvSecret(context.Background(), secret)
 	suite.Nil(reqs)
+}
+
+func (suite *WatchMappingTestSuite) TestInstancesForEnvironmentUnlabeledMapsNothing() {
+	r := newFakeReconciler()
+	env := &appsv1alpha1.Environment{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
+
+	reqs := r.instancesForEnvironment(context.Background(), env)
+	suite.Empty(reqs)
+}
+
+func (suite *WatchMappingTestSuite) TestInstancesForEnvironmentLabeledMapsToInstance() {
+	r := newFakeReconciler()
+	env := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "env-secret", Namespace: "default",
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+		},
+	}
+
+	reqs := r.instancesForEnvironment(context.Background(), env)
+	suite.Require().Len(reqs, 1)
+	suite.Equal(types.NamespacedName{Name: "inst", Namespace: "default"}, reqs[0].NamespacedName)
 }
 
 func (suite *WatchMappingTestSuite) TestMapServingPodToInstanceIgnoresNonPodObjects() {
