@@ -212,9 +212,9 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Poll the serving pod's own container status — previously this status was never checked at
-	// all, so a pod wedged on e.g. a missing envSecretRef Secret (CreateContainerConfigError,
-	// never a crash/termination) would sit here reporting Phase=Running forever. See pod_health.go
-	// for what diagnosePod/diagnoseMissingSecret actually detect.
+	// all, so a pod wedged on e.g. a missing env Secret (CreateContainerConfigError, never a
+	// crash/termination) would sit here reporting Phase=Running forever. See pod_health.go for
+	// what diagnosePod/diagnoseMissingSecret actually detect.
 	phase := "Running"
 	var healthReason, healthMessage string
 	podList := &corev1.PodList{}
@@ -297,34 +297,47 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// only updates status, which never bumps generation. reconcileBootstrapJob needs to see
 		// that transition to retry a failed bootstrap automatically.
 		Owns(&batchv1.Job{}).
-		// Not Owns(): spec.envSecretRef names a Secret the instance doesn't own (the caller
-		// authors it directly, see EnvSecretRef's doc comment), so there's no owner reference to
-		// follow. Editing its content alone doesn't touch the ThunderIDInstance object itself —
-		// without this, resolveEnvSecretHash's new value would only ever be picked up by some
-		// unrelated reconcile trigger, not promptly when the Secret you actually changed changes.
+		// Not Owns(): the instance doesn't own its env Secret (an Environment authors it, or a
+		// human hand-writes it directly — see Environment's doc comment), so there's no owner
+		// reference to follow. Editing the Secret's content alone doesn't touch either the
+		// Environment or the ThunderIDInstance object — without this, resolveEnvSecretHash's new
+		// value would only ever be picked up by some unrelated reconcile trigger, not promptly
+		// when the Secret you actually changed changes.
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvSecret)).
+		// The label itself (not just the Secret's content) is what wires an Environment into an
+		// instance's envFrom — adding, removing, or repointing the thunderid.io/instance label
+		// needs to reach the instance just as promptly as a content change does. Update events
+		// are mapped for both the old and new object, so repointing the label from instance A to
+		// B correctly reconciles both.
+		Watches(&appsv1alpha1.Environment{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvironment)).
 		Named("thunderidinstance").
 		Complete(r)
 }
 
-// instancesForEnvSecret maps a Secret change to every ThunderIDInstance whose spec.envSecretRef
-// names it.
-func (r *ThunderIDInstanceReconciler) instancesForEnvSecret(ctx context.Context, obj client.Object) []reconcile.Request {
-	// List every ThunderIDInstance in this namespace.
-	list := &appsv1alpha1.ThunderIDInstanceList{}
-	if err := r.List(ctx, list, client.InNamespace(obj.GetNamespace())); err != nil {
+// instancesForEnvironment maps an Environment to the ThunderIDInstance named by its
+// thunderid.io/instance label, if any.
+func (r *ThunderIDInstanceReconciler) instancesForEnvironment(_ context.Context, obj client.Object) []reconcile.Request {
+	instanceName, ok := obj.GetLabels()[appsv1alpha1.InstanceRefLabel]
+	if !ok || instanceName == "" {
 		return nil
 	}
-	// Collect the ones whose spec.envSecretRef names this Secret.
-	var reqs []reconcile.Request
-	for _, instance := range list.Items {
-		if instance.Spec.EnvSecretRef == obj.GetName() {
-			reqs = append(reqs, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace},
-			})
-		}
+	return []reconcile.Request{
+		{NamespacedName: types.NamespacedName{Name: instanceName, Namespace: obj.GetNamespace()}},
 	}
-	return reqs
+}
+
+// instancesForEnvSecret maps a Secret change to the ThunderIDInstance labeled on the Environment
+// of the same name — an Environment's Secret is always same-named as it (see
+// environment_controller.go), so this just re-Gets that Environment and reuses
+// instancesForEnvironment's label lookup. A hand-written Secret with no matching Environment
+// object maps to nothing: without an Environment to carry the label, there's no instance to
+// discover it from a bare Secret change alone (see Environment's doc comment on adopting one).
+func (r *ThunderIDInstanceReconciler) instancesForEnvSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	env := &appsv1alpha1.Environment{}
+	if err := r.Get(ctx, types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}, env); err != nil {
+		return nil
+	}
+	return r.instancesForEnvironment(ctx, env)
 }
 
 // mapServingPodToInstance handles a freshly (re)created serving pod: if this instance's
@@ -450,7 +463,7 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	}
 	baseResourcesContent = resourcesContent
 
-	// Append custom resources from each sub-controller's ConfigMap into the same resources.yaml
+	// Append custom resources from each resource kind's ConfigMap into the same resources.yaml
 	// so ThunderID loads them in a single pass on startup — resourceKinds (resource_controller.go)
 	// is the single registry of which ConfigMap/key each resource_type lives in, and its order.
 	for _, k := range resourceKinds {
@@ -462,9 +475,11 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	}
 
 	// Assemble the ConfigMap's data.
+	// First add deployment config.
 	data := map[string]string{
 		deploymentYAMLKey: configContent,
 	}
+	// Then add resources.yaml if non-empty
 	if resourcesContent != "" {
 		data["resources.yaml"] = resourcesContent
 	}
@@ -747,37 +762,40 @@ var bootstrapPermanentErrorPatterns = []struct {
 // fall back to "unknown, maybe transient" — masking a real, immediately-diagnosable error.
 func (r *ThunderIDInstanceReconciler) bootstrapPermanentFailureReason(ctx context.Context, job *batchv1.Job) string {
 	log := logf.FromContext(ctx)
-	// Find the bootstrap Job's pod.
+	// Find the bootstrap Job's pod. The Job itself has no direct pointer to its pod, only label
+	// matching does; the attempt label pins this to the pod from *this* attempt, not a stale one
+	// left behind by an earlier retry of the same Job.
 	selector := fmt.Sprintf("app=%s,thunderid.io/role=bootstrap,%s=%s",
 		job.Labels["app"], bootstrapAttemptLabel, job.Labels[bootstrapAttemptLabel])
 	pods, err := r.KubeClient.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil || len(pods.Items) == 0 {
-		log.V(1).Info("could not find the bootstrap Job's pod to check for a permanent failure reason, treating as possibly transient", "job", job.Name)
+		log.V(1).Info("could not find the bootstrap Job's pod to check for a permanent failure reason, treating as possibly transient", "job", job.Name, "error", err)
 		return ""
 	}
 
-	// Fetch and read its logs.
+	// Fetch and read its logs. GetLogs only builds the request; Stream is what actually calls the
+	// API server and hands back a readable stream, which ReadAll then drains into memory below.
 	req := r.KubeClient.CoreV1().Pods(job.Namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: bootstrapContainerName})
 	rc, err := req.Stream(ctx)
 	if err != nil {
-		log.V(1).Info("could not fetch bootstrap pod logs, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
+		log.V(1).Info("could not fetch bootstrap pod logs; retrying", "job", job.Name, "pod", pods.Items[0].Name, "error", err)
 		return ""
 	}
 	defer func() { _ = rc.Close() }()
+	// Read the logs stream into []byte so we can run regexes against it. This is safe because the bootstrap pod is a one-shot Job that runs setup.sh and exits, so its logs are bounded in size (a few KB at most).
 	data, err := io.ReadAll(rc)
 	if err != nil {
-		log.V(1).Info("could not read bootstrap pod logs, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
+		log.V(1).Info("could not read bootstrap pod logs; retrying", "job", job.Name, "pod", pods.Items[0].Name, "error", err)
 		return ""
 	}
 
 	// Check the logs against known permanent-failure patterns.
-	logs := string(data)
 	for _, p := range bootstrapPermanentErrorPatterns {
-		if p.pattern.MatchString(logs) {
+		if p.pattern.Match(data) {
 			return p.reason
 		}
 	}
-	log.V(1).Info("bootstrap pod logs matched no known permanent-failure pattern, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
+	log.V(1).Info("no known permanent-failure pattern matched; could be transient; retrying", "job", job.Name, "pod", pods.Items[0].Name)
 	return ""
 }
 
@@ -787,9 +805,7 @@ func (r *ThunderIDInstanceReconciler) bootstrapPermanentFailureReason(ctx contex
 func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, jobName string,
 	securitySecretName string, attempt int) error {
-	// Safe to run unconditionally on every Job execution
-	// (unlike the serving pod, which never runs setup.sh — see reconcileDeployment): this Job
-	// itself is already the "run exactly once per resource-hash-change" gate, so setup.sh here
+	// This Job  itself is already the "run exactly once per resource-hash-change" gate, so setup.sh here
 	// only ever runs when reconcileBootstrapJob decided a (re)bootstrap is actually needed, never
 	// on an ordinary pod restart or HPA scale-out of the serving Deployment.
 	//
@@ -825,12 +841,14 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 		Name:      volumeNameSecrets,
 		MountPath: secretsMountPath,
 	})
+	// Add the volume mount for the database password secret.
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name:      volumeNameDatabase,
 		MountPath: "/opt/thunderid/" + databasePasswordMountPath,
 		SubPath:   databaseSecretKeyPassword,
 		ReadOnly:  true,
 	})
+	// Add the volume mount for the email password secret, if email auth is enabled.
 	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      volumeNameEmail,
@@ -840,7 +858,7 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 		})
 	}
 
-	// Build the volumes.
+	// Construct the list of volume sources to mount into the Job's pod.
 	defaultMode := int32(0644)
 	volumes := []corev1.Volume{
 		{
@@ -1043,13 +1061,18 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	// to persist, so spec.dataVolumeSize (and the once-only setup.sh gating below) is ignored.
 	hasDataVolume := instance.Spec.DataVolumeSize != "" && !usingPostgres(instance)
 
-	// Every key in spec.envSecretRef's Secret becomes an env var on the container — resolving
-	// whatever {{.VAR}} tokens a Resource's spec holds is entirely ThunderID's own job at boot,
-	// not the operator's; see EnvSecretRef's doc comment.
+	// Every key in the Secret named by whichever Environment is labeled for this instance (see
+	// findEnvironment) becomes an env var on the container — resolving whatever {{.VAR}} tokens a
+	// Resource's spec holds is entirely ThunderID's own job at boot, not the operator's. Reconcile
+	// already called findEnvironment once via resolveEnvSecretHash and would have returned early
+	// on an ambiguous label match, so any error here can't actually happen in practice; it's
+	// still handled rather than ignored since reconcileDeployment already returns error.
 	var envFrom []corev1.EnvFromSource
-	if instance.Spec.EnvSecretRef != "" {
+	if env, err := findEnvironment(ctx, r.Client, instance); err != nil {
+		return err
+	} else if env != nil {
 		envFrom = []corev1.EnvFromSource{
-			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: instance.Spec.EnvSecretRef}}},
+			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: env.Name}}},
 		}
 	}
 
@@ -1639,6 +1662,8 @@ func (r *ThunderIDInstanceReconciler) reconcileHPA(ctx context.Context, instance
 
 	// Build the desired HPA spec.
 	as := instance.Spec.AutoScaling
+	// Convert the CPU/memory percentages into HPA MetricSpecs, defaulting to 80% CPU if neither is set.
+	// These metrics are what k8s uses to decide when to scale up/down the Deployment, so they must be set even if the user didn't specify any.
 	metrics := buildMetrics(as)
 
 	desired := &autoscalingv2.HorizontalPodAutoscaler{

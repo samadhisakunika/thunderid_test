@@ -249,16 +249,17 @@ type ThunderIDInstanceSpec struct {
 	// +optional
 	ResourcesConfigMap string `json:"resourcesConfigMap,omitempty"`
 
-	// EnvSecretRef names a Secret in this namespace whose keys are mounted as environment
-	// variables on the ThunderID container. Any field in any Resource's spec — a user's
-	// password, an application's OAuth clientSecret, anything — can hold a `{{.KEY}}` token
-	// referencing one of those keys; ThunderID's own live resources.yaml loader resolves it at
-	// boot. Wholly user-authored: the operator never creates, inspects, or
-	// generates values into this Secret, only mounts it whole. A `{{.VAR}}` token with no
-	// matching key fails ThunderID's own boot with a clear "environment variable X is not set"
-	// error — nothing the operator needs to validate ahead of time.
-	// +optional
-	EnvSecretRef string `json:"envSecretRef,omitempty"`
+	// Environment variables mounted on the ThunderID container come from whichever Environment
+	// (or Environment-adopted plain Secret) in this namespace carries the label
+	// `thunderid.io/instance: <this instance's name>` — see EnvironmentSpec's doc comment and
+	// findEnvironment in env_secret.go. There is no field here naming it: the reference lives on
+	// the Environment side, the same way a Resource finds its owning instance. Any field in any
+	// Resource's spec — a user's password, an application's OAuth clientSecret, anything — can
+	// hold a `{{.KEY}}` token referencing one of that Secret's keys; ThunderID's own live
+	// resources.yaml loader resolves it at boot. A `{{.VAR}}` token with no matching key fails
+	// ThunderID's own boot with a clear "environment variable X is not set" error — nothing the
+	// operator needs to validate ahead of time. At most one Environment may carry a given
+	// instance's label; more than one is a config error surfaced as an InvalidSpec event.
 
 	// DataVolumeSize, when set (e.g. "1Gi"), provisions a ReadWriteOnce PersistentVolumeClaim
 	// mounted at /opt/thunderid/repository/database (where the SQLite files live) and gates

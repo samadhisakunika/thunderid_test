@@ -45,11 +45,37 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashUnset() {
 }
 
 func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashMissingSecret() {
-	r := newFakeReconciler()
 	instance := &appsv1alpha1.ThunderIDInstance{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
-		Spec:       appsv1alpha1.ThunderIDInstanceSpec{EnvSecretRef: "missing-secret"},
+		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
 	}
+	env := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "missing-secret", Namespace: "default",
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+		},
+	}
+	r := newFakeReconciler(env)
+	_, err := r.resolveEnvSecretHash(context.Background(), instance)
+	suite.Error(err)
+}
+
+func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashMultipleEnvironmentsErrors() {
+	instance := &appsv1alpha1.ThunderIDInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
+	}
+	envA := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "env-a", Namespace: "default",
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+		},
+	}
+	envB := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "env-b", Namespace: "default",
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+		},
+	}
+	r := newFakeReconciler(envA, envB)
 	_, err := r.resolveEnvSecretHash(context.Background(), instance)
 	suite.Error(err)
 }
@@ -59,10 +85,15 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashStableFormat() {
 		ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"},
 		Data:       map[string][]byte{"A": []byte("1"), "B": []byte("2")},
 	}
-	r := newFakeReconciler(secret)
+	env := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "env-secret", Namespace: "default",
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+		},
+	}
+	r := newFakeReconciler(secret, env)
 	instance := &appsv1alpha1.ThunderIDInstance{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
-		Spec:       appsv1alpha1.ThunderIDInstanceSpec{EnvSecretRef: "env-secret"},
+		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
 	}
 	hash, err := r.resolveEnvSecretHash(context.Background(), instance)
 	suite.Require().NoError(err)
@@ -75,11 +106,16 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashChangesWithContent() {
 			ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"},
 			Data:       data,
 		}
-		return newFakeReconciler(secret)
+		env := &appsv1alpha1.Environment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "env-secret", Namespace: "default",
+				Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+			},
+		}
+		return newFakeReconciler(secret, env)
 	}
 	instance := &appsv1alpha1.ThunderIDInstance{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
-		Spec:       appsv1alpha1.ThunderIDInstanceSpec{EnvSecretRef: "env-secret"},
+		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
 	}
 
 	r1 := build(map[string][]byte{"KEY": []byte("value1")})

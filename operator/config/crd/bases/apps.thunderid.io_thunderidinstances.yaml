@@ -423,17 +423,6 @@ spec:
                   this repo actually uses), no Ingress is created and ThunderID is only reachable via its
                   Service (kubectl port-forward svc/<name> 8090:8090 -> https://localhost:8090).
                 type: string
-              envSecretRef:
-                description: |-
-                  EnvSecretRef names a Secret in this namespace whose keys are mounted as environment
-                  variables on the ThunderID container. Any field in any Resource's spec — a user's
-                  password, an application's OAuth clientSecret, anything — can hold a `{{.KEY}}` token
-                  referencing one of those keys; ThunderID's own live resources.yaml loader resolves it at
-                  boot. Wholly user-authored: the operator never creates, inspects, or
-                  generates values into this Secret, only mounts it whole. A `{{.VAR}}` token with no
-                  matching key fails ThunderID's own boot with a clear "environment variable X is not set"
-                  error — nothing the operator needs to validate ahead of time.
-                type: string
               image:
                 type: string
               replicas:

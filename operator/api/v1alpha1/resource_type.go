@@ -63,7 +63,8 @@ type ResourceStatus struct {
 // to identify which resource kind a given YAML block in resources.yaml represents. Every other
 // key, including ones this operator has never heard of, passes through completely untouched —
 // including a `{{.VAR}}` token in any field, resolved by ThunderID's own live resources.yaml
-// loader at boot against whatever the owning ThunderIDInstance's spec.envSecretRef Secret provides.
+// loader at boot against whatever Secret the Environment labeled thunderid.io/instance=<the
+// owning ThunderIDInstance> provides.
 type Resource struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

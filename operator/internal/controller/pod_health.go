@@ -81,19 +81,20 @@ func diagnosePod(pod *corev1.Pod) (unhealthy bool, issue podIssue) {
 }
 
 // diagnoseMissingSecret looks for the specific, easy-to-hit cause behind a CreateContainerConfigError:
-// a Secret name in instance's own spec (envSecretRef, config.database.secretRef,
-// config.email.secretRef) that exists somewhere in the cluster, just not in instance's namespace.
-// Kubelet's own "secret \"X\" not found" message only ever means "not found in this pod's
-// namespace" — it has no way to know whether X exists elsewhere, so this is the only place that
-// can tell a genuinely-missing Secret apart from one that's simply in the wrong namespace.
+// a Secret name relevant to instance (the one named by whichever Environment is labeled for it,
+// config.database.secretRef, config.email.secretRef) that exists somewhere in the cluster, just
+// not in instance's namespace. Kubelet's own "secret \"X\" not found" message only ever means
+// "not found in this pod's namespace" — it has no way to know whether X exists elsewhere, so this
+// is the only place that can tell a genuinely-missing Secret apart from one that's simply in the
+// wrong namespace.
 func diagnoseMissingSecret(ctx context.Context, c client.Client, instance *appsv1alpha1.ThunderIDInstance, issue podIssue) string {
 	if issue.reason != "CreateContainerConfigError" {
 		return ""
 	}
 
 	var names []string
-	if instance.Spec.EnvSecretRef != "" {
-		names = append(names, instance.Spec.EnvSecretRef)
+	if env, err := findEnvironment(ctx, c, instance); err == nil && env != nil {
+		names = append(names, env.Name)
 	}
 	if instance.Spec.Config.Database != nil && instance.Spec.Config.Database.SecretRef != "" {
 		names = append(names, instance.Spec.Config.Database.SecretRef)
@@ -114,8 +115,8 @@ func diagnoseMissingSecret(ctx context.Context, c client.Client, instance *appsv
 		for _, s := range all.Items {
 			if s.Name == name && s.Namespace != instance.Namespace {
 				return fmt.Sprintf(
-					"Secret %q not found in namespace %q, but a Secret with that name exists in namespace %q — Secrets must be in the same namespace as the instance (check envSecretRef, database.secretRef, email.secretRef)",
-					name, instance.Namespace, s.Namespace)
+					"Secret %q not found in namespace %q, but a Secret with that name exists in namespace %q — Secrets must be in the same namespace as the instance (check the Environment labeled thunderid.io/instance=%s, database.secretRef, email.secretRef)",
+					name, instance.Namespace, s.Namespace, instance.Name)
 			}
 		}
 	}
