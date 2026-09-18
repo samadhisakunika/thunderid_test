@@ -450,7 +450,7 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	}
 	baseResourcesContent = resourcesContent
 
-	// Append custom resources from each sub-controller's ConfigMap into the same resources.yaml
+	// Append custom resources from each resource kind's ConfigMap into the same resources.yaml
 	// so ThunderID loads them in a single pass on startup — resourceKinds (resource_controller.go)
 	// is the single registry of which ConfigMap/key each resource_type lives in, and its order.
 	for _, k := range resourceKinds {
@@ -462,9 +462,11 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	}
 
 	// Assemble the ConfigMap's data.
+	// First add deployment config.
 	data := map[string]string{
 		deploymentYAMLKey: configContent,
 	}
+	// Then add resources.yaml if non-empty
 	if resourcesContent != "" {
 		data["resources.yaml"] = resourcesContent
 	}
@@ -747,37 +749,40 @@ var bootstrapPermanentErrorPatterns = []struct {
 // fall back to "unknown, maybe transient" — masking a real, immediately-diagnosable error.
 func (r *ThunderIDInstanceReconciler) bootstrapPermanentFailureReason(ctx context.Context, job *batchv1.Job) string {
 	log := logf.FromContext(ctx)
-	// Find the bootstrap Job's pod.
+	// Find the bootstrap Job's pod. The Job itself has no direct pointer to its pod, only label
+	// matching does; the attempt label pins this to the pod from *this* attempt, not a stale one
+	// left behind by an earlier retry of the same Job.
 	selector := fmt.Sprintf("app=%s,thunderid.io/role=bootstrap,%s=%s",
 		job.Labels["app"], bootstrapAttemptLabel, job.Labels[bootstrapAttemptLabel])
 	pods, err := r.KubeClient.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil || len(pods.Items) == 0 {
-		log.V(1).Info("could not find the bootstrap Job's pod to check for a permanent failure reason, treating as possibly transient", "job", job.Name)
+		log.V(1).Info("could not find the bootstrap Job's pod to check for a permanent failure reason, treating as possibly transient", "job", job.Name, "error", err)
 		return ""
 	}
 
-	// Fetch and read its logs.
+	// Fetch and read its logs. GetLogs only builds the request; Stream is what actually calls the
+	// API server and hands back a readable stream, which ReadAll then drains into memory below.
 	req := r.KubeClient.CoreV1().Pods(job.Namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: bootstrapContainerName})
 	rc, err := req.Stream(ctx)
 	if err != nil {
-		log.V(1).Info("could not fetch bootstrap pod logs, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
+		log.V(1).Info("could not fetch bootstrap pod logs; retrying", "job", job.Name, "pod", pods.Items[0].Name, "error", err)
 		return ""
 	}
 	defer func() { _ = rc.Close() }()
+	// Read the logs stream into []byte so we can run regexes against it. This is safe because the bootstrap pod is a one-shot Job that runs setup.sh and exits, so its logs are bounded in size (a few KB at most).
 	data, err := io.ReadAll(rc)
 	if err != nil {
-		log.V(1).Info("could not read bootstrap pod logs, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
+		log.V(1).Info("could not read bootstrap pod logs; retrying", "job", job.Name, "pod", pods.Items[0].Name, "error", err)
 		return ""
 	}
 
 	// Check the logs against known permanent-failure patterns.
-	logs := string(data)
 	for _, p := range bootstrapPermanentErrorPatterns {
-		if p.pattern.MatchString(logs) {
+		if p.pattern.Match(data) {
 			return p.reason
 		}
 	}
-	log.V(1).Info("bootstrap pod logs matched no known permanent-failure pattern, treating as possibly transient", "job", job.Name, "pod", pods.Items[0].Name)
+	log.V(1).Info("no known permanent-failure pattern matched; could be transient; retrying", "job", job.Name, "pod", pods.Items[0].Name)
 	return ""
 }
 
@@ -787,9 +792,7 @@ func (r *ThunderIDInstanceReconciler) bootstrapPermanentFailureReason(ctx contex
 func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, jobName string,
 	securitySecretName string, attempt int) error {
-	// Safe to run unconditionally on every Job execution
-	// (unlike the serving pod, which never runs setup.sh — see reconcileDeployment): this Job
-	// itself is already the "run exactly once per resource-hash-change" gate, so setup.sh here
+	// This Job  itself is already the "run exactly once per resource-hash-change" gate, so setup.sh here
 	// only ever runs when reconcileBootstrapJob decided a (re)bootstrap is actually needed, never
 	// on an ordinary pod restart or HPA scale-out of the serving Deployment.
 	//
@@ -825,12 +828,14 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 		Name:      volumeNameSecrets,
 		MountPath: secretsMountPath,
 	})
+	// Add the volume mount for the database password secret.
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name:      volumeNameDatabase,
 		MountPath: "/opt/thunderid/" + databasePasswordMountPath,
 		SubPath:   databaseSecretKeyPassword,
 		ReadOnly:  true,
 	})
+	// Add the volume mount for the email password secret, if email auth is enabled.
 	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      volumeNameEmail,
@@ -840,7 +845,7 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 		})
 	}
 
-	// Build the volumes.
+	// Construct the list of volume sources to mount into the Job's pod.
 	defaultMode := int32(0644)
 	volumes := []corev1.Volume{
 		{
@@ -1639,6 +1644,8 @@ func (r *ThunderIDInstanceReconciler) reconcileHPA(ctx context.Context, instance
 
 	// Build the desired HPA spec.
 	as := instance.Spec.AutoScaling
+	// Convert the CPU/memory percentages into HPA MetricSpecs, defaulting to 80% CPU if neither is set.
+	// These metrics are what k8s uses to decide when to scale up/down the Deployment, so they must be set even if the user didn't specify any.
 	metrics := buildMetrics(as)
 
 	desired := &autoscalingv2.HorizontalPodAutoscaler{
