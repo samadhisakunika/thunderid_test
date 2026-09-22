@@ -126,19 +126,33 @@ func (r *ThunderIDInstanceReconciler) resolveDatabaseConfig(
 	needsPassword := db.Config.Type == databaseTypePostgres || db.RuntimeTransient.Type == databaseTypePostgres ||
 		db.Entity.Type == databaseTypePostgres || db.RuntimePersistent.Type == databaseTypePostgres
 	if needsPassword {
+		// spec.config.database.secretRef, if set, always wins; otherwise fall back to the database
+		// section of the Environment labeled for this instance.
+		resolvedRef, err := resolveSectionSecretRef(ctx, r.Client, instance, db.SecretRef,
+			func(e *appsv1alpha1.Environment) appsv1alpha1.EnvSection { return e.Spec.Database }, "database")
+		if err != nil {
+			return "", "", err
+		}
+		if resolvedRef == "" {
+			return "", "", fmt.Errorf("spec.config.database has a postgres scope but spec.config.database.secretRef is not set and no Environment labeled %s=%s has a database section",
+				appsv1alpha1.InstanceRefLabel, instance.Name)
+		}
+		// Error messages name whichever source actually supplied resolvedRef, so a misconfigured
+		// explicit field and a misconfigured Environment point the user at the right place to fix it.
+		source := fmt.Sprintf("spec.config.database.secretRef %q", resolvedRef)
 		if db.SecretRef == "" {
-			return "", "", fmt.Errorf("spec.config.database has a postgres scope but spec.config.database.secretRef is not set")
+			source = fmt.Sprintf("Environment's database Secret %q", resolvedRef)
 		}
 		secret := &corev1.Secret{}
 		if err := r.Get(ctx, types.NamespacedName{
-			Name: db.SecretRef, Namespace: instance.Namespace,
+			Name: resolvedRef, Namespace: instance.Namespace,
 		}, secret); err != nil {
-			return "", "", fmt.Errorf("spec.config.database.secretRef %q: %w", db.SecretRef, err)
+			return "", "", fmt.Errorf("%s: %w", source, err)
 		}
 		if string(secret.Data[databaseSecretKeyPassword]) == "" {
-			return "", "", fmt.Errorf("spec.config.database.secretRef %q is missing required key: password", db.SecretRef)
+			return "", "", fmt.Errorf("%s is missing required key: password", source)
 		}
-		secretName = db.SecretRef
+		secretName = resolvedRef
 	}
 
 	scopes := []struct {

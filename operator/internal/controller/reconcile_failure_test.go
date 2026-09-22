@@ -81,9 +81,10 @@ func (suite *ReconcileFailureTestSuite) TestResolveEnvSecretHashErrorPropagates(
 	instance := baselineSQLiteInstance()
 	env := &appsv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "missing-secret", Namespace: instance.Namespace,
+			Name: "env", Namespace: instance.Namespace,
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: instance.Name},
 		},
+		Spec: appsv1alpha1.EnvironmentSpec{Credentials: appsv1alpha1.EnvSection{SecretRef: "missing-secret"}},
 	}
 	r := newFakeReconciler(instance, env)
 	r.Recorder = fakeRecorder()

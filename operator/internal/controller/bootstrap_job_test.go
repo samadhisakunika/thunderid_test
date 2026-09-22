@@ -57,7 +57,7 @@ func TestBootstrapJobTestSuite(t *testing.T) {
 func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobSkippedWithoutPostgres() {
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
 	r := newFakeReconciler(instance)
-	suite.NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security"))
+	suite.NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security", "", ""))
 
 	var jobs batchv1.JobList
 	suite.Require().NoError(r.List(context.Background(), &jobs))
@@ -72,7 +72,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobStillRunningIsLeftA
 	}}
 	r := newFakeReconciler(instance, existing)
 
-	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security"))
+	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security", "db-secret", ""))
 
 	var after batchv1.Job
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst-bootstrap-seed1", Namespace: "default"}, &after))
@@ -99,7 +99,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobPermanentFailureSto
 	cs.PrependReactor("get", "pods", podLogsReactor(`pq: password authentication failed for user "u"`, nil))
 	r.KubeClient = cs
 
-	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security"))
+	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security", "db-secret", ""))
 
 	suite.Require().NotEmpty(fr.Events)
 	suite.Contains(<-fr.Events, "will not be retried automatically")
@@ -123,7 +123,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobRetryLimitReached()
 	r.Recorder = fr
 	r.KubeClient = k8sfake.NewSimpleClientset() // no matching pod -> bootstrapPermanentFailureReason returns ""
 
-	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security"))
+	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security", "db-secret", ""))
 
 	suite.Require().NotEmpty(fr.Events)
 	suite.Contains(<-fr.Events, "reached the retry limit")
@@ -141,7 +141,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobRetriesBelowLimit()
 	r := newFakeReconciler(instance, failedJob)
 	r.KubeClient = k8sfake.NewSimpleClientset() // no matching pod -> not a permanent failure
 
-	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security"))
+	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security", "db-secret", ""))
 
 	var jobs batchv1.JobList
 	suite.Require().NoError(r.List(context.Background(), &jobs))
@@ -157,7 +157,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobHashChangeReplacesS
 	}}
 	r := newFakeReconciler(instance, staleJob)
 
-	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "new-seed", "inst-security"))
+	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "new-seed", "inst-security", "db-secret", ""))
 
 	var jobs batchv1.JobList
 	suite.Require().NoError(r.List(context.Background(), &jobs))

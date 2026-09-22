@@ -155,6 +155,57 @@ func (suite *SecuritySecretTestSuite) TestReconcileSecuritySecretUserSuppliedMis
 	suite.Contains(err.Error(), "missing required key")
 }
 
+func (suite *SecuritySecretTestSuite) TestReconcileSecuritySecretEnvironmentFallback() {
+	data := map[string][]byte{}
+	for _, key := range securityAllKeys {
+		data[key] = []byte("provided-" + key)
+	}
+	provided := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "env-security", Namespace: "default"},
+		Data:       data,
+	}
+	env := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "env", Namespace: "default",
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+		},
+		Spec: appsv1alpha1.EnvironmentSpec{Security: appsv1alpha1.EnvSection{SecretRef: "env-security"}},
+	}
+	r := newFakeReconciler(provided, env)
+	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
+
+	name, err := r.reconcileSecuritySecret(context.Background(), instance)
+	suite.Require().NoError(err)
+	suite.Equal("env-security", name, "spec.securitySecret unset - falls back to the security section of the Environment instead of auto-generating")
+}
+
+func (suite *SecuritySecretTestSuite) TestReconcileSecuritySecretExplicitFieldWinsOverEnvironment() {
+	explicitData := map[string][]byte{}
+	for _, key := range securityAllKeys {
+		explicitData[key] = []byte("explicit-" + key)
+	}
+	explicit := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "explicit-security", Namespace: "default"},
+		Data:       explicitData,
+	}
+	env := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "env", Namespace: "default",
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+		},
+		Spec: appsv1alpha1.EnvironmentSpec{Security: appsv1alpha1.EnvSection{SecretRef: "env-security"}},
+	}
+	r := newFakeReconciler(explicit, env)
+	instance := &appsv1alpha1.ThunderIDInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
+		Spec:       appsv1alpha1.ThunderIDInstanceSpec{SecuritySecret: "explicit-security"},
+	}
+
+	name, err := r.reconcileSecuritySecret(context.Background(), instance)
+	suite.Require().NoError(err)
+	suite.Equal("explicit-security", name)
+}
+
 func (suite *SecuritySecretTestSuite) TestReconcileSecuritySecretUserSuppliedNotFound() {
 	r := newFakeReconciler()
 	instance := &appsv1alpha1.ThunderIDInstance{

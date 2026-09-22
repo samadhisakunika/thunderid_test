@@ -77,16 +77,29 @@ var securityAllKeys = append(append([]string{}, securityCertMountKeys...), secur
 func (r *ThunderIDInstanceReconciler) reconcileSecuritySecret(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) (string, error) {
 	log := logf.FromContext(ctx)
-	// A user-supplied Secret is used as-is and never generated or modified by the operator —
-	// but it must carry every key our volume mounts reference by name, or the pod will fail to
-	// start with an opaque "references non-existent secret key" event.
-	if instance.Spec.SecuritySecret != "" {
+	// A user-supplied Secret — named directly by spec.securitySecret, or discovered via the
+	// security section of the Environment labeled for this instance when the field is unset — is
+	// used as-is and never generated or modified by the operator, but it must carry every key our
+	// volume mounts reference by name, or the pod will fail to start with an opaque "references
+	// non-existent secret key" event.
+	resolvedName, err := resolveSectionSecretRef(ctx, r.Client, instance, instance.Spec.SecuritySecret,
+		func(e *appsv1alpha1.Environment) appsv1alpha1.EnvSection { return e.Spec.Security }, "security")
+	if err != nil {
+		return "", err
+	}
+	if resolvedName != "" {
+		// Error messages name whichever source actually supplied resolvedName, so a misconfigured
+		// explicit field and a misconfigured Environment point the user at the right place to fix it.
+		source := fmt.Sprintf("spec.securitySecret %q", resolvedName)
+		if instance.Spec.SecuritySecret == "" {
+			source = fmt.Sprintf("Environment's security Secret %q", resolvedName)
+		}
 		provided := &corev1.Secret{}
 		if err := r.Get(ctx, types.NamespacedName{
-			Name: instance.Spec.SecuritySecret, Namespace: instance.Namespace,
+			Name: resolvedName, Namespace: instance.Namespace,
 		}, provided); err != nil {
 			if errors.IsNotFound(err) {
-				return "", fmt.Errorf("spec.securitySecret %q not found", instance.Spec.SecuritySecret)
+				return "", fmt.Errorf("%s not found", source)
 			}
 			return "", err
 		}
@@ -97,17 +110,17 @@ func (r *ThunderIDInstanceReconciler) reconcileSecuritySecret(
 			}
 		}
 		if len(missing) > 0 {
-			return "", fmt.Errorf("spec.securitySecret %q is missing required key(s): %s",
-				instance.Spec.SecuritySecret, strings.Join(missing, ", "))
+			return "", fmt.Errorf("%s is missing required key(s): %s",
+				source, strings.Join(missing, ", "))
 		}
-		log.V(1).Info("using user-supplied security Secret as-is", "name", instance.Spec.SecuritySecret)
-		return instance.Spec.SecuritySecret, nil
+		log.V(1).Info("using user-supplied security Secret as-is", "name", resolvedName)
+		return resolvedName, nil
 	}
 
 	secretName := instance.Name + "-security"
 
 	existing := &corev1.Secret{}
-	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: instance.Namespace}, existing)
+	err = r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: instance.Namespace}, existing)
 	if err == nil {
 		log.V(1).Info("security Secret already exists, reusing (never regenerated - see reconcileSecuritySecret's own doc comment)", "name", secretName)
 		return secretName, nil

@@ -38,7 +38,7 @@ func TestEmailConfigTestSuite(t *testing.T) {
 func (suite *EmailConfigTestSuite) TestResolveEmailConfigUnset() {
 	r := newFakeReconciler()
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	block, err := r.resolveEmailConfig(context.Background(), instance)
+	block, _, err := r.resolveEmailConfig(context.Background(), instance)
 	suite.Require().NoError(err)
 	suite.Empty(block)
 }
@@ -50,7 +50,7 @@ func (suite *EmailConfigTestSuite) TestResolveEmailConfigNoAuthentication() {
 			SMTP: appsv1alpha1.SMTPConfigSpec{Host: "smtp.example.com", Port: 587, FromAddress: "noreply@example.com"},
 		}},
 	}}
-	block, err := r.resolveEmailConfig(context.Background(), instance)
+	block, _, err := r.resolveEmailConfig(context.Background(), instance)
 	suite.Require().NoError(err)
 	suite.Contains(block, `host: "smtp.example.com"`)
 	suite.Contains(block, `port: 587`)
@@ -68,9 +68,42 @@ func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationRequiresS
 			},
 		}},
 	}}
-	_, err := r.resolveEmailConfig(context.Background(), instance)
+	_, _, err := r.resolveEmailConfig(context.Background(), instance)
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "secretRef")
+}
+
+func (suite *EmailConfigTestSuite) TestResolveEmailConfigEnvironmentFallback() {
+	// The smtp section's SecretRef - exercises the hand-written-Secret passthrough path, rather
+	// than a generated Secret.
+	env := &appsv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "env", Namespace: "default",
+			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+		},
+		Spec: appsv1alpha1.EnvironmentSpec{Smtp: appsv1alpha1.EnvSection{SecretRef: "email-env-secret"}},
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "email-env-secret", Namespace: "default"},
+		Data:       map[string][]byte{"password": []byte("hunter2")},
+	}
+	r := newFakeReconciler(secret, env)
+	instance := &appsv1alpha1.ThunderIDInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
+		Spec: appsv1alpha1.ThunderIDInstanceSpec{
+			Config: appsv1alpha1.AppConfigSpec{Email: &appsv1alpha1.EmailSpec{
+				// SecretRef deliberately unset - falls back to the Environment's smtp section.
+				SMTP: appsv1alpha1.SMTPConfigSpec{
+					Host: "smtp.example.com", Port: 587, FromAddress: "noreply@example.com",
+					EnableAuthentication: true,
+				},
+			}},
+		},
+	}
+	block, secretName, err := r.resolveEmailConfig(context.Background(), instance)
+	suite.Require().NoError(err)
+	suite.Equal("email-env-secret", secretName)
+	suite.Contains(block, `password: "file://`+emailPasswordMountPath+`"`)
 }
 
 func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationSecretNotFound() {
@@ -87,7 +120,7 @@ func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationSecretNot
 			}},
 		},
 	}
-	_, err := r.resolveEmailConfig(context.Background(), instance)
+	_, _, err := r.resolveEmailConfig(context.Background(), instance)
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "does-not-exist")
 }
@@ -110,7 +143,7 @@ func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationMissingPa
 			}},
 		},
 	}
-	_, err := r.resolveEmailConfig(context.Background(), instance)
+	_, _, err := r.resolveEmailConfig(context.Background(), instance)
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "missing required key: password")
 }
@@ -133,8 +166,9 @@ func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationSuccess()
 			}},
 		},
 	}
-	block, err := r.resolveEmailConfig(context.Background(), instance)
+	block, secretName, err := r.resolveEmailConfig(context.Background(), instance)
 	suite.Require().NoError(err)
+	suite.Equal("email-secret", secretName)
 	// The literal password never appears - only the file:// reference to its mount path.
 	suite.NotContains(block, "hunter2")
 	suite.Contains(block, `password: "file://`+emailPasswordMountPath+`"`)

@@ -44,28 +44,44 @@ const (
 // spec.config.email is unset, so the template ends up with no email: section at all. The password (when
 // spec.config.email.smtp.enableAuthentication is set) is kept out of the ConfigMap and resolved at
 // runtime via a file:// reference, the same way resolveDatabaseConfig handles the database password.
+// secretName is the Secret actually holding that password — spec.config.email.secretRef if set,
+// else the smtp section of the Environment labeled for this instance, "" if authentication is
+// disabled.
 func (r *ThunderIDInstanceReconciler) resolveEmailConfig(
-	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) (block string, err error) {
+	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) (block string, secretName string, err error) {
 	email := instance.Spec.Config.Email
 	if email == nil {
-		return "", nil
+		return "", "", nil
 	}
 
 	password := ""
 	if email.SMTP.EnableAuthentication {
+		resolvedRef, err := resolveSectionSecretRef(ctx, r.Client, instance, email.SecretRef,
+			func(e *appsv1alpha1.Environment) appsv1alpha1.EnvSection { return e.Spec.Smtp }, "smtp")
+		if err != nil {
+			return "", "", err
+		}
+		if resolvedRef == "" {
+			return "", "", fmt.Errorf("spec.config.email.smtp.enableAuthentication is true but spec.config.email.secretRef is not set and no Environment labeled %s=%s has a smtp section",
+				appsv1alpha1.InstanceRefLabel, instance.Name)
+		}
+		// Error messages name whichever source actually supplied resolvedRef, so a misconfigured
+		// explicit field and a misconfigured Environment point the user at the right place to fix it.
+		source := fmt.Sprintf("spec.config.email.secretRef %q", resolvedRef)
 		if email.SecretRef == "" {
-			return "", fmt.Errorf("spec.config.email.smtp.enableAuthentication is true but spec.config.email.secretRef is not set")
+			source = fmt.Sprintf("Environment's smtp Secret %q", resolvedRef)
 		}
 		secret := &corev1.Secret{}
 		if err := r.Get(ctx, types.NamespacedName{
-			Name: email.SecretRef, Namespace: instance.Namespace,
+			Name: resolvedRef, Namespace: instance.Namespace,
 		}, secret); err != nil {
-			return "", fmt.Errorf("spec.config.email.secretRef %q: %w", email.SecretRef, err)
+			return "", "", fmt.Errorf("%s: %w", source, err)
 		}
 		if string(secret.Data[emailSecretKeyPassword]) == "" {
-			return "", fmt.Errorf("spec.config.email.secretRef %q is missing required key: password", email.SecretRef)
+			return "", "", fmt.Errorf("%s is missing required key: password", source)
 		}
 		password = "file://" + emailPasswordMountPath
+		secretName = resolvedRef
 	}
 
 	block = fmt.Sprintf(`email:
@@ -80,5 +96,5 @@ func (r *ThunderIDInstanceReconciler) resolveEmailConfig(
 		email.SMTP.Host, email.SMTP.Port, email.SMTP.Username, password, email.SMTP.FromAddress,
 		email.SMTP.EnableStartTLS, email.SMTP.EnableAuthentication)
 
-	return block, nil
+	return block, secretName, nil
 }

@@ -18,8 +18,8 @@ too, not just the CRs themselves.
 - Only put `apps.thunderid.io` CRs here (`ThunderIDInstance`, `Application`,
   `Flow`, `Theme`, etc.) that you want Flux to own and continuously reconcile.
 - **Never put an `Environment` CR here.** Its controller mutates the object
-  in place after processing it (masking each synced key's value in
-  `spec.env`). A continuously-reconciling GitOps tool like Flux enforces
+  in place after processing it (masking each synced key's value in each
+  section's `env`). A continuously-reconciling GitOps tool like Flux enforces
   "live must match Git" and will keep reverting that mutation every
   reconcile interval, fighting the controller forever. `Environment` is an
   ad-hoc, one-time `kubectl apply` resource by design — see
