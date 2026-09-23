@@ -44,33 +44,15 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashUnset() {
 	suite.Empty(hash)
 }
 
-func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashNoCredentialsSectionIsEmpty() {
-	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
-	// Labeled for the instance but with no credentials section at all (e.g. only a security
-	// section) - resolveEnvSecretHash has nothing to hash.
-	env := &appsv1alpha1.Environment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "env", Namespace: "default",
-			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
-		},
-		Spec: appsv1alpha1.EnvironmentSpec{Security: appsv1alpha1.EnvSection{SecretRef: "some-security-secret"}},
-	}
-	r := newFakeReconciler(env)
-	hash, err := r.resolveEnvSecretHash(context.Background(), instance)
-	suite.Require().NoError(err)
-	suite.Empty(hash)
-}
-
 func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashMissingSecret() {
 	instance := &appsv1alpha1.ThunderIDInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
 	}
 	env := &appsv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "env", Namespace: "default",
+			Name: "missing-secret", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
 		},
-		Spec: appsv1alpha1.EnvironmentSpec{Credentials: appsv1alpha1.EnvSection{SecretRef: "missing-secret"}},
 	}
 	r := newFakeReconciler(env)
 	_, err := r.resolveEnvSecretHash(context.Background(), instance)
@@ -105,10 +87,9 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashStableFormat() {
 	}
 	env := &appsv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "env", Namespace: "default",
+			Name: "env-secret", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
 		},
-		Spec: appsv1alpha1.EnvironmentSpec{Credentials: appsv1alpha1.EnvSection{SecretRef: "env-secret"}},
 	}
 	r := newFakeReconciler(secret, env)
 	instance := &appsv1alpha1.ThunderIDInstance{
@@ -119,67 +100,6 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashStableFormat() {
 	suite.Regexp(regexp.MustCompile(`^[0-9a-f]{16}$`), hash)
 }
 
-func (suite *EnvSecretTestSuite) TestSectionSecretNameSecretRefWins() {
-	env := &appsv1alpha1.Environment{ObjectMeta: metav1.ObjectMeta{Name: "env"}}
-	sec := appsv1alpha1.EnvSection{SecretRef: "hand-written", Env: map[string]string{"A": "b"}}
-	suite.Equal("hand-written", sectionSecretName(env, sec, "security"), "SecretRef always wins over Env, even when both are set")
-}
-
-func (suite *EnvSecretTestSuite) TestSectionSecretNameGeneratedFromEnv() {
-	env := &appsv1alpha1.Environment{ObjectMeta: metav1.ObjectMeta{Name: "myenv"}}
-	sec := appsv1alpha1.EnvSection{Env: map[string]string{"A": "b"}}
-	suite.Equal("myenv-database", sectionSecretName(env, sec, "database"))
-}
-
-func (suite *EnvSecretTestSuite) TestSectionSecretNameAbsentIsEmpty() {
-	env := &appsv1alpha1.Environment{ObjectMeta: metav1.ObjectMeta{Name: "myenv"}}
-	suite.Empty(sectionSecretName(env, appsv1alpha1.EnvSection{}, "smtp"))
-}
-
-func (suite *EnvSecretTestSuite) TestResolveSectionSecretRefExplicitWins() {
-	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
-	env := &appsv1alpha1.Environment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "env", Namespace: "default",
-			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
-		},
-		Spec: appsv1alpha1.EnvironmentSpec{Smtp: appsv1alpha1.EnvSection{Env: map[string]string{"password": "x"}}},
-	}
-	r := newFakeReconciler(env)
-
-	name, err := resolveSectionSecretRef(context.Background(), r.Client, instance, "explicit-secret",
-		func(e *appsv1alpha1.Environment) appsv1alpha1.EnvSection { return e.Spec.Smtp }, "smtp")
-	suite.Require().NoError(err)
-	suite.Equal("explicit-secret", name, "explicit field must win over any Environment, even a matching one")
-}
-
-func (suite *EnvSecretTestSuite) TestResolveSectionSecretRefFallsBackToEnvironment() {
-	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
-	env := &appsv1alpha1.Environment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "env", Namespace: "default",
-			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
-		},
-		Spec: appsv1alpha1.EnvironmentSpec{Smtp: appsv1alpha1.EnvSection{Env: map[string]string{"password": "x"}}},
-	}
-	r := newFakeReconciler(env)
-
-	name, err := resolveSectionSecretRef(context.Background(), r.Client, instance, "",
-		func(e *appsv1alpha1.Environment) appsv1alpha1.EnvSection { return e.Spec.Smtp }, "smtp")
-	suite.Require().NoError(err)
-	suite.Equal("env-smtp", name)
-}
-
-func (suite *EnvSecretTestSuite) TestResolveSectionSecretRefNeitherSetIsEmpty() {
-	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
-	r := newFakeReconciler()
-
-	name, err := resolveSectionSecretRef(context.Background(), r.Client, instance, "",
-		func(e *appsv1alpha1.Environment) appsv1alpha1.EnvSection { return e.Spec.Database }, "database")
-	suite.Require().NoError(err)
-	suite.Empty(name)
-}
-
 func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashChangesWithContent() {
 	build := func(data map[string][]byte) *ThunderIDInstanceReconciler {
 		secret := &corev1.Secret{
@@ -188,10 +108,9 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashChangesWithContent() {
 		}
 		env := &appsv1alpha1.Environment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "env", Namespace: "default",
+				Name: "env-secret", Namespace: "default",
 				Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
 			},
-			Spec: appsv1alpha1.EnvironmentSpec{Credentials: appsv1alpha1.EnvSection{SecretRef: "env-secret"}},
 		}
 		return newFakeReconciler(secret, env)
 	}

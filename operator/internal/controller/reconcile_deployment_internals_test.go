@@ -44,14 +44,13 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestEnvironmentLabelPopulate
 	instance := baselineSQLiteInstance()
 	env := &appsv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "env", Namespace: "default",
+			Name: "env-secret", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
 		},
-		Spec: appsv1alpha1.EnvironmentSpec{Credentials: appsv1alpha1.EnvSection{SecretRef: "env-secret"}},
 	}
 	r := newFakeReconciler(instance, env)
 
-	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security", "", ""))
+	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security"))
 
 	dep := &appsv1.Deployment{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst", Namespace: "default"}, dep))
@@ -63,7 +62,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestSQLiteWithResourcesUsesS
 	instance := baselineSQLiteInstance()
 	r := newFakeReconciler(instance)
 
-	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", true, "inst-security", "", ""))
+	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", true, "inst-security"))
 
 	dep := &appsv1.Deployment{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst", Namespace: "default"}, dep))
@@ -76,7 +75,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestPostgresWithResourcesUse
 	instance := postgresInstance()
 	r := newFakeReconciler(instance)
 
-	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", true, "inst-security", "db-secret", ""))
+	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", true, "inst-security"))
 
 	dep := &appsv1.Deployment{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst", Namespace: "default"}, dep))
@@ -104,7 +103,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestEmailAuthMountsEmailVolu
 	}
 	r := newFakeReconciler(instance)
 
-	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security", "", "email-secret"))
+	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security"))
 
 	dep := &appsv1.Deployment{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst", Namespace: "default"}, dep))
@@ -136,7 +135,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestInitialGetErrorPropagate
 		},
 	}, instance)
 
-	err := r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security", "", "")
+	err := r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -146,10 +145,10 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestStaticReplicasUpdatedOnD
 	instance.Spec.Replicas = 3
 	r := newFakeReconciler(instance)
 
-	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security", "", ""))
+	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security"))
 
 	instance.Spec.Replicas = 5
-	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security", "", ""))
+	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security"))
 
 	dep := &appsv1.Deployment{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst", Namespace: "default"}, dep))
@@ -174,7 +173,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestNilTemplateAnnotationsIn
 	}
 	r := newFakeReconciler(instance, existing)
 
-	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security", "", ""))
+	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security"))
 
 	dep := &appsv1.Deployment{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst", Namespace: "default"}, dep))
@@ -184,7 +183,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestNilTemplateAnnotationsIn
 func (suite *ReconcileDeploymentInternalsTestSuite) TestUpdateRetryGetErrorPropagates() {
 	instance := baselineSQLiteInstance()
 	r := newFakeReconciler(instance)
-	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security", "", ""))
+	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security"))
 
 	wantErr := errors.New("simulated retry-get failure")
 	getCount := 0
@@ -205,7 +204,7 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestUpdateRetryGetErrorPropa
 	r2 := &ThunderIDInstanceReconciler{Client: interceptedClient, Scheme: r.Scheme}
 
 	// hash2 forces a real diff so the Update path (and its retry-closure Get) actually runs.
-	err := r2.reconcileDeployment(context.Background(), instance, "hash2", false, "inst-security", "", "")
+	err := r2.reconcileDeployment(context.Background(), instance, "hash2", false, "inst-security")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }

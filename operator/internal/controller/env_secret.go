@@ -32,9 +32,9 @@ import (
 
 // findEnvironment returns the single Environment in instance's namespace labeled
 // thunderid.io/instance=<instance.Name> (see InstanceRefLabel's doc comment), or nil if none
-// exists — an instance with no such Environment simply has no sections to fall back on. More than
-// one is a config error: silently picking one of several candidates would hide a real
-// misconfiguration instead of surfacing it.
+// exists — an instance with no such Environment simply has no env Secret. More than one is a
+// config error: envSecretRef used to be a single field, and silently picking one of several
+// candidates would hide a real misconfiguration instead of surfacing it.
 func findEnvironment(ctx context.Context, c client.Client, instance *appsv1alpha1.ThunderIDInstance) (*appsv1alpha1.Environment, error) {
 	list := &appsv1alpha1.EnvironmentList{}
 	if err := c.List(ctx, list, client.InNamespace(instance.Namespace),
@@ -55,44 +55,12 @@ func findEnvironment(ctx context.Context, c client.Client, instance *appsv1alpha
 	}
 }
 
-// sectionSecretName returns the Secret name sec (one of env's own sections) resolves to: its own
-// SecretRef verbatim if set, else the generated "<env-name>-<sectionName>" name if it has Env
-// entries to sync, else "" — sec simply doesn't apply.
-func sectionSecretName(env *appsv1alpha1.Environment, sec appsv1alpha1.EnvSection, sectionName string) string {
-	if sec.SecretRef != "" {
-		return sec.SecretRef
-	}
-	if len(sec.Env) > 0 {
-		return env.Name + "-" + sectionName
-	}
-	return ""
-}
-
-// resolveSectionSecretRef returns explicitRef unchanged when set (an explicit ThunderIDInstance
-// spec field always wins), or else the Secret name of the given section on the single Environment
-// labeled for instance (see findEnvironment/sectionSecretName) — "" if neither resolves to
-// anything.
-func resolveSectionSecretRef(ctx context.Context, c client.Client, instance *appsv1alpha1.ThunderIDInstance,
-	explicitRef string, pick func(*appsv1alpha1.Environment) appsv1alpha1.EnvSection, sectionName string) (string, error) {
-	if explicitRef != "" {
-		return explicitRef, nil
-	}
-	env, err := findEnvironment(ctx, c, instance)
-	if err != nil {
-		return "", err
-	}
-	if env == nil {
-		return "", nil
-	}
-	return sectionSecretName(env, pick(env), sectionName), nil
-}
-
-// resolveEnvSecretHash returns "" when no Environment is labeled for instance, or its Credentials
-// section doesn't apply (see findEnvironment/sectionSecretName), or a hash of that section's
-// Secret content otherwise — folded into configHash so the pod restarts (and re-resolves every
-// {{.VAR}} token in resources.yaml) whenever the Secret's values change, the same way editing
-// spec.config.database/email forces a restart. Errors if the label resolves ambiguously or the
-// Secret itself is missing, surfaced as an InvalidSpec event rather than crash-looping the pod.
+// resolveEnvSecretHash returns "" when no Environment is labeled for instance (see
+// findEnvironment), or a hash of its Secret's content otherwise — folded into configHash so the
+// pod restarts (and re-resolves every {{.VAR}} token in resources.yaml) whenever the Secret's
+// values change, the same way editing spec.config.database/email forces a restart. Errors if the
+// label resolves ambiguously or the Secret itself is missing, surfaced as an InvalidSpec event
+// rather than crash-looping the pod.
 func (r *ThunderIDInstanceReconciler) resolveEnvSecretHash(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) (string, error) {
 	env, err := findEnvironment(ctx, r.Client, instance)
@@ -102,16 +70,12 @@ func (r *ThunderIDInstanceReconciler) resolveEnvSecretHash(
 	if env == nil {
 		return "", nil
 	}
-	secretName := sectionSecretName(env, env.Spec.Credentials, "credentials")
-	if secretName == "" {
-		return "", nil
-	}
 
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name: secretName, Namespace: instance.Namespace,
+		Name: env.Name, Namespace: instance.Namespace,
 	}, secret); err != nil {
-		return "", fmt.Errorf("environment %q's credentials Secret %q: %w", env.Name, secretName, err)
+		return "", fmt.Errorf("environment %q's Secret: %w", env.Name, err)
 	}
 
 	keys := make([]string, 0, len(secret.Data))

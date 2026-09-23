@@ -4,6 +4,5 @@ metadata:
   name: test
   namespace: default
 spec:
-  credentials:
-    env:
-      TEST_RESOURCE_USER_PASSWORD: duplicate-name-secret
+  env:
+    TEST_RESOURCE_USER_PASSWORD: duplicate-name-secret

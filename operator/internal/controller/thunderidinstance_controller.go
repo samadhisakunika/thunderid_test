@@ -125,7 +125,7 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Reconcile the config ConfigMap.
-	resourcesContent, baseResourcesContent, databaseBlock, emailBlock, databaseSecretName, emailSecretName, err := r.reconcileConfigMap(ctx, instance, publicURL)
+	resourcesContent, baseResourcesContent, databaseBlock, emailBlock, err := r.reconcileConfigMap(ctx, instance, publicURL)
 	if err != nil {
 		log.Error(err, "failed to reconcile ConfigMap")
 		r.Recorder.Event(instance, corev1.EventTypeWarning, "ConfigMapError", err.Error())
@@ -180,7 +180,7 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Reconcile the bootstrap Job.
-	if err := r.reconcileBootstrapJob(ctx, instance, seedHash, securitySecretName, databaseSecretName, emailSecretName); err != nil {
+	if err := r.reconcileBootstrapJob(ctx, instance, seedHash, securitySecretName); err != nil {
 		log.Error(err, "failed to reconcile bootstrap Job")
 		r.Recorder.Event(instance, corev1.EventTypeWarning, "BootstrapJobError", err.Error())
 		return ctrl.Result{}, err
@@ -194,7 +194,7 @@ func (r *ThunderIDInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Reconcile the Deployment.
-	if err := r.reconcileDeployment(ctx, instance, configHash, resourcesContent != "", securitySecretName, databaseSecretName, emailSecretName); err != nil {
+	if err := r.reconcileDeployment(ctx, instance, configHash, resourcesContent != "", securitySecretName); err != nil {
 		log.Error(err, "failed to reconcile Deployment")
 		return ctrl.Result{}, err
 	}
@@ -297,32 +297,24 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// only updates status, which never bumps generation. reconcileBootstrapJob needs to see
 		// that transition to retry a failed bootstrap automatically.
 		Owns(&batchv1.Job{}).
-		// Not Owns(): the instance doesn't own any section's Secret (an Environment authors them,
-		// or a human hand-writes one directly and references it via a section's secretRef — see
-		// Environment's doc comment), so there's no owner reference to follow. Editing a synced
-		// section Secret's content alone doesn't touch the Environment or the ThunderIDInstance
-		// object — without this watch, that change would only ever be picked up by some unrelated
-		// reconcile trigger, not promptly. instancesForEnvironment does double duty here: a
-		// section's generated Secret is stamped with the owning Environment's own
-		// thunderid.io/instance label at write time (see upsertSecret in
-		// environment_controller.go), so the exact same label-lookup that maps an Environment to
-		// its instance also maps one of its generated Secrets — no separate Environment re-Get
-		// needed. A section pointing at an externally-managed Secret via secretRef is the one gap:
-		// that Secret was never stamped (the operator never touches it at all), so a content
-		// change there isn't watched — same as a hand-named spec.securitySecret/etc always was.
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvironment)).
-		// The label itself (not just a section's content) is what wires an Environment into an
-		// instance — adding, removing, or repointing the thunderid.io/instance label needs to
-		// reach the instance just as promptly as a content change does. Update events are mapped
-		// for both the old and new object, so repointing the label from instance A to B correctly
-		// reconciles both.
+		// Not Owns(): the instance doesn't own its env Secret (an Environment authors it, or a
+		// human hand-writes it directly — see Environment's doc comment), so there's no owner
+		// reference to follow. Editing the Secret's content alone doesn't touch either the
+		// Environment or the ThunderIDInstance object — without this, resolveEnvSecretHash's new
+		// value would only ever be picked up by some unrelated reconcile trigger, not promptly
+		// when the Secret you actually changed changes.
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvSecret)).
+		// The label itself (not just the Secret's content) is what wires an Environment into an
+		// instance's envFrom — adding, removing, or repointing the thunderid.io/instance label
+		// needs to reach the instance just as promptly as a content change does. Update events
+		// are mapped for both the old and new object, so repointing the label from instance A to
+		// B correctly reconciles both.
 		Watches(&appsv1alpha1.Environment{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvironment)).
 		Named("thunderidinstance").
 		Complete(r)
 }
 
-// instancesForEnvironment maps an Environment, or one of its section Secrets (see
-// upsertSecret in environment_controller.go), to the ThunderIDInstance named by its own
+// instancesForEnvironment maps an Environment to the ThunderIDInstance named by its
 // thunderid.io/instance label, if any.
 func (r *ThunderIDInstanceReconciler) instancesForEnvironment(_ context.Context, obj client.Object) []reconcile.Request {
 	instanceName, ok := obj.GetLabels()[appsv1alpha1.InstanceRefLabel]
@@ -332,6 +324,20 @@ func (r *ThunderIDInstanceReconciler) instancesForEnvironment(_ context.Context,
 	return []reconcile.Request{
 		{NamespacedName: types.NamespacedName{Name: instanceName, Namespace: obj.GetNamespace()}},
 	}
+}
+
+// instancesForEnvSecret maps a Secret change to the ThunderIDInstance labeled on the Environment
+// of the same name — an Environment's Secret is always same-named as it (see
+// environment_controller.go), so this just re-Gets that Environment and reuses
+// instancesForEnvironment's label lookup. A hand-written Secret with no matching Environment
+// object maps to nothing: without an Environment to carry the label, there's no instance to
+// discover it from a bare Secret change alone (see Environment's doc comment on adopting one).
+func (r *ThunderIDInstanceReconciler) instancesForEnvSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	env := &appsv1alpha1.Environment{}
+	if err := r.Get(ctx, types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}, env); err != nil {
+		return nil
+	}
+	return r.instancesForEnvironment(ctx, env)
 }
 
 // mapServingPodToInstance handles a freshly (re)created serving pod: if this instance's
@@ -393,23 +399,21 @@ const (
 // baseResourcesContent (just the base seed, spec.resourcesConfigMap's raw content, before the
 // entity-append loop — the bootstrap Job's seed hash is computed from this narrower value, since
 // entity CRs like Role/Flow/User have nothing to do with what start.sh --bootstrap creates),
-// databaseBlock, emailBlock, and the actual Secret names (explicit spec field or Environment
-// fallback — see resolveSectionSecretRef) those two blocks' file:// references point at, so
-// callers mount the same Secret this function validated instead of re-resolving it themselves.
+// databaseBlock, and emailBlock.
 func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, publicURL string) (
-	resourcesContent, baseResourcesContent, databaseBlock, emailBlock, databaseSecretName, emailSecretName string, err error) {
+	resourcesContent, baseResourcesContent, databaseBlock, emailBlock string, err error) {
 	log := logf.FromContext(ctx)
 
 	// Resolve the database config block.
-	databaseBlock, databaseSecretName, err = r.resolveDatabaseConfig(ctx, instance)
+	databaseBlock, _, err = r.resolveDatabaseConfig(ctx, instance)
 	if err != nil {
-		return "", "", "", "", "", "", err
+		return "", "", "", "", err
 	}
 	// Resolve the email config block.
-	emailBlock, emailSecretName, err = r.resolveEmailConfig(ctx, instance)
+	emailBlock, err = r.resolveEmailConfig(ctx, instance)
 	if err != nil {
-		return "", "", "", "", "", "", err
+		return "", "", "", "", err
 	}
 
 	// Resolve the remaining config defaults.
@@ -453,7 +457,7 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 			Name:      instance.Spec.ResourcesConfigMap,
 			Namespace: instance.Namespace,
 		}, externalCM); err != nil {
-			return "", "", "", "", "", "", err
+			return "", "", "", "", err
 		}
 		resourcesContent = externalCM.Data["resources.yaml"]
 	}
@@ -465,7 +469,7 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	for _, k := range resourceKinds {
 		appended, err := r.appendResourceConfigMap(ctx, instance, "-"+k.configMapSuffix, k.fileKey)
 		if err != nil {
-			return "", "", "", "", "", "", err
+			return "", "", "", "", err
 		}
 		resourcesContent += appended
 	}
@@ -493,15 +497,15 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 		}
 		_ = ctrl.SetControllerReference(instance, cm, r.Scheme)
 		log.Info("creating config ConfigMap", "name", cm.Name)
-		return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, databaseSecretName, emailSecretName, r.Create(ctx, cm)
+		return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, r.Create(ctx, cm)
 	}
 	if err != nil {
-		return "", "", "", "", "", "", err
+		return "", "", "", "", err
 	}
 	// Skip update if content is unchanged to avoid triggering unnecessary reconciles.
 	if cm.Data[deploymentYAMLKey] == data[deploymentYAMLKey] && cm.Data["resources.yaml"] == data["resources.yaml"] {
 		log.V(1).Info("config ConfigMap unchanged, skipping update", "name", cm.Name)
-		return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, databaseSecretName, emailSecretName, nil
+		return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, nil
 	}
 	log.Info("config ConfigMap content changed, updating", "name", cm.Name)
 	updateErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -512,7 +516,7 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 		latest.Data = data
 		return r.Update(ctx, latest)
 	})
-	return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, databaseSecretName, emailSecretName, updateErr
+	return resourcesContent, baseResourcesContent, databaseBlock, emailBlock, updateErr
 }
 
 // appendResourceConfigMap reads one sub-controller's per-resource_type ConfigMap (named
@@ -646,7 +650,7 @@ const (
 // endless recreate loop against a genuinely broken config (e.g. a permanently wrong password).
 func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, seedHash string,
-	securitySecretName, databaseSecretName, emailSecretName string) error {
+	securitySecretName string) error {
 	if !usingPostgres(instance) {
 		return nil
 	}
@@ -682,7 +686,7 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 		if err := r.Delete(ctx, existing, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
-		return r.createBootstrapJob(ctx, instance, jobName, securitySecretName, databaseSecretName, emailSecretName, attempt+1)
+		return r.createBootstrapJob(ctx, instance, jobName, securitySecretName, attempt+1)
 	}
 	if !errors.IsNotFound(err) {
 		return err
@@ -706,7 +710,7 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 	}
 
 	log.Info("creating bootstrap Job", "job", jobName)
-	return r.createBootstrapJob(ctx, instance, jobName, securitySecretName, databaseSecretName, emailSecretName, 1)
+	return r.createBootstrapJob(ctx, instance, jobName, securitySecretName, 1)
 }
 
 // bootstrapJobFailed reports whether job has permanently failed (its BackoffLimit exhausted),
@@ -800,7 +804,7 @@ func (r *ThunderIDInstanceReconciler) bootstrapPermanentFailureReason(ctx contex
 // config/security/database (and, if enabled, email) material the serving Deployment mounts.
 func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, jobName string,
-	securitySecretName, databaseSecretName, emailSecretName string, attempt int) error {
+	securitySecretName string, attempt int) error {
 	// This Job  itself is already the "run exactly once per resource-hash-change" gate, so setup.sh here
 	// only ever runs when reconcileBootstrapJob decided a (re)bootstrap is actually needed, never
 	// on an ordinary pod restart or HPA scale-out of the serving Deployment.
@@ -884,7 +888,7 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 			Name: volumeNameDatabase,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: databaseSecretName,
+					SecretName: instance.Spec.Config.Database.SecretRef,
 					Items:      []corev1.KeyToPath{{Key: databaseSecretKeyPassword, Path: databaseSecretKeyPassword}},
 				},
 			},
@@ -895,7 +899,7 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 			Name: volumeNameEmail,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: emailSecretName,
+					SecretName: instance.Spec.Config.Email.SecretRef,
 					Items:      []corev1.KeyToPath{{Key: emailSecretKeyPassword, Path: databaseSecretKeyPassword}},
 				},
 			},
@@ -1043,7 +1047,7 @@ func thunderidReadinessProbe(port int32) *corev1.Probe {
 // the configHash annotation that triggers a rolling restart when any of that changes.
 func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance, configHash string, hasResources bool,
-	securitySecretName, databaseSecretName, emailSecretName string) error {
+	securitySecretName string) error {
 	log := logf.FromContext(ctx)
 	replicas := instance.Spec.Replicas
 	configMapName := instance.Name + "-config"
@@ -1057,20 +1061,18 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	// to persist, so spec.dataVolumeSize (and the once-only setup.sh gating below) is ignored.
 	hasDataVolume := instance.Spec.DataVolumeSize != "" && !usingPostgres(instance)
 
-	// Every key in the credentials-section Secret of whichever Environment is labeled for this
-	// instance (see findEnvironment/sectionSecretName) becomes an env var on the container —
-	// resolving whatever {{.VAR}} tokens a Resource's spec holds is entirely ThunderID's own job
-	// at boot, not the operator's. Reconcile already called findEnvironment once via
-	// resolveEnvSecretHash and would have returned early on an ambiguous label match, so any error
-	// here can't actually happen in practice; it's still handled rather than ignored since
-	// reconcileDeployment already returns error.
+	// Every key in the Secret named by whichever Environment is labeled for this instance (see
+	// findEnvironment) becomes an env var on the container — resolving whatever {{.VAR}} tokens a
+	// Resource's spec holds is entirely ThunderID's own job at boot, not the operator's. Reconcile
+	// already called findEnvironment once via resolveEnvSecretHash and would have returned early
+	// on an ambiguous label match, so any error here can't actually happen in practice; it's
+	// still handled rather than ignored since reconcileDeployment already returns error.
 	var envFrom []corev1.EnvFromSource
-	if credentialsSecretName, err := resolveSectionSecretRef(ctx, r.Client, instance, "",
-		func(e *appsv1alpha1.Environment) appsv1alpha1.EnvSection { return e.Spec.Credentials }, "credentials"); err != nil {
+	if env, err := findEnvironment(ctx, r.Client, instance); err != nil {
 		return err
-	} else if credentialsSecretName != "" {
+	} else if env != nil {
 		envFrom = []corev1.EnvFromSource{
-			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: credentialsSecretName}}},
+			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: env.Name}}},
 		}
 	}
 
@@ -1233,7 +1235,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			Name: volumeNameDatabase,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: databaseSecretName,
+					SecretName: instance.Spec.Config.Database.SecretRef,
 					Items:      []corev1.KeyToPath{{Key: databaseSecretKeyPassword, Path: databaseSecretKeyPassword}},
 				},
 			},
@@ -1244,7 +1246,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			Name: volumeNameEmail,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: emailSecretName,
+					SecretName: instance.Spec.Config.Email.SecretRef,
 					Items:      []corev1.KeyToPath{{Key: emailSecretKeyPassword, Path: databaseSecretKeyPassword}},
 				},
 			},

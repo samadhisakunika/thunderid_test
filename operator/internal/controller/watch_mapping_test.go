@@ -20,12 +20,16 @@ import (
 	"context"
 	"testing"
 
+	stderrors "errors"
+
 	"github.com/stretchr/testify/suite"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
 )
@@ -38,31 +42,52 @@ func TestWatchMappingTestSuite(t *testing.T) {
 	suite.Run(t, new(WatchMappingTestSuite))
 }
 
-// instancesForEnvironment is the single mapper Watches uses for both Environment and Secret
-// events (see thunderidinstance_controller.go's SetupWithManager) - a section's generated Secret
-// is stamped with its owning Environment's own InstanceRefLabel at write time (upsertSecret in
-// environment_controller.go), so the same plain label read works for either object kind, with no
-// same-name Environment re-Get needed the way the old design required.
-func (suite *WatchMappingTestSuite) TestInstancesForEnvironmentAppliesToLabeledSecretToo() {
+func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretNoMatchingEnvironment() {
 	r := newFakeReconciler()
-	secret := &corev1.Secret{
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
+
+	reqs := r.instancesForEnvSecret(context.Background(), secret)
+	suite.Empty(reqs)
+}
+
+func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretUnlabeledEnvironmentMapsNothing() {
+	env := &appsv1alpha1.Environment{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
+	r := newFakeReconciler(env)
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
+
+	reqs := r.instancesForEnvSecret(context.Background(), secret)
+	suite.Empty(reqs)
+}
+
+func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretMatchesByLabelOnSameNamedEnvironment() {
+	env := &appsv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "env-security", Namespace: "default",
+			Name: "env-secret", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "matching"},
 		},
 	}
+	r := newFakeReconciler(env)
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
 
-	reqs := r.instancesForEnvironment(context.Background(), secret)
+	reqs := r.instancesForEnvSecret(context.Background(), secret)
 	suite.Require().Len(reqs, 1)
 	suite.Equal("matching", reqs[0].Name)
 }
 
-func (suite *WatchMappingTestSuite) TestInstancesForEnvironmentUnlabeledSecretMapsNothing() {
-	r := newFakeReconciler()
-	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "env-security", Namespace: "default"}}
+func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretGetErrorReturnsNil() {
+	wantErr := stderrors.New("simulated get failure")
+	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, o client.Object, opts ...client.GetOption) error {
+			if _, ok := o.(*appsv1alpha1.Environment); ok {
+				return wantErr
+			}
+			return c.Get(ctx, key, o, opts...)
+		},
+	})
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
 
-	reqs := r.instancesForEnvironment(context.Background(), secret)
-	suite.Empty(reqs)
+	reqs := r.instancesForEnvSecret(context.Background(), secret)
+	suite.Nil(reqs)
 }
 
 func (suite *WatchMappingTestSuite) TestInstancesForEnvironmentUnlabeledMapsNothing() {

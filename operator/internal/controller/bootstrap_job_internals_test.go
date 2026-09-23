@@ -52,7 +52,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobInitialGet
 		},
 	}, instance)
 
-	err := r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security", "db-secret", "")
+	err := r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -77,7 +77,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobRetryDelet
 	}, instance, failedJob)
 	r.KubeClient = k8sfake.NewSimpleClientset() // no matching pod -> not a permanent failure, tries to delete+retry
 
-	err := r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security", "db-secret", "")
+	err := r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -94,7 +94,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobStaleListE
 		},
 	}, instance)
 
-	err := r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security", "db-secret", "")
+	err := r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -115,7 +115,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobStaleDelet
 		},
 	}, instance, staleJob)
 
-	err := r.reconcileBootstrapJob(context.Background(), instance, "new-seed", "inst-security", "db-secret", "")
+	err := r.reconcileBootstrapJob(context.Background(), instance, "new-seed", "inst-security")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -148,7 +148,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestCreateBootstrapJobEmailAuthMoun
 	}
 	r := newFakeReconciler(instance)
 
-	suite.Require().NoError(r.createBootstrapJob(context.Background(), instance, "inst-bootstrap-seed1", "inst-security", "db-secret", "email-secret", 1))
+	suite.Require().NoError(r.createBootstrapJob(context.Background(), instance, "inst-bootstrap-seed1", "inst-security", 1))
 
 	job := &batchv1.Job{}
 	suite.Require().NoError(r.Get(context.Background(), client.ObjectKey{Name: "inst-bootstrap-seed1", Namespace: "default"}, job))

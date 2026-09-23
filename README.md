@@ -476,9 +476,7 @@ Any field, in any `resource_type` — a user's `credentials.password`, an applic
 
 A `ThunderIDInstance` auto-discovers its env Secret the same way a `Resource` finds its owning instance, just in reverse: whichever `Environment` in the instance's namespace carries the label `thunderid.io/instance: <instance name>` is the one whose Secret gets mounted whole via `envFrom`. There's no field on `ThunderIDInstanceSpec` naming it — the reference lives on the `Environment` side. At most one `Environment` may carry a given instance's label; more than one is a config error surfaced as an `InvalidSpec` event rather than picking one arbitrarily. The operator only ever mounts this Secret whole — it never creates, reads individual keys from, or generates values into it. Two ways to author it, both producing exactly the same Secret and both fully supported:
 
-`Environment` actually covers four sections — `credentials` (this one), `security`, `database`, `smtp` — one CRD object per instance, each section standing in for a different Secret the instance needs; see [Security keys, database & SMTP passwords via `Environment`](#security-keys-database--smtp-passwords-via-environment) below for the other three. Only `credentials` is relevant here.
-
-**Apply an `Environment`** — a declarative CR: the operator syncs `spec.credentials.env` into a generated Secret named `<environment-name>-credentials`, then overwrites each synced key's value in `spec.credentials.env` with a masked marker (`thunderid-masked:<up to 4 leading chars>****:len=<n>`) so the plaintext is never visible again via `kubectl get/describe environment`. The object itself is never deleted — `status.keys.credentials` lists which keys are currently synced, `status.secretNames.credentials` names the generated Secret. To change a value later, re-apply with new plaintext for just that key; `kubectl apply`'s 3-way merge leaves already-masked sibling keys untouched. The plaintext briefly exists in the `Environment` object's own `spec` in etcd before it's masked — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for that short window. **Always apply `Environment` with `kubectl apply --server-side`**, never plain `kubectl apply` — plain apply copies the whole manifest, plaintext included, into the object's `last-applied-configuration` annotation, bypassing the masking entirely (see `operator/gitops/README.md`). Never put `Environment` under GitOps (Flux) management — a continuously-reconciling GitOps tool will fight the masking:
+**Apply an `Environment`** — a declarative CR: the operator syncs `spec.env` into a Secret of the same name, then overwrites each synced key's value in `spec.env` with a masked marker (`thunderid-masked:<up to 4 leading chars>****:len=<n>`) so the plaintext is never visible again via `kubectl get/describe environment`. The object itself is never deleted — `status.keys` lists which keys are currently synced. To change a value later, re-apply with new plaintext for just that key; `kubectl apply`'s 3-way merge leaves already-masked sibling keys untouched. The plaintext briefly exists in the `Environment` object's own `spec` in etcd before it's masked — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for that short window. **Always apply `Environment` with `kubectl apply --server-side`**, never plain `kubectl apply` — plain apply copies the whole manifest, plaintext included, into the object's `last-applied-configuration` annotation, bypassing the masking entirely (see `operator/gitops/README.md`). Never put `Environment` under GitOps (Flux) management — a continuously-reconciling GitOps tool will fight the masking:
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
 kind: Environment
@@ -488,17 +486,16 @@ metadata:
   labels:
     thunderid.io/instance: thunderid-prod
 spec:
-  credentials:
-    env:
-      ADMIN2_PASSWORD: change-me
+  env:
+    ADMIN2_PASSWORD: change-me
 ```
 
-**Or hand-write the Secret directly**, plus a thin `Environment` stub pointing `credentials.secretRef` at it (discovery is purely label-based, so even a hand-written Secret needs an `Environment` object carrying the label — the controller never creates, inspects, or modifies a `secretRef`-named Secret):
+**Or hand-write the Secret directly**, plus a thin `Environment` stub to carry the label (discovery is purely label-based, so even a hand-written Secret needs an `Environment` object pointing at it — its own `spec.env` stays empty and the controller adopts the existing Secret without ever touching its contents):
 ```yaml
 apiVersion: v1
 kind: Secret
 metadata:
-  name: thunderid-env-credentials
+  name: thunderid-env
   namespace: default
 type: Opaque
 stringData:
@@ -511,9 +508,6 @@ metadata:
   namespace: default
   labels:
     thunderid.io/instance: thunderid-prod
-spec:
-  credentials:
-    secretRef: thunderid-env-credentials
 ```
 
 Either way, reference the key from a `Resource`:
@@ -535,67 +529,6 @@ A `{{.VAR}}` token with no matching key in the discovered Secret isn't caught at
 ThunderID's declarative loader only reads resources and environment variables at pod **startup** — changing the Secret's content after the fact still requires the ThunderID pod to restart (triggered automatically, the same way editing `spec.config.database`/`spec.config.email` already does) before the new values take effect.
 
 There's no built-in "generate me a password" convenience today — every value is authored by hand into the Secret. If that turns out to matter, it can be layered on top later (the operator writing a generated value into a deterministic key if one isn't already present) without changing anything else about this mechanism.
-
-#### Security keys, database & SMTP passwords via `Environment`
-
-The same `Environment` object's other three sections are a declarative alternative to hand-naming a Secret in `spec.securitySecret` / `spec.config.database.secretRef` / `spec.config.email.secretRef` — each section only takes effect when that instance-side field is left unset (an explicit field always wins). Like `credentials`, each is either `env` (synced into a generated `<environment-name>-<section>` Secret and masked in place) or `secretRef` (an existing Secret used as-is, e.g. cert-manager-issued — never created, inspected, or modified).
-
-| Section | Stands in for | Required key(s) |
-|---|---|---|
-| `security` | `spec.securitySecret` — if neither is set, the operator auto-generates self-signed certs/keys instead, unchanged from before | `server.cert`, `server.key`, `signing.cert`, `signing.key`, `ecdsa-signing.cert`, `ecdsa-signing.key`, `crypto.key`, `direct_auth_secret` |
-| `database` | `spec.config.database.secretRef` | `password` |
-| `smtp` | `spec.config.email.secretRef` | `password` |
-
-Any subset of all four sections can live on one `Environment` object — one CRD file per instance covering everything it needs is the point:
-```yaml
-apiVersion: apps.thunderid.io/v1alpha1
-kind: Environment
-metadata:
-  name: thunderid-env
-  namespace: default
-  labels:
-    thunderid.io/instance: thunderid-prod
-spec:
-  credentials:
-    env:
-      ADMIN2_PASSWORD: change-me
-  security:
-    env:
-      server.cert: |
-        -----BEGIN CERTIFICATE-----
-        ...
-        -----END CERTIFICATE-----
-      server.key: |
-        -----BEGIN PRIVATE KEY-----
-        ...
-        -----END PRIVATE KEY-----
-      signing.cert: |
-        -----BEGIN CERTIFICATE-----
-        ...
-        -----END CERTIFICATE-----
-      signing.key: |
-        -----BEGIN PRIVATE KEY-----
-        ...
-        -----END PRIVATE KEY-----
-      ecdsa-signing.cert: |
-        -----BEGIN CERTIFICATE-----
-        ...
-        -----END CERTIFICATE-----
-      ecdsa-signing.key: |
-        -----BEGIN EC PRIVATE KEY-----
-        ...
-        -----END EC PRIVATE KEY-----
-      crypto.key: "64-char-hex-string"
-      direct_auth_secret: "64-char-hex-string"
-  database:
-    env:
-      password: postgres-password-here
-  smtp:
-    env:
-      password: smtp-password-here
-```
-
-`security`'s `secretRef` alternative points at an already-complete Secret with all eight keys above; a partial one fails the same way a hand-named `spec.securitySecret` missing a key always did — a clear "missing required key(s)" error, not a silent partial start.
 
 ---
 

@@ -56,7 +56,7 @@ func (suite *ReconcileConfigMapTestSuite) TestDatabaseConfigErrorPropagates() {
 		},
 	}
 	r := newFakeReconciler(instance)
-	_, _, _, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
+	_, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "secretRef")
 }
@@ -75,7 +75,7 @@ func (suite *ReconcileConfigMapTestSuite) TestEmailConfigErrorPropagates() {
 		},
 	}
 	r := newFakeReconciler(instance)
-	_, _, _, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
+	_, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "secretRef")
 }
@@ -90,7 +90,7 @@ func (suite *ReconcileConfigMapTestSuite) TestPasskeyExtraOriginsRendered() {
 		},
 	}
 	r := newFakeReconciler(instance)
-	_, _, _, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
+	_, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
 	suite.Require().NoError(err)
 
 	cm := &corev1.ConfigMap{}
@@ -104,7 +104,7 @@ func (suite *ReconcileConfigMapTestSuite) TestExternalResourcesConfigMapNotFound
 		Spec:       appsv1alpha1.ThunderIDInstanceSpec{ResourcesConfigMap: "does-not-exist"},
 	}
 	r := newFakeReconciler(instance)
-	_, _, _, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
+	_, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
 	suite.Require().Error(err)
 }
 
@@ -118,7 +118,7 @@ func (suite *ReconcileConfigMapTestSuite) TestExternalResourcesConfigMapContentI
 		Data:       map[string]string{"resources.yaml": "---\nresource_type: organization_unit\nname: 'default'\n"},
 	}
 	r := newFakeReconciler(instance, baseCM)
-	resourcesContent, baseResourcesContent, _, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
+	resourcesContent, baseResourcesContent, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
 	suite.Require().NoError(err)
 	suite.Contains(resourcesContent, "organization_unit")
 	suite.Equal(baseResourcesContent, resourcesContent, "no per-type ConfigMaps exist, so base content is the whole thing")
@@ -140,7 +140,7 @@ func (suite *ReconcileConfigMapTestSuite) TestAppendResourceConfigMapLoopErrorPr
 		},
 	}, instance)
 
-	_, _, _, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
+	_, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -157,7 +157,7 @@ func (suite *ReconcileConfigMapTestSuite) TestConfigMapGetErrorPropagates() {
 		},
 	}, instance)
 
-	_, _, _, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
+	_, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }
@@ -182,7 +182,7 @@ func (suite *ReconcileConfigMapTestSuite) TestConfigMapRetryGetErrorPropagates()
 		},
 	}, instance, existingCM)
 
-	_, _, _, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
+	_, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 }

@@ -160,38 +160,6 @@ func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresMissingSe
 	suite.Contains(err.Error(), "secretRef")
 }
 
-func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigEnvironmentFallback() {
-	// The database section's Env, not SecretRef - exercises the generated-Secret naming
-	// convention ("<environment-name>-database") end to end, rather than a hand-named passthrough.
-	env := &appsv1alpha1.Environment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "env", Namespace: "default",
-			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
-		},
-		Spec: appsv1alpha1.EnvironmentSpec{Database: appsv1alpha1.EnvSection{Env: map[string]string{"password": "hunter2"}}},
-	}
-	dbSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "env-database", Namespace: "default"},
-		Data:       map[string][]byte{"password": []byte("hunter2")},
-	}
-	r := newFakeReconciler(env, dbSecret)
-	instance := &appsv1alpha1.ThunderIDInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
-		Spec: appsv1alpha1.ThunderIDInstanceSpec{
-			Config: appsv1alpha1.AppConfigSpec{Database: &appsv1alpha1.DatabaseSpec{
-				// SecretRef deliberately unset - falls back to the Environment's database section.
-				Config: appsv1alpha1.DatabaseBackendSpec{Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
-					Hostname: "h", Username: "u", Name: "n",
-				}},
-			}},
-		},
-	}
-	block, secretName, err := r.resolveDatabaseConfig(context.Background(), instance)
-	suite.Require().NoError(err)
-	suite.Equal("env-database", secretName)
-	suite.Contains(block, `password: "file://`+databasePasswordMountPath+`"`)
-}
-
 func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresSecretNotFound() {
 	r := newFakeReconciler() // no Secret seeded at all
 	instance := &appsv1alpha1.ThunderIDInstance{
