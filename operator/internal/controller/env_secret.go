@@ -30,13 +30,13 @@ import (
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
 )
 
-// findEnvironment returns the single Environment in instance's namespace labeled
+// findEnvironment returns the single EnvironmentValues in instance's namespace labeled
 // thunderid.io/instance=<instance.Name> (see InstanceRefLabel's doc comment), or nil if none
-// exists — an instance with no such Environment simply has no env Secret. More than one is a
+// exists — an instance with no such EnvironmentValues simply has no env Secret. More than one is a
 // config error: envSecretRef used to be a single field, and silently picking one of several
 // candidates would hide a real misconfiguration instead of surfacing it.
-func findEnvironment(ctx context.Context, c client.Client, instance *appsv1alpha1.ThunderIDInstance) (*appsv1alpha1.Environment, error) {
-	list := &appsv1alpha1.EnvironmentList{}
+func findEnvironment(ctx context.Context, c client.Client, instance *appsv1alpha1.ThunderIDInstance) (*appsv1alpha1.EnvironmentValues, error) {
+	list := &appsv1alpha1.EnvironmentValuesList{}
 	if err := c.List(ctx, list, client.InNamespace(instance.Namespace),
 		client.MatchingLabels{appsv1alpha1.InstanceRefLabel: instance.Name}); err != nil {
 		return nil, err
@@ -51,11 +51,11 @@ func findEnvironment(ctx context.Context, c client.Client, instance *appsv1alpha
 		for i, e := range list.Items {
 			names[i] = e.Name
 		}
-		return nil, fmt.Errorf("multiple Environments labeled %s=%s: %v", appsv1alpha1.InstanceRefLabel, instance.Name, names)
+		return nil, fmt.Errorf("multiple EnvironmentValues objects labeled %s=%s: %v", appsv1alpha1.InstanceRefLabel, instance.Name, names)
 	}
 }
 
-// resolveEnvSecretHash returns "" when no Environment is labeled for instance (see
+// resolveEnvSecretHash returns "" when no EnvironmentValues is labeled for instance (see
 // findEnvironment), or a hash of its Secret's content otherwise — folded into configHash so the
 // pod restarts (and re-resolves every {{.VAR}} token in resources.yaml) whenever the Secret's
 // values change, the same way editing spec.config.database/email forces a restart. Errors if the

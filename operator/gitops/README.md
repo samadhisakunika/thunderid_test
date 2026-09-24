@@ -17,21 +17,21 @@ too, not just the CRs themselves.
 
 - Only put `apps.thunderid.io` CRs here (`ThunderIDInstance`, `Application`,
   `Flow`, `Theme`, etc.) that you want Flux to own and continuously reconcile.
-- **Never put an `Environment` CR here.** Its controller mutates the object
+- **Never put an `EnvironmentValues` CR here.** Its controller mutates the object
   in place after processing it (masking each synced key's value in
   `spec.env`). A continuously-reconciling GitOps tool like Flux enforces
   "live must match Git" and will keep reverting that mutation every
-  reconcile interval, fighting the controller forever. `Environment` is an
+  reconcile interval, fighting the controller forever. `EnvironmentValues` is an
   ad-hoc, one-time `kubectl apply` resource by design — see
   `environment_type.go` and `environment_controller.go`. It also carries
   plaintext credentials in its spec, which shouldn't be committed to Git
   regardless.
-- **Always apply `Environment` CRs — and any hand-written `Secret` manifest
+- **Always apply `EnvironmentValues` CRs — and any hand-written `Secret` manifest
   — with `kubectl apply --server-side`, never plain `kubectl apply`.** Plain
   (client-side) `kubectl apply` copies your entire manifest, credentials
   included, into the object's
   `kubectl.kubernetes.io/last-applied-configuration` annotation — visible
-  forever via `kubectl get ... -o yaml`, completely bypassing `Environment`'s
+  forever via `kubectl get ... -o yaml`, completely bypassing `EnvironmentValues`'s
   masking. This isn't a `Secret`-specific protection either — `kubectl
   describe secret` hiding values is a print-time convenience that doesn't
   touch this annotation; the same leak
@@ -39,7 +39,7 @@ too, not just the CRs themselves.
   annotation at all (it tracks field ownership via `managedFields` instead),
   and as a bonus it rejects an accidental reapply of an unedited file outright
   (a conflict error) instead of silently letting it through. Caveat: when
-  changing one key in a multi-key `Environment`, apply a manifest containing
+  changing one key in a multi-key `EnvironmentValues`, apply a manifest containing
   *only* that key — resubmitting the full original file makes every
   already-masked sibling key conflict at once, and `--force-conflicts` would
   overwrite all of them simultaneously. An object already carrying the old

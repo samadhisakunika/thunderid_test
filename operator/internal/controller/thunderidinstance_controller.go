@@ -297,24 +297,24 @@ func (r *ThunderIDInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// only updates status, which never bumps generation. reconcileBootstrapJob needs to see
 		// that transition to retry a failed bootstrap automatically.
 		Owns(&batchv1.Job{}).
-		// Not Owns(): the instance doesn't own its env Secret (an Environment authors it, or a
-		// human hand-writes it directly — see Environment's doc comment), so there's no owner
+		// Not Owns(): the instance doesn't own its env Secret (an EnvironmentValues authors it, or a
+		// human hand-writes it directly — see EnvironmentValues's doc comment), so there's no owner
 		// reference to follow. Editing the Secret's content alone doesn't touch either the
-		// Environment or the ThunderIDInstance object — without this, resolveEnvSecretHash's new
+		// EnvironmentValues or the ThunderIDInstance object — without this, resolveEnvSecretHash's new
 		// value would only ever be picked up by some unrelated reconcile trigger, not promptly
 		// when the Secret you actually changed changes.
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvSecret)).
-		// The label itself (not just the Secret's content) is what wires an Environment into an
+		// The label itself (not just the Secret's content) is what wires an EnvironmentValues into an
 		// instance's envFrom — adding, removing, or repointing the thunderid.io/instance label
 		// needs to reach the instance just as promptly as a content change does. Update events
 		// are mapped for both the old and new object, so repointing the label from instance A to
 		// B correctly reconciles both.
-		Watches(&appsv1alpha1.Environment{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvironment)).
+		Watches(&appsv1alpha1.EnvironmentValues{}, handler.EnqueueRequestsFromMapFunc(r.instancesForEnvironment)).
 		Named("thunderidinstance").
 		Complete(r)
 }
 
-// instancesForEnvironment maps an Environment to the ThunderIDInstance named by its
+// instancesForEnvironment maps an EnvironmentValues to the ThunderIDInstance named by its
 // thunderid.io/instance label, if any.
 func (r *ThunderIDInstanceReconciler) instancesForEnvironment(_ context.Context, obj client.Object) []reconcile.Request {
 	instanceName, ok := obj.GetLabels()[appsv1alpha1.InstanceRefLabel]
@@ -326,14 +326,14 @@ func (r *ThunderIDInstanceReconciler) instancesForEnvironment(_ context.Context,
 	}
 }
 
-// instancesForEnvSecret maps a Secret change to the ThunderIDInstance labeled on the Environment
-// of the same name — an Environment's Secret is always same-named as it (see
-// environment_controller.go), so this just re-Gets that Environment and reuses
-// instancesForEnvironment's label lookup. A hand-written Secret with no matching Environment
-// object maps to nothing: without an Environment to carry the label, there's no instance to
-// discover it from a bare Secret change alone (see Environment's doc comment on adopting one).
+// instancesForEnvSecret maps a Secret change to the ThunderIDInstance labeled on the EnvironmentValues
+// of the same name — an EnvironmentValues's Secret is always same-named as it (see
+// environment_controller.go), so this just re-Gets that EnvironmentValues and reuses
+// instancesForEnvironment's label lookup. A hand-written Secret with no matching EnvironmentValues
+// object maps to nothing: without an EnvironmentValues to carry the label, there's no instance to
+// discover it from a bare Secret change alone (see EnvironmentValues's doc comment on adopting one).
 func (r *ThunderIDInstanceReconciler) instancesForEnvSecret(ctx context.Context, obj client.Object) []reconcile.Request {
-	env := &appsv1alpha1.Environment{}
+	env := &appsv1alpha1.EnvironmentValues{}
 	if err := r.Get(ctx, types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}, env); err != nil {
 		return nil
 	}
@@ -1061,7 +1061,7 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	// to persist, so spec.dataVolumeSize (and the once-only setup.sh gating below) is ignored.
 	hasDataVolume := instance.Spec.DataVolumeSize != "" && !usingPostgres(instance)
 
-	// Every key in the Secret named by whichever Environment is labeled for this instance (see
+	// Every key in the Secret named by whichever EnvironmentValues is labeled for this instance (see
 	// findEnvironment) becomes an env var on the container — resolving whatever {{.VAR}} tokens a
 	// Resource's spec holds is entirely ThunderID's own job at boot, not the operator's. Reconcile
 	// already called findEnvironment once via resolveEnvSecretHash and would have returned early

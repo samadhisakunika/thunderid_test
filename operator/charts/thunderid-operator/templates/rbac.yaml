@@ -56,7 +56,7 @@ rules:
 - apiGroups:
   - apps.thunderid.io
   resources:
-  - environments
+  - environmentvalues
   verbs:
   - create
   - get
@@ -80,7 +80,7 @@ rules:
 - apiGroups:
   - apps.thunderid.io
   resources:
-  - environments/status
+  - environmentvalues/status
   - resources/status
   - thunderidinstances/status
   verbs:

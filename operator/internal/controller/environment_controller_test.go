@@ -33,21 +33,21 @@ import (
 	appsv1alpha1 "github.com/wso2/thunderid-operator/api/v1alpha1"
 )
 
-type EnvironmentControllerTestSuite struct {
+type EnvironmentValuesControllerTestSuite struct {
 	suite.Suite
 }
 
 func TestEnvironmentControllerTestSuite(t *testing.T) {
-	suite.Run(t, new(EnvironmentControllerTestSuite))
+	suite.Run(t, new(EnvironmentValuesControllerTestSuite))
 }
 
-func (suite *EnvironmentControllerTestSuite) TestIsMasked() {
+func (suite *EnvironmentValuesControllerTestSuite) TestIsMasked() {
 	suite.True(isMasked(maskValue("hunter2")))
 	suite.False(isMasked("hunter2"))
 	suite.False(isMasked("thunderid-masked:looks-close-but-no-len-suffix"))
 }
 
-func (suite *EnvironmentControllerTestSuite) TestMaskValueRevealsAtMostFourChars() {
+func (suite *EnvironmentValuesControllerTestSuite) TestMaskValueRevealsAtMostFourChars() {
 	cases := []struct {
 		name       string
 		in         string
@@ -72,7 +72,7 @@ func (suite *EnvironmentControllerTestSuite) TestMaskValueRevealsAtMostFourChars
 	}
 }
 
-func (suite *EnvironmentControllerTestSuite) TestManagedKeySet() {
+func (suite *EnvironmentValuesControllerTestSuite) TestManagedKeySet() {
 	withAnnotation := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Annotations: map[string]string{managedKeysAnnotation: "A,B,C"},
 	}}
@@ -82,10 +82,10 @@ func (suite *EnvironmentControllerTestSuite) TestManagedKeySet() {
 	suite.Empty(managedKeySet(noAnnotation))
 }
 
-func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskNewPlaintextCreatesAndMasks() {
-	obj := &appsv1alpha1.Environment{
+func (suite *EnvironmentValuesControllerTestSuite) TestSyncSecretAndMaskNewPlaintextCreatesAndMasks() {
+	obj := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"},
-		Spec:       appsv1alpha1.EnvironmentSpec{Env: map[string]string{"PASSWORD": "hunter2"}},
+		Spec:       appsv1alpha1.EnvironmentValuesSpec{Env: map[string]string{"PASSWORD": "hunter2"}},
 	}
 	r := newFakeEnvironmentReconciler(obj)
 
@@ -98,16 +98,16 @@ func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskNewPlaintextCr
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "env", Namespace: "default"}, secret))
 	suite.Equal("hunter2", string(secret.Data["PASSWORD"]))
 
-	updated := &appsv1alpha1.Environment{}
+	updated := &appsv1alpha1.EnvironmentValues{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "env", Namespace: "default"}, updated))
 	suite.True(isMasked(updated.Spec.Env["PASSWORD"]), "plaintext must be masked in spec.env after sync")
 }
 
-func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskAlreadyMaskedIsNoop() {
+func (suite *EnvironmentValuesControllerTestSuite) TestSyncSecretAndMaskAlreadyMaskedIsNoop() {
 	masked := maskValue("hunter2")
-	obj := &appsv1alpha1.Environment{
+	obj := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"},
-		Spec:       appsv1alpha1.EnvironmentSpec{Env: map[string]string{"PASSWORD": masked}},
+		Spec:       appsv1alpha1.EnvironmentValuesSpec{Env: map[string]string{"PASSWORD": masked}},
 	}
 	existingSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -127,10 +127,10 @@ func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskAlreadyMaskedI
 	suite.Equal(masked, obj.Spec.Env["PASSWORD"])
 }
 
-func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskDropsPreviouslyManagedKey() {
-	obj := &appsv1alpha1.Environment{
+func (suite *EnvironmentValuesControllerTestSuite) TestSyncSecretAndMaskDropsPreviouslyManagedKey() {
+	obj := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"},
-		Spec:       appsv1alpha1.EnvironmentSpec{Env: map[string]string{"KEEP": "new-value"}},
+		Spec:       appsv1alpha1.EnvironmentValuesSpec{Env: map[string]string{"KEEP": "new-value"}},
 	}
 	existingSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -150,12 +150,12 @@ func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskDropsPreviousl
 	suite.NotContains(secret.Data, "DROPPED")
 }
 
-func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskLeavesForeignKeysAlone() {
-	obj := &appsv1alpha1.Environment{
+func (suite *EnvironmentValuesControllerTestSuite) TestSyncSecretAndMaskLeavesForeignKeysAlone() {
+	obj := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{Name: "shared-name", Namespace: "default"},
-		Spec:       appsv1alpha1.EnvironmentSpec{Env: map[string]string{"MINE": "value"}},
+		Spec:       appsv1alpha1.EnvironmentValuesSpec{Env: map[string]string{"MINE": "value"}},
 	}
-	// A hand-made Secret sharing this Environment's name, never written by this controller
+	// A hand-made Secret sharing this EnvironmentValues's name, never written by this controller
 	// (no managedKeysAnnotation) - its keys must survive the sync untouched.
 	handMade := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "shared-name", Namespace: "default"},
@@ -173,10 +173,10 @@ func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskLeavesForeignK
 	suite.Equal("value", string(secret.Data["MINE"]))
 }
 
-func (suite *EnvironmentControllerTestSuite) TestReconcileSetsSyncedStatus() {
-	obj := &appsv1alpha1.Environment{
+func (suite *EnvironmentValuesControllerTestSuite) TestReconcileSetsSyncedStatus() {
+	obj := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"},
-		Spec:       appsv1alpha1.EnvironmentSpec{Env: map[string]string{"A": "b"}},
+		Spec:       appsv1alpha1.EnvironmentValuesSpec{Env: map[string]string{"A": "b"}},
 	}
 	r := newFakeEnvironmentReconciler(obj)
 	r.Recorder = fakeRecorder()
@@ -184,7 +184,7 @@ func (suite *EnvironmentControllerTestSuite) TestReconcileSetsSyncedStatus() {
 	_, err := r.Reconcile(context.Background(), reconcileRequest("env"))
 	suite.Require().NoError(err)
 
-	updated := &appsv1alpha1.Environment{}
+	updated := &appsv1alpha1.EnvironmentValues{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "env", Namespace: "default"}, updated))
 	suite.Equal("Synced", updated.Status.Phase)
 	suite.True(updated.Status.Synced)
@@ -198,10 +198,10 @@ func (suite *EnvironmentControllerTestSuite) TestReconcileSetsSyncedStatus() {
 // pkg/client/interceptor) wraps the fake client so a specific call can be made to fail on
 // command, the same pattern used across the ecosystem for exactly this: forcing an
 // infra-failure branch without needing a real API server to actually break.
-func (suite *EnvironmentControllerTestSuite) TestReconcileSyncFailureSetsErrorStatus() {
-	obj := &appsv1alpha1.Environment{
+func (suite *EnvironmentValuesControllerTestSuite) TestReconcileSyncFailureSetsErrorStatus() {
+	obj := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"},
-		Spec:       appsv1alpha1.EnvironmentSpec{Env: map[string]string{"A": "b"}},
+		Spec:       appsv1alpha1.EnvironmentValuesSpec{Env: map[string]string{"A": "b"}},
 	}
 
 	scheme := runtime.NewScheme()
@@ -211,7 +211,7 @@ func (suite *EnvironmentControllerTestSuite) TestReconcileSyncFailureSetsErrorSt
 	wantErr := errors.New("simulated Secret create failure")
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithStatusSubresource(&appsv1alpha1.Environment{}).
+		WithStatusSubresource(&appsv1alpha1.EnvironmentValues{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Create: func(ctx context.Context, c client.WithWatch, o client.Object, opts ...client.CreateOption) error {
 				if _, ok := o.(*corev1.Secret); ok {
@@ -223,24 +223,24 @@ func (suite *EnvironmentControllerTestSuite) TestReconcileSyncFailureSetsErrorSt
 		WithRuntimeObjects(obj).
 		Build()
 
-	r := &EnvironmentReconciler{Client: fakeClient, Scheme: scheme, Recorder: fakeRecorder()}
+	r := &EnvironmentValuesReconciler{Client: fakeClient, Scheme: scheme, Recorder: fakeRecorder()}
 
 	_, err := r.Reconcile(context.Background(), reconcileRequest("env"))
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
 
-	updated := &appsv1alpha1.Environment{}
+	updated := &appsv1alpha1.EnvironmentValues{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "env", Namespace: "default"}, updated))
 	suite.Equal("Error", updated.Status.Phase)
 	suite.False(updated.Status.Synced)
 	suite.Equal("env", updated.Status.SecretName)
 }
 
-func (suite *EnvironmentControllerTestSuite) TestReconcileGetErrorPropagates() {
+func (suite *EnvironmentValuesControllerTestSuite) TestReconcileGetErrorPropagates() {
 	wantErr := errors.New("simulated get failure")
 	r := newFakeEnvironmentReconcilerWithInterceptor(interceptor.Funcs{
 		Get: func(ctx context.Context, c client.WithWatch, key types.NamespacedName, o client.Object, opts ...client.GetOption) error {
-			if _, ok := o.(*appsv1alpha1.Environment); ok {
+			if _, ok := o.(*appsv1alpha1.EnvironmentValues); ok {
 				return wantErr
 			}
 			return c.Get(ctx, key, o, opts...)
@@ -252,10 +252,10 @@ func (suite *EnvironmentControllerTestSuite) TestReconcileGetErrorPropagates() {
 	suite.ErrorIs(err, wantErr)
 }
 
-func (suite *EnvironmentControllerTestSuite) TestReconcileSuccessStatusUpdateErrorPropagates() {
-	obj := &appsv1alpha1.Environment{
+func (suite *EnvironmentValuesControllerTestSuite) TestReconcileSuccessStatusUpdateErrorPropagates() {
+	obj := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"},
-		Spec:       appsv1alpha1.EnvironmentSpec{Env: map[string]string{"A": "b"}},
+		Spec:       appsv1alpha1.EnvironmentValuesSpec{Env: map[string]string{"A": "b"}},
 	}
 	wantErr := errors.New("simulated status update failure")
 	r := newFakeEnvironmentReconcilerWithInterceptor(interceptor.Funcs{
@@ -273,10 +273,10 @@ func (suite *EnvironmentControllerTestSuite) TestReconcileSuccessStatusUpdateErr
 	suite.ErrorIs(err, wantErr)
 }
 
-func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskGetErrorPropagates() {
-	obj := &appsv1alpha1.Environment{
+func (suite *EnvironmentValuesControllerTestSuite) TestSyncSecretAndMaskGetErrorPropagates() {
+	obj := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"},
-		Spec:       appsv1alpha1.EnvironmentSpec{Env: map[string]string{"A": "b"}},
+		Spec:       appsv1alpha1.EnvironmentValuesSpec{Env: map[string]string{"A": "b"}},
 	}
 	wantErr := errors.New("simulated secret get failure")
 	r := newFakeEnvironmentReconcilerWithInterceptor(interceptor.Funcs{
@@ -293,15 +293,15 @@ func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskGetErrorPropag
 	suite.ErrorIs(err, wantErr)
 }
 
-func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskMaskSpecErrorPropagates() {
-	obj := &appsv1alpha1.Environment{
+func (suite *EnvironmentValuesControllerTestSuite) TestSyncSecretAndMaskMaskSpecErrorPropagates() {
+	obj := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"},
-		Spec:       appsv1alpha1.EnvironmentSpec{Env: map[string]string{"A": "new-plaintext"}},
+		Spec:       appsv1alpha1.EnvironmentValuesSpec{Env: map[string]string{"A": "new-plaintext"}},
 	}
 	wantErr := errors.New("simulated environment update failure")
 	r := newFakeEnvironmentReconcilerWithInterceptor(interceptor.Funcs{
 		Update: func(ctx context.Context, c client.WithWatch, o client.Object, opts ...client.UpdateOption) error {
-			if _, ok := o.(*appsv1alpha1.Environment); ok {
+			if _, ok := o.(*appsv1alpha1.EnvironmentValues); ok {
 				return wantErr
 			}
 			return c.Update(ctx, o, opts...)
@@ -316,8 +316,8 @@ func (suite *EnvironmentControllerTestSuite) TestSyncSecretAndMaskMaskSpecErrorP
 	suite.ErrorIs(err, wantErr)
 }
 
-func (suite *EnvironmentControllerTestSuite) TestUpsertSecretRetryGetErrorPropagates() {
-	obj := &appsv1alpha1.Environment{ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"}}
+func (suite *EnvironmentValuesControllerTestSuite) TestUpsertSecretRetryGetErrorPropagates() {
+	obj := &appsv1alpha1.EnvironmentValues{ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"}}
 	existing := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "env", Namespace: "default",
@@ -342,12 +342,12 @@ func (suite *EnvironmentControllerTestSuite) TestUpsertSecretRetryGetErrorPropag
 	suite.ErrorIs(err, wantErr)
 }
 
-func (suite *EnvironmentControllerTestSuite) TestMaskSpecRetryGetErrorPropagates() {
-	obj := &appsv1alpha1.Environment{ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"}}
+func (suite *EnvironmentValuesControllerTestSuite) TestMaskSpecRetryGetErrorPropagates() {
+	obj := &appsv1alpha1.EnvironmentValues{ObjectMeta: metav1.ObjectMeta{Name: "env", Namespace: "default"}}
 	wantErr := errors.New("simulated retry-get failure")
 	r := newFakeEnvironmentReconcilerWithInterceptor(interceptor.Funcs{
 		Get: func(ctx context.Context, c client.WithWatch, key types.NamespacedName, o client.Object, opts ...client.GetOption) error {
-			if _, ok := o.(*appsv1alpha1.Environment); ok {
+			if _, ok := o.(*appsv1alpha1.EnvironmentValues); ok {
 				return wantErr
 			}
 			return c.Get(ctx, key, o, opts...)

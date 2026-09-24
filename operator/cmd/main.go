@@ -206,12 +206,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.EnvironmentReconciler{
+	if err := (&controller.EnvironmentValuesReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("environment-controller"), //nolint:staticcheck
+		Recorder: mgr.GetEventRecorderFor("environmentvalues-controller"), //nolint:staticcheck
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "environment")
+		setupLog.Error(err, "Failed to create controller", "controller", "environmentvalues")
 		os.Exit(1)
 	}
 

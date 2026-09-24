@@ -107,13 +107,13 @@ func newFakeEnvironmentReconcilerScheme() *runtime.Scheme {
 	return scheme
 }
 
-func newFakeEnvironmentReconciler(objs ...runtime.Object) *EnvironmentReconciler {
+func newFakeEnvironmentReconciler(objs ...runtime.Object) *EnvironmentValuesReconciler {
 	scheme := newFakeEnvironmentReconcilerScheme()
-	return &EnvironmentReconciler{
+	return &EnvironmentValuesReconciler{
 		// WithStatusSubresource is required for a CRD type: without it the fake client's
 		// Status().Update() doesn't track the status subresource separately and errors instead
 		// of applying the update.
-		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&appsv1alpha1.Environment{}).
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&appsv1alpha1.EnvironmentValues{}).
 			WithRuntimeObjects(objs...).Build(),
 		Scheme: scheme,
 	}
@@ -121,10 +121,10 @@ func newFakeEnvironmentReconciler(objs ...runtime.Object) *EnvironmentReconciler
 
 // newFakeEnvironmentReconcilerWithInterceptor is newFakeEnvironmentReconciler plus the ability to
 // make a specific client call fail on command — see newFakeReconcilerWithInterceptor's doc comment.
-func newFakeEnvironmentReconcilerWithInterceptor(funcs interceptor.Funcs, objs ...runtime.Object) *EnvironmentReconciler {
+func newFakeEnvironmentReconcilerWithInterceptor(funcs interceptor.Funcs, objs ...runtime.Object) *EnvironmentValuesReconciler {
 	scheme := newFakeEnvironmentReconcilerScheme()
-	return &EnvironmentReconciler{
-		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&appsv1alpha1.Environment{}).
+	return &EnvironmentValuesReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&appsv1alpha1.EnvironmentValues{}).
 			WithInterceptorFuncs(funcs).WithRuntimeObjects(objs...).Build(),
 		Scheme: scheme,
 	}

@@ -42,7 +42,7 @@ func TestReconcileDeploymentInternalsTestSuite(t *testing.T) {
 
 func (suite *ReconcileDeploymentInternalsTestSuite) TestEnvironmentLabelPopulatesEnvFrom() {
 	instance := baselineSQLiteInstance()
-	env := &appsv1alpha1.Environment{
+	env := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "env-secret", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},

@@ -1,5 +1,5 @@
 apiVersion: apps.thunderid.io/v1alpha1
-kind: Environment
+kind: EnvironmentValues
 metadata:
   name: test
   namespace: default

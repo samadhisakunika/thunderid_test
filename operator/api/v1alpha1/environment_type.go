@@ -21,28 +21,28 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EnvironmentSpec defines the desired state of Environment.
-type EnvironmentSpec struct {
+// EnvironmentValuesSpec defines the desired state of EnvironmentValues.
+type EnvironmentValuesSpec struct {
 	// Env holds this environment's key-value pairs, mirrored into the generated Secret's Data.
 	// Plaintext only until the next reconcile: the controller overwrites each key's value here
 	// with a masked marker ("thunderid-masked:<up to 4 leading chars>****:len=<n>") once it's
 	// synced to the Secret, so only a short prefix (never the rest of the raw value) is visible
-	// via `kubectl get/describe environment` past that point — see the controller. To change a
+	// via `kubectl get/describe environmentvalues` past that point — see the controller. To change a
 	// key's value later, re-apply with new plaintext for just that key; kubectl apply's 3-way
 	// merge leaves already-masked sibling keys untouched.
 	// +optional
 	Env map[string]string `json:"env,omitempty"`
 }
 
-// EnvironmentStatus defines the observed state of Environment.
-type EnvironmentStatus struct {
+// EnvironmentValuesStatus defines the observed state of EnvironmentValues.
+type EnvironmentValuesStatus struct {
 	// +optional
 	Phase string `json:"phase,omitempty"`
 
 	// +optional
 	Synced bool `json:"synced,omitempty"`
 
-	// SecretName is always the Environment's own name — the generated Secret is 1:1 with it.
+	// SecretName is always the EnvironmentValues's own name — the generated Secret is 1:1 with it.
 	// +optional
 	SecretName string `json:"secretName,omitempty"`
 
@@ -63,8 +63,8 @@ type EnvironmentStatus struct {
 // +kubebuilder:printcolumn:name="Synced",type="boolean",JSONPath=".status.synced"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 
-// Environment mirrors spec.env into a Secret of the same name, then masks each synced key's
-// value in place (see EnvironmentSpec.Env) — see environment_controller.go. The object is never
+// EnvironmentValues mirrors spec.env into a Secret of the same name, then masks each synced key's
+// value in place (see EnvironmentValuesSpec.Env) — see environment_controller.go. The object is never
 // deleted: it stays gettable forever, just with masked values, so a developer who doesn't know
 // this becomes a Secret never hits a surprise NotFound. The Secret it produces is deliberately
 // not owned by this object (no controller
@@ -75,39 +75,39 @@ type EnvironmentStatus struct {
 // operator/gitops/README.md.
 //
 // Labeling this object with InstanceRefLabel (thunderid.io/instance: <name>, same label a
-// Resource uses) makes that ThunderIDInstance auto-discover this Environment's Secret and mount
+// Resource uses) makes that ThunderIDInstance auto-discover this EnvironmentValues's Secret and mount
 // it whole via envFrom — see findEnvironment in env_secret.go. There is no field on
 // ThunderIDInstanceSpec naming it the other way around: the reference lives here, on the
-// Environment, not on the instance. The label is optional — an unlabeled Environment still syncs
+// EnvironmentValues, not on the instance. The label is optional — an unlabeled EnvironmentValues still syncs
 // its Secret exactly the same, it's simply not wired into any instance's envFrom. Exactly one
-// Environment should carry a given instance's label;
+// EnvironmentValues should carry a given instance's label;
 // more than one is a config error the instance surfaces as an InvalidSpec event rather than
-// picking one arbitrarily. A hand-written Secret with no matching Environment object can still be
-// discovered the same way: create a thin Environment with that Secret's name, the label, and no
+// picking one arbitrarily. A hand-written Secret with no matching EnvironmentValues object can still be
+// discovered the same way: create a thin EnvironmentValues with that Secret's name, the label, and no
 // spec.env (or spec.env omitted) — its reconcile then adopts the existing Secret without touching
 // its contents (see upsertSecret's "adopted" path in environment_controller.go).
-type Environment struct {
+type EnvironmentValues struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// +optional
-	Spec EnvironmentSpec `json:"spec,omitempty"`
+	Spec EnvironmentValuesSpec `json:"spec,omitempty"`
 
-	Status EnvironmentStatus `json:"status,omitempty"`
+	Status EnvironmentValuesStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// EnvironmentList contains a list of Environment.
-type EnvironmentList struct {
+// EnvironmentValuesList contains a list of EnvironmentValues.
+type EnvironmentValuesList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Environment `json:"items"`
+	Items           []EnvironmentValues `json:"items"`
 }
 
 func init() {
 	SchemeBuilder.Register(func(s *runtime.Scheme) error {
-		s.AddKnownTypes(GroupVersion, &Environment{}, &EnvironmentList{})
+		s.AddKnownTypes(GroupVersion, &EnvironmentValues{}, &EnvironmentValuesList{})
 		return nil
 	})
 }

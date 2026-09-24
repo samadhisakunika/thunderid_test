@@ -48,7 +48,7 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashMissingSecret() {
 	instance := &appsv1alpha1.ThunderIDInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
 	}
-	env := &appsv1alpha1.Environment{
+	env := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "missing-secret", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
@@ -63,13 +63,13 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashMultipleEnvironmentsErr
 	instance := &appsv1alpha1.ThunderIDInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
 	}
-	envA := &appsv1alpha1.Environment{
+	envA := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "env-a", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
 		},
 	}
-	envB := &appsv1alpha1.Environment{
+	envB := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "env-b", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
@@ -85,7 +85,7 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashStableFormat() {
 		ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"},
 		Data:       map[string][]byte{"A": []byte("1"), "B": []byte("2")},
 	}
-	env := &appsv1alpha1.Environment{
+	env := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "env-secret", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
@@ -106,7 +106,7 @@ func (suite *EnvSecretTestSuite) TestResolveEnvSecretHashChangesWithContent() {
 			ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"},
 			Data:       data,
 		}
-		env := &appsv1alpha1.Environment{
+		env := &appsv1alpha1.EnvironmentValues{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "env-secret", Namespace: "default",
 				Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},

@@ -61,8 +61,8 @@ const appLabelKey = "app"
 const thunderidContainerName = "thunderid"
 
 // Resource.Status.Phase values (a plain string field, not a typed enum - see ResourceStatus).
-// phaseError is also used by EnvironmentReconciler for the same "something went wrong" meaning
-// on Environment.Status.Phase.
+// phaseError is also used by EnvironmentValuesReconciler for the same "something went wrong" meaning
+// on EnvironmentValues.Status.Phase.
 const (
 	phaseError   = "Error"
 	phasePending = "Pending"

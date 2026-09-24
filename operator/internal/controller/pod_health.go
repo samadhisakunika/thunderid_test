@@ -81,7 +81,7 @@ func diagnosePod(pod *corev1.Pod) (unhealthy bool, issue podIssue) {
 }
 
 // diagnoseMissingSecret looks for the specific, easy-to-hit cause behind a CreateContainerConfigError:
-// a Secret name relevant to instance (the one named by whichever Environment is labeled for it,
+// a Secret name relevant to instance (the one named by whichever EnvironmentValues is labeled for it,
 // config.database.secretRef, config.email.secretRef) that exists somewhere in the cluster, just
 // not in instance's namespace. Kubelet's own "secret \"X\" not found" message only ever means
 // "not found in this pod's namespace" — it has no way to know whether X exists elsewhere, so this
@@ -115,7 +115,7 @@ func diagnoseMissingSecret(ctx context.Context, c client.Client, instance *appsv
 		for _, s := range all.Items {
 			if s.Name == name && s.Namespace != instance.Namespace {
 				return fmt.Sprintf(
-					"Secret %q not found in namespace %q, but a Secret with that name exists in namespace %q — Secrets must be in the same namespace as the instance (check the Environment labeled thunderid.io/instance=%s, database.secretRef, email.secretRef)",
+					"Secret %q not found in namespace %q, but a Secret with that name exists in namespace %q — Secrets must be in the same namespace as the instance (check the EnvironmentValues labeled thunderid.io/instance=%s, database.secretRef, email.secretRef)",
 					name, instance.Namespace, s.Namespace, instance.Name)
 			}
 		}

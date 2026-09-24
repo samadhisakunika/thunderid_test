@@ -51,7 +51,7 @@ func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretNoMatchingEnvironme
 }
 
 func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretUnlabeledEnvironmentMapsNothing() {
-	env := &appsv1alpha1.Environment{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
+	env := &appsv1alpha1.EnvironmentValues{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
 	r := newFakeReconciler(env)
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
 
@@ -60,7 +60,7 @@ func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretUnlabeledEnvironmen
 }
 
 func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretMatchesByLabelOnSameNamedEnvironment() {
-	env := &appsv1alpha1.Environment{
+	env := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "env-secret", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "matching"},
@@ -78,7 +78,7 @@ func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretGetErrorReturnsNil(
 	wantErr := stderrors.New("simulated get failure")
 	r := newFakeReconcilerWithInterceptor(interceptor.Funcs{
 		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, o client.Object, opts ...client.GetOption) error {
-			if _, ok := o.(*appsv1alpha1.Environment); ok {
+			if _, ok := o.(*appsv1alpha1.EnvironmentValues); ok {
 				return wantErr
 			}
 			return c.Get(ctx, key, o, opts...)
@@ -92,7 +92,7 @@ func (suite *WatchMappingTestSuite) TestInstancesForEnvSecretGetErrorReturnsNil(
 
 func (suite *WatchMappingTestSuite) TestInstancesForEnvironmentUnlabeledMapsNothing() {
 	r := newFakeReconciler()
-	env := &appsv1alpha1.Environment{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
+	env := &appsv1alpha1.EnvironmentValues{ObjectMeta: metav1.ObjectMeta{Name: "env-secret", Namespace: "default"}}
 
 	reqs := r.instancesForEnvironment(context.Background(), env)
 	suite.Empty(reqs)
@@ -100,7 +100,7 @@ func (suite *WatchMappingTestSuite) TestInstancesForEnvironmentUnlabeledMapsNoth
 
 func (suite *WatchMappingTestSuite) TestInstancesForEnvironmentLabeledMapsToInstance() {
 	r := newFakeReconciler()
-	env := &appsv1alpha1.Environment{
+	env := &appsv1alpha1.EnvironmentValues{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "env-secret", Namespace: "default",
 			Labels: map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
