@@ -89,6 +89,24 @@ spec:
                               connMaxLifetime:
                                 format: int32
                                 type: integer
+                              passwordRef:
+                                description: |-
+                                  PasswordRef names the Secret+key holding this scope's PostgreSQL password. Required (this
+                                  scope's DatabaseBackendSpec.Type is "postgres" whenever Postgres itself is set). K8s-only
+                                  glue, not a ThunderID field. Scopes are independent: point two scopes' PasswordRef at the same
+                                  Secret with different Key values to give each its own password out of one Secret object,
+                                  or at the same Secret+Key to share one password across them (today's only option before
+                                  this field existed) — the operator mounts exactly what each scope's PasswordRef says, nothing
+                                  more.
+                                properties:
+                                  key:
+                                    type: string
+                                  name:
+                                    type: string
+                                required:
+                                - key
+                                - name
+                                type: object
                               hostname:
                                 type: string
                               maxIdleConns:
@@ -145,6 +163,24 @@ spec:
                               connMaxLifetime:
                                 format: int32
                                 type: integer
+                              passwordRef:
+                                description: |-
+                                  PasswordRef names the Secret+key holding this scope's PostgreSQL password. Required (this
+                                  scope's DatabaseBackendSpec.Type is "postgres" whenever Postgres itself is set). K8s-only
+                                  glue, not a ThunderID field. Scopes are independent: point two scopes' PasswordRef at the same
+                                  Secret with different Key values to give each its own password out of one Secret object,
+                                  or at the same Secret+Key to share one password across them (today's only option before
+                                  this field existed) — the operator mounts exactly what each scope's PasswordRef says, nothing
+                                  more.
+                                properties:
+                                  key:
+                                    type: string
+                                  name:
+                                    type: string
+                                required:
+                                - key
+                                - name
+                                type: object
                               hostname:
                                 type: string
                               maxIdleConns:
@@ -201,6 +237,24 @@ spec:
                               connMaxLifetime:
                                 format: int32
                                 type: integer
+                              passwordRef:
+                                description: |-
+                                  PasswordRef names the Secret+key holding this scope's PostgreSQL password. Required (this
+                                  scope's DatabaseBackendSpec.Type is "postgres" whenever Postgres itself is set). K8s-only
+                                  glue, not a ThunderID field. Scopes are independent: point two scopes' PasswordRef at the same
+                                  Secret with different Key values to give each its own password out of one Secret object,
+                                  or at the same Secret+Key to share one password across them (today's only option before
+                                  this field existed) — the operator mounts exactly what each scope's PasswordRef says, nothing
+                                  more.
+                                properties:
+                                  key:
+                                    type: string
+                                  name:
+                                    type: string
+                                required:
+                                - key
+                                - name
+                                type: object
                               hostname:
                                 type: string
                               maxIdleConns:
@@ -257,6 +311,24 @@ spec:
                               connMaxLifetime:
                                 format: int32
                                 type: integer
+                              passwordRef:
+                                description: |-
+                                  PasswordRef names the Secret+key holding this scope's PostgreSQL password. Required (this
+                                  scope's DatabaseBackendSpec.Type is "postgres" whenever Postgres itself is set). K8s-only
+                                  glue, not a ThunderID field. Scopes are independent: point two scopes' PasswordRef at the same
+                                  Secret with different Key values to give each its own password out of one Secret object,
+                                  or at the same Secret+Key to share one password across them (today's only option before
+                                  this field existed) — the operator mounts exactly what each scope's PasswordRef says, nothing
+                                  more.
+                                properties:
+                                  key:
+                                    type: string
+                                  name:
+                                    type: string
+                                required:
+                                - key
+                                - name
+                                type: object
                               hostname:
                                 type: string
                               maxIdleConns:
@@ -302,31 +374,20 @@ spec:
                             - postgres
                             type: string
                         type: object
-                      secretRef:
-                        description: |-
-                          SecretRef names a Secret holding the PostgreSQL password, under key "password" — shared by
-                          every scope whose type is postgres. K8s-only glue, not a ThunderID field. Required when any
-                          scope's type is postgres.
-                        type: string
                     type: object
                   email:
                     description: |-
                       Email mirrors ThunderID's own "email:" section. Unset means no email section in
                       deployment.yaml at all — see EmailSpec.
                     properties:
-                      secretRef:
-                        description: |-
-                          SecretRef names a Secret holding the SMTP password, under key "password". Required when
-                          smtp.enableAuthentication is true, ignored otherwise. K8s-only glue, not a ThunderID field.
-                        type: string
                       smtp:
                         description: |-
                           SMTPConfigSpec mirrors ThunderID's own deployment.yaml "email.smtp:" section, except password:
-                          EmailSpec.SecretRef backs it, since ThunderID's own password field is always a file:// reference.
+                          SecretRef backs it, since ThunderID's own password field is always a file:// reference.
                         properties:
                           enableAuthentication:
                             description: EnableAuthentication authenticates to the
-                              SMTP server using Username/EmailSpec.SecretRef.
+                              SMTP server using Username/SecretRef.
                             type: boolean
                           enableStartTLS:
                             description: EnableStartTLS upgrades the SMTP connection
@@ -339,6 +400,21 @@ spec:
                           port:
                             format: int32
                             type: integer
+                          secretRef:
+                            description: |-
+                              SecretRef names the Secret+key holding the SMTP password. Required when
+                              EnableAuthentication is true, ignored otherwise. K8s-only glue, not a ThunderID field. Same
+                              Secret object a spec.config.database scope's postgres.passwordRef uses is fine too — just a
+                              different Key.
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
                           username:
                             description: |-
                               Username authenticates to the SMTP server. Required when EnableAuthentication is true,

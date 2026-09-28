@@ -11,24 +11,32 @@ metadata:
   name: postgres
 spec:
   replicas: 1
-  strategy: {type: Recreate}
+  strategy:
+    type: Recreate
   selector:
-    matchLabels: {app: postgres}
+    matchLabels:
+      app: postgres
   template:
     metadata:
-      labels: {app: postgres}
+      labels:
+        app: postgres
     spec:
       containers:
         - name: postgres
           image: postgres:16-alpine
-          ports: [{containerPort: 5432}]
+          ports:
+            - containerPort: 5432
           env:
-            - {name: POSTGRES_USER, value: "postgres"}
+            - name: POSTGRES_USER
+              value: "postgres"
             - name: POSTGRES_PASSWORD
               valueFrom:
-                secretKeyRef: {name: postgres-superuser, key: POSTGRES_PASSWORD}
+                secretKeyRef:
+                  name: postgres-superuser
+                  key: POSTGRES_PASSWORD
           readinessProbe:
-            exec: {command: ["pg_isready", "-U", "postgres"]}
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -37,5 +45,8 @@ kind: Service
 metadata:
   name: postgres
 spec:
-  selector: {app: postgres}
-  ports: [{port: 5432, targetPort: 5432}]
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

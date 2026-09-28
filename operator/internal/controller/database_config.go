@@ -30,12 +30,13 @@ import (
 const (
 	databaseTypePostgres = "postgres"
 
+	// databaseSecretKeyPassword is the fixed local filename each scope's password Secret key is
+	// projected to inside its own Volume (see databaseVolumeName/databasePasswordMountPath) — the
+	// arbitrary key name a scope's passwordRef.key points at in the source Secret is remapped to this
+	// one name via the Volume's Items, so every scope's VolumeMount SubPath stays the same
+	// regardless of what the user called the key. Also doubles as the email password Secret's
+	// fixed key name (EmailSpec.SecretRef, unrelated to passwordRef, still always uses this literal key).
 	databaseSecretKeyPassword = "password"
-
-	// databasePasswordMountPath is where the password key of spec.config.database.secretRef is mounted
-	// into the container. Every postgres scope's rendered block references it via a file:// URI, the
-	// same pattern deployment-config.yaml already uses for direct_auth_secret and crypto.key.
-	databasePasswordMountPath = "config/secrets/db_password"
 
 	sqliteConnOptionsDefault = "_journal_mode=WAL&_busy_timeout=5000&_pragma=foreign_keys(1)"
 
@@ -46,6 +47,70 @@ const (
 	databaseScopeEntity            = "entity"
 	databaseScopeRuntimePersistent = "runtime_persistent"
 )
+
+// databasePasswordMountPath is where scope's password (whatever Secret+key its passwordRef points at)
+// is mounted into the container — one path per scope, since two scopes' passwordRef can point at
+// different Secrets/keys entirely and so need to coexist as distinct files. Every postgres
+// scope's rendered block references its own copy via a file:// URI, the same pattern
+// deployment-config.yaml already uses for direct_auth_secret and crypto.key.
+func databasePasswordMountPath(scope string) string {
+	return "config/secrets/db_password_" + scope
+}
+
+// databaseVolumeName is the Pod Volume name backing scope's password mount — one Volume per
+// scope (not deduplicated by Secret name, even when two scopes share a Secret): each needs its
+// own Items mapping to select its own key, so sharing a Volume would gain nothing. Volume names
+// are RFC 1123 DNS labels (lowercase alphanumeric and '-' only), so scope's underscores (e.g.
+// "runtime_transient") are swapped for hyphens — the same characters databaseScope* already use
+// otherwise, just not valid here verbatim.
+func databaseVolumeName(scope string) string {
+	return "database-" + strings.ReplaceAll(scope, "_", "-")
+}
+
+// databaseScopeSecret pairs one postgres scope with the Secret+key its password comes from —
+// collectDatabaseScopeSecrets' per-scope result, consumed by resolveDatabaseConfig (to validate
+// and fetch) and by reconcileDeployment/createBootstrapJob (to build that scope's Volume/Mount).
+type databaseScopeSecret struct {
+	scope string
+	ref   appsv1alpha1.SecretKeyRef
+}
+
+// databaseScopes returns db's four scopes paired with their JSON-facing names, in the fixed
+// order ThunderID's own deployment.yaml "database:" section uses them — the single place that
+// order is defined, so every caller iterating scopes (resolveDatabaseConfig,
+// collectDatabaseScopeSecrets) agrees.
+func databaseScopes(db *appsv1alpha1.DatabaseSpec) []struct {
+	name string
+	spec appsv1alpha1.DatabaseBackendSpec
+} {
+	return []struct {
+		name string
+		spec appsv1alpha1.DatabaseBackendSpec
+	}{
+		{databaseScopeConfig, db.Config},
+		{databaseScopeRuntimeTransient, db.RuntimeTransient},
+		{databaseScopeEntity, db.Entity},
+		{databaseScopeRuntimePersistent, db.RuntimePersistent},
+	}
+}
+
+// collectDatabaseScopeSecrets returns every postgres scope's Secret+key reference — nil when
+// spec.config.database is unset or has no postgres scope. Used directly by
+// reconcileDeployment/createBootstrapJob to build each scope's Volume/VolumeMount;
+// resolveDatabaseConfig uses it too, then additionally fetches and validates each Secret.
+func collectDatabaseScopeSecrets(instance *appsv1alpha1.ThunderIDInstance) []databaseScopeSecret {
+	db := instance.Spec.Config.Database
+	if db == nil {
+		return nil
+	}
+	var out []databaseScopeSecret
+	for _, s := range databaseScopes(db) {
+		if s.spec.Type == databaseTypePostgres && s.spec.Postgres != nil && s.spec.Postgres.PasswordRef != nil {
+			out = append(out, databaseScopeSecret{scope: s.name, ref: *s.spec.Postgres.PasswordRef})
+		}
+	}
+	return out
+}
 
 // databaseScopeDefaultPath is the sqlite file each scope falls back to when its own
 // spec.config.database.<scope>.sqlite.path is unset — the image's own convention, and what
@@ -114,56 +179,61 @@ func usingPostgres(instance *appsv1alpha1.ThunderIDInstance) bool {
 // resolveDatabaseConfig returns "" when spec.config.database is unset (deployment-config.yaml's
 // static sqlite section already correct, nothing to substitute), or the full "database:" body —
 // all four scopes, mirroring ThunderID's own deployment.yaml shape 1:1 — to swap in for
-// staticSQLiteDatabaseSection. secretName is the postgres password Secret to mount into the pod,
-// set whenever any scope needs one.
+// staticSQLiteDatabaseSection. scopeSecrets is every postgres scope's Secret+key reference,
+// already validated to exist and hold a non-empty value — reconcileDeployment/createBootstrapJob
+// resolve the identical list themselves (via collectDatabaseScopeSecrets) to build the actual
+// Volumes/Mounts, since spec is already in hand there and re-deriving it is cheaper than
+// threading this return value through both.
 func (r *ThunderIDInstanceReconciler) resolveDatabaseConfig(
-	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) (block string, secretName string, err error) {
+	ctx context.Context, instance *appsv1alpha1.ThunderIDInstance) (block string, scopeSecrets []databaseScopeSecret, err error) {
 	db := instance.Spec.Config.Database
 	if db == nil {
-		return "", "", nil
+		return "", nil, nil
 	}
 
-	needsPassword := db.Config.Type == databaseTypePostgres || db.RuntimeTransient.Type == databaseTypePostgres ||
-		db.Entity.Type == databaseTypePostgres || db.RuntimePersistent.Type == databaseTypePostgres
-	if needsPassword {
-		if db.SecretRef == "" {
-			return "", "", fmt.Errorf("spec.config.database has a postgres scope but spec.config.database.secretRef is not set")
+	scopeSecrets = collectDatabaseScopeSecrets(instance)
+	fetched := make(map[string]*corev1.Secret, len(scopeSecrets))
+	for _, ss := range scopeSecrets {
+		if ss.ref.Name == "" || ss.ref.Key == "" {
+			return "", nil, fmt.Errorf("spec.config.database.%s has type postgres but postgres.passwordRef.name/postgres.passwordRef.key is not set", scopeJSONName(ss.scope))
 		}
-		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Name: db.SecretRef, Namespace: instance.Namespace,
-		}, secret); err != nil {
-			return "", "", fmt.Errorf("spec.config.database.secretRef %q: %w", db.SecretRef, err)
+		secret, ok := fetched[ss.ref.Name]
+		if !ok {
+			secret = &corev1.Secret{}
+			if err := r.Get(ctx, types.NamespacedName{
+				Name: ss.ref.Name, Namespace: instance.Namespace,
+			}, secret); err != nil {
+				return "", nil, fmt.Errorf("spec.config.database.%s.postgres.passwordRef %q: %w", scopeJSONName(ss.scope), ss.ref.Name, err)
+			}
+			fetched[ss.ref.Name] = secret
 		}
-		if string(secret.Data[databaseSecretKeyPassword]) == "" {
-			return "", "", fmt.Errorf("spec.config.database.secretRef %q is missing required key: password", db.SecretRef)
+		if string(secret.Data[ss.ref.Key]) == "" {
+			return "", nil, fmt.Errorf("spec.config.database.%s.postgres.passwordRef: Secret %q is missing required key %q",
+				scopeJSONName(ss.scope), ss.ref.Name, ss.ref.Key)
 		}
-		secretName = db.SecretRef
 	}
-
-	scopes := []struct {
-		name string
-		spec appsv1alpha1.DatabaseBackendSpec
-	}{
-		{databaseScopeConfig, db.Config},
-		{databaseScopeRuntimeTransient, db.RuntimeTransient},
-		{databaseScopeEntity, db.Entity},
-		{databaseScopeRuntimePersistent, db.RuntimePersistent},
+	// Every postgres scope needs its own passwordRef even when Type is postgres but Postgres/PasswordRef
+	// itself is nil (collectDatabaseScopeSecrets silently skips that case, since it doesn't know
+	// a scope's Type without also checking it) — catch that here explicitly.
+	for _, s := range databaseScopes(db) {
+		if s.spec.Type == databaseTypePostgres && (s.spec.Postgres == nil || s.spec.Postgres.PasswordRef == nil) {
+			return "", nil, fmt.Errorf("spec.config.database.%s has type postgres but postgres.passwordRef is not set", scopeJSONName(s.name))
+		}
 	}
 
 	// No "database:\n" header here — staticSQLiteDatabaseSection (the search target in
 	// reconcileConfigMap) excludes the header line too, since the template keeps it fixed and
 	// only the body underneath gets swapped.
 	var sb strings.Builder
-	for _, s := range scopes {
+	for _, s := range databaseScopes(db) {
 		scopeBlock, err := renderDatabaseScope(s.name, s.spec)
 		if err != nil {
-			return "", "", fmt.Errorf("spec.config.database.%s: %w", scopeJSONName(s.name), err)
+			return "", nil, fmt.Errorf("spec.config.database.%s: %w", scopeJSONName(s.name), err)
 		}
 		fmt.Fprintf(&sb, "  %s:\n%s\n", s.name, scopeBlock)
 	}
 
-	return strings.TrimRight(sb.String(), "\n"), secretName, nil
+	return strings.TrimRight(sb.String(), "\n"), scopeSecrets, nil
 }
 
 // scopeJSONName maps a rendered scope's snake_case name (ThunderID's own convention) to the CRD's
@@ -232,7 +302,7 @@ func renderDatabaseScope(scopeName string, spec appsv1alpha1.DatabaseBackendSpec
       sslmode: "%s"
       max_open_conns: %d
       max_idle_conns: %d
-      conn_max_lifetime: %d`, pg.Hostname, port, pg.Username, databasePasswordMountPath, pg.Name, sslmode,
+      conn_max_lifetime: %d`, pg.Hostname, port, pg.Username, databasePasswordMountPath(scopeName), pg.Name, sslmode,
 			maxOpen, maxIdle, connLifetime), nil
 	}
 

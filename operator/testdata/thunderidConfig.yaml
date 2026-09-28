@@ -84,4 +84,6 @@ spec:
     #     fromAddress: "noreply@example.com"
     #     enableStartTLS: true
     #     enableAuthentication: false
-    #   secretRef: my-smtp-secret
+    #     secretRef:
+    #       name: my-smtp-secret
+    #       key: password

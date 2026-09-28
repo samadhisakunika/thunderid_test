@@ -51,14 +51,14 @@ func (suite *ReconcileConfigMapTestSuite) TestDatabaseConfigErrorPropagates() {
 				Config: appsv1alpha1.DatabaseBackendSpec{Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
 					Hostname: "h", Username: "u", Name: "n",
 				}},
-				// SecretRef deliberately unset - resolveDatabaseConfig errors immediately.
+				// PasswordRef deliberately unset - resolveDatabaseConfig errors immediately.
 			}},
 		},
 	}
 	r := newFakeReconciler(instance)
 	_, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
 	suite.Require().Error(err)
-	suite.Contains(err.Error(), "secretRef")
+	suite.Contains(err.Error(), "passwordRef")
 }
 
 func (suite *ReconcileConfigMapTestSuite) TestEmailConfigErrorPropagates() {

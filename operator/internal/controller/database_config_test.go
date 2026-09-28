@@ -133,20 +133,20 @@ func (suite *DatabaseConfigTestSuite) TestRenderDatabaseScopePostgresDefaults() 
 	suite.Contains(got, `hostname: "db.example.com"`)
 	suite.Contains(got, `port: 5432`)
 	suite.Contains(got, `username: "thunderid"`)
-	suite.Contains(got, `password: "file://`+databasePasswordMountPath+`"`)
+	suite.Contains(got, `password: "file://`+databasePasswordMountPath("config")+`"`)
 	suite.Contains(got, `sslmode: "require"`)
 }
 
 func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigUnset() {
 	r := newFakeReconciler()
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	block, secretName, err := r.resolveDatabaseConfig(context.Background(), instance)
+	block, scopeSecrets, err := r.resolveDatabaseConfig(context.Background(), instance)
 	suite.Require().NoError(err)
 	suite.Empty(block)
-	suite.Empty(secretName)
+	suite.Empty(scopeSecrets)
 }
 
-func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresMissingSecretRef() {
+func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresMissingPasswordRef() {
 	r := newFakeReconciler()
 	instance := &appsv1alpha1.ThunderIDInstance{Spec: appsv1alpha1.ThunderIDInstanceSpec{
 		Config: appsv1alpha1.AppConfigSpec{Database: &appsv1alpha1.DatabaseSpec{
@@ -157,7 +157,23 @@ func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresMissingSe
 	}}
 	_, _, err := r.resolveDatabaseConfig(context.Background(), instance)
 	suite.Require().Error(err)
-	suite.Contains(err.Error(), "secretRef")
+	suite.Contains(err.Error(), "passwordRef")
+	suite.Contains(err.Error(), "spec.config.database.config")
+}
+
+func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresMissingPasswordRefKey() {
+	r := newFakeReconciler()
+	instance := &appsv1alpha1.ThunderIDInstance{Spec: appsv1alpha1.ThunderIDInstanceSpec{
+		Config: appsv1alpha1.AppConfigSpec{Database: &appsv1alpha1.DatabaseSpec{
+			Config: appsv1alpha1.DatabaseBackendSpec{Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
+				Hostname: "h", Username: "u", Name: "n",
+				PasswordRef: &appsv1alpha1.SecretKeyRef{Name: "db-secret"},
+			}},
+		}},
+	}}
+	_, _, err := r.resolveDatabaseConfig(context.Background(), instance)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "passwordRef")
 }
 
 func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresSecretNotFound() {
@@ -166,9 +182,9 @@ func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresSecretNot
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
 		Spec: appsv1alpha1.ThunderIDInstanceSpec{
 			Config: appsv1alpha1.AppConfigSpec{Database: &appsv1alpha1.DatabaseSpec{
-				SecretRef: "does-not-exist",
 				Config: appsv1alpha1.DatabaseBackendSpec{Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
 					Hostname: "h", Username: "u", Name: "n",
+					PasswordRef: &appsv1alpha1.SecretKeyRef{Name: "does-not-exist", Key: "password"},
 				}},
 			}},
 		},
@@ -178,18 +194,17 @@ func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresSecretNot
 	suite.Contains(err.Error(), "does-not-exist")
 }
 
-func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigScopeRenderErrorPropagates() {
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "db-secret", Namespace: "default"},
-		Data:       map[string][]byte{"password": []byte("x")},
-	}
-	r := newFakeReconciler(secret)
+// TestResolveDatabaseConfigPostgresTypeWithNilPostgresBlock: type: postgres with no Postgres
+// block set at all — PasswordRef now lives inside PostgresBackendSpec, so a nil Postgres block and a
+// missing passwordRef are the same condition; the safety-net passwordRef check catches this before ever
+// reaching renderDatabaseScope (whose own distinct "type is postgres but postgres is not set"
+// error is exercised directly by TestRenderDatabaseScopePostgresMissingBlock instead).
+func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresTypeWithNilPostgresBlock() {
+	r := newFakeReconciler()
 	instance := &appsv1alpha1.ThunderIDInstance{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
 		Spec: appsv1alpha1.ThunderIDInstanceSpec{
 			Config: appsv1alpha1.AppConfigSpec{Database: &appsv1alpha1.DatabaseSpec{
-				SecretRef: "db-secret",
-				// type: postgres with no Postgres block set - renderDatabaseScope itself errors.
 				Config: appsv1alpha1.DatabaseBackendSpec{Type: "postgres"},
 			}},
 		},
@@ -197,6 +212,7 @@ func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigScopeRenderErrorP
 	_, _, err := r.resolveDatabaseConfig(context.Background(), instance)
 	suite.Require().Error(err)
 	suite.Contains(err.Error(), "spec.config.database.config")
+	suite.Contains(err.Error(), "passwordRef")
 }
 
 func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresMissingPasswordKey() {
@@ -209,16 +225,16 @@ func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigPostgresMissingPa
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
 		Spec: appsv1alpha1.ThunderIDInstanceSpec{
 			Config: appsv1alpha1.AppConfigSpec{Database: &appsv1alpha1.DatabaseSpec{
-				SecretRef: "db-secret",
 				Config: appsv1alpha1.DatabaseBackendSpec{Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
 					Hostname: "h", Username: "u", Name: "n",
+					PasswordRef: &appsv1alpha1.SecretKeyRef{Name: "db-secret", Key: "password"},
 				}},
 			}},
 		},
 	}
 	_, _, err := r.resolveDatabaseConfig(context.Background(), instance)
 	suite.Require().Error(err)
-	suite.Contains(err.Error(), "missing required key: password")
+	suite.Contains(err.Error(), `missing required key "password"`)
 }
 
 func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigAllFourScopes() {
@@ -227,24 +243,72 @@ func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigAllFourScopes() {
 		Data:       map[string][]byte{"password": []byte("secret")},
 	}
 	r := newFakeReconciler(secret)
-	pgSpec := appsv1alpha1.DatabaseBackendSpec{Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
-		Hostname: "h", Username: "u", Name: "n",
-	}}
+	pgSpec := appsv1alpha1.DatabaseBackendSpec{
+		Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
+			Hostname: "h", Username: "u", Name: "n",
+			PasswordRef: &appsv1alpha1.SecretKeyRef{Name: "db-secret", Key: "password"},
+		},
+	}
 	instance := &appsv1alpha1.ThunderIDInstance{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
 		Spec: appsv1alpha1.ThunderIDInstanceSpec{
 			Config: appsv1alpha1.AppConfigSpec{Database: &appsv1alpha1.DatabaseSpec{
-				SecretRef: "db-secret", Config: pgSpec, RuntimeTransient: pgSpec, Entity: pgSpec, RuntimePersistent: pgSpec,
+				Config: pgSpec, RuntimeTransient: pgSpec, Entity: pgSpec, RuntimePersistent: pgSpec,
 			}},
 		},
 	}
-	block, secretName, err := r.resolveDatabaseConfig(context.Background(), instance)
+	block, scopeSecrets, err := r.resolveDatabaseConfig(context.Background(), instance)
 	suite.Require().NoError(err)
-	suite.Equal("db-secret", secretName)
+	suite.Len(scopeSecrets, 4)
+	for _, ss := range scopeSecrets {
+		suite.Equal("db-secret", ss.ref.Name)
+		suite.Equal("password", ss.ref.Key)
+	}
 	for _, scope := range []string{"config:", "runtime_transient:", "entity:", "runtime_persistent:"} {
 		suite.Contains(block, scope)
 	}
 	// No leading/trailing blank lines - reconcileConfigMap swaps this in verbatim.
 	suite.False(strings.HasPrefix(block, "\n"))
 	suite.False(strings.HasSuffix(block, "\n"))
+}
+
+// TestResolveDatabaseConfigScopesWithDifferentKeysOfSameSecret is the actual feature this design
+// exists for: two scopes sharing one Secret object but each with its own Key, giving each scope
+// its own password without requiring a second Secret.
+func (suite *DatabaseConfigTestSuite) TestResolveDatabaseConfigScopesWithDifferentKeysOfSameSecret() {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "shared-db-secret", Namespace: "default"},
+		Data:       map[string][]byte{"config-password": []byte("p1"), "runtime-password": []byte("p2")},
+	}
+	r := newFakeReconciler(secret)
+	instance := &appsv1alpha1.ThunderIDInstance{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+		Spec: appsv1alpha1.ThunderIDInstanceSpec{
+			Config: appsv1alpha1.AppConfigSpec{Database: &appsv1alpha1.DatabaseSpec{
+				Config: appsv1alpha1.DatabaseBackendSpec{
+					Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
+						Hostname: "h", Username: "u", Name: "n",
+						PasswordRef: &appsv1alpha1.SecretKeyRef{Name: "shared-db-secret", Key: "config-password"},
+					},
+				},
+				RuntimeTransient: appsv1alpha1.DatabaseBackendSpec{
+					Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
+						Hostname: "h", Username: "u", Name: "n",
+						PasswordRef: &appsv1alpha1.SecretKeyRef{Name: "shared-db-secret", Key: "runtime-password"},
+					},
+				},
+			}},
+		},
+	}
+	_, scopeSecrets, err := r.resolveDatabaseConfig(context.Background(), instance)
+	suite.Require().NoError(err)
+	suite.Len(scopeSecrets, 2)
+	byScope := map[string]databaseScopeSecret{}
+	for _, ss := range scopeSecrets {
+		byScope[ss.scope] = ss
+	}
+	suite.Equal("shared-db-secret", byScope["config"].ref.Name)
+	suite.Equal("config-password", byScope["config"].ref.Key)
+	suite.Equal("shared-db-secret", byScope["runtime_transient"].ref.Name)
+	suite.Equal("runtime-password", byScope["runtime_transient"].ref.Key)
 }

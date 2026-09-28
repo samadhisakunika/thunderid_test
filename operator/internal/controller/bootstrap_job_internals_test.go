@@ -140,10 +140,10 @@ func (suite *BootstrapJobInternalsTestSuite) TestBootstrapPermanentFailureReason
 func (suite *BootstrapJobInternalsTestSuite) TestCreateBootstrapJobEmailAuthMountsEmailVolume() {
 	instance := postgresInstance()
 	instance.Spec.Config.Email = &appsv1alpha1.EmailSpec{
-		SecretRef: "email-secret",
 		SMTP: appsv1alpha1.SMTPConfigSpec{
 			Host: "smtp.example.com", Port: 587, FromAddress: "noreply@example.com",
 			EnableAuthentication: true,
+			SecretRef:            &appsv1alpha1.SecretKeyRef{Name: "email-secret", Key: "password"},
 		},
 	}
 	r := newFakeReconciler(instance)

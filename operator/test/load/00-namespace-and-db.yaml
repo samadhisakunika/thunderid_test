@@ -19,25 +19,34 @@ metadata:
   namespace: loadtest
 spec:
   replicas: 1
-  strategy: {type: Recreate}
+  strategy:
+    type: Recreate
   selector:
-    matchLabels: {app: loadtest-pgdb}
+    matchLabels:
+      app: loadtest-pgdb
   template:
     metadata:
-      labels: {app: loadtest-pgdb}
+      labels:
+        app: loadtest-pgdb
     spec:
       containers:
         - name: postgres
           image: postgres:16-alpine
-          ports: [{containerPort: 5432}]
+          ports:
+            - containerPort: 5432
           env:
-            - {name: POSTGRES_USER, value: "postgres"}
-            - {name: POSTGRES_DB, value: "thunderid_config"}
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_DB
+              value: "thunderid_config"
             - name: POSTGRES_PASSWORD
               valueFrom:
-                secretKeyRef: {name: loadtest-pg-secret, key: POSTGRES_PASSWORD}
+                secretKeyRef:
+                  name: loadtest-pg-secret
+                  key: POSTGRES_PASSWORD
           readinessProbe:
-            exec: {command: ["pg_isready", "-U", "postgres"]}
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
             initialDelaySeconds: 5
             periodSeconds: 5
           lifecycle:
@@ -51,5 +60,8 @@ metadata:
   name: loadtest-pgdb
   namespace: loadtest
 spec:
-  selector: {app: loadtest-pgdb}
-  ports: [{port: 5432, targetPort: 5432}]
+  selector:
+    app: loadtest-pgdb
+  ports:
+    - port: 5432
+      targetPort: 5432

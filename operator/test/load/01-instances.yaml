@@ -8,8 +8,12 @@ spec:
   replicas: 1
   dataVolumeSize: 1Gi
   resources:
-    requests: {cpu: 100m, memory: 128Mi}
-    limits: {cpu: 500m, memory: 256Mi}
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
   config:
     port: 8090
     jwt:
@@ -24,8 +28,12 @@ spec:
   image: ghcr.io/thunder-id/thunderid:latest
   replicas: 1
   resources:
-    requests: {cpu: 100m, memory: 128Mi}
-    limits: {cpu: 500m, memory: 256Mi}
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
   config:
     port: 8090
     jwt:
@@ -44,6 +52,9 @@ spec:
           username: postgres
           name: thunderid_config
           sslmode: "disable"
+          passwordRef:
+            name: thunderid-db
+            key: password
       entity:
         type: postgres
         postgres:
@@ -52,6 +63,9 @@ spec:
           username: postgres
           name: thunderid_config
           sslmode: "disable"
+          passwordRef:
+            name: thunderid-db
+            key: password
       runtimeTransient:
         type: postgres
         postgres:
@@ -60,6 +74,9 @@ spec:
           username: postgres
           name: thunderid_runtime
           sslmode: "disable"
+          passwordRef:
+            name: thunderid-db
+            key: password
       runtimePersistent:
         type: postgres
         postgres:
@@ -68,4 +85,6 @@ spec:
           username: postgres
           name: thunderid_runtime
           sslmode: "disable"
-      secretRef: thunderid-db
+          passwordRef:
+            name: thunderid-db
+            key: password

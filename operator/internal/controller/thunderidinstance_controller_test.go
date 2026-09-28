@@ -188,8 +188,11 @@ var _ = Describe("ThunderIDInstance Controller", func() {
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
 			pg := appsv1alpha1.DatabaseBackendSpec{
-				Type:     "postgres",
-				Postgres: &appsv1alpha1.PostgresBackendSpec{Hostname: "db.example.com", Username: "thunderid", Name: "thunderid"},
+				Type: "postgres",
+				Postgres: &appsv1alpha1.PostgresBackendSpec{
+					Hostname: "db.example.com", Username: "thunderid", Name: "thunderid",
+					PasswordRef: &appsv1alpha1.SecretKeyRef{Name: resourceName + "-db", Key: "password"},
+				},
 			}
 			instance := &appsv1alpha1.ThunderIDInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: resourceName, Namespace: resourceNamespace},
@@ -197,8 +200,7 @@ var _ = Describe("ThunderIDInstance Controller", func() {
 					Image: "thunderid:latest",
 					Config: appsv1alpha1.AppConfigSpec{
 						Database: &appsv1alpha1.DatabaseSpec{
-							SecretRef: resourceName + "-db",
-							Config:    pg, RuntimeTransient: pg, Entity: pg, RuntimePersistent: pg,
+							Config: pg, RuntimeTransient: pg, Entity: pg, RuntimePersistent: pg,
 						},
 					},
 				},

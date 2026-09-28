@@ -32,15 +32,18 @@ import (
 )
 
 func postgresInstance() *appsv1alpha1.ThunderIDInstance {
-	pg := appsv1alpha1.DatabaseBackendSpec{Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
-		Hostname: "h", Username: "u", Name: "n",
-	}}
+	pg := appsv1alpha1.DatabaseBackendSpec{
+		Type: "postgres", Postgres: &appsv1alpha1.PostgresBackendSpec{
+			Hostname: "h", Username: "u", Name: "n",
+			PasswordRef: &appsv1alpha1.SecretKeyRef{Name: "db-secret", Key: "password"},
+		},
+	}
 	return &appsv1alpha1.ThunderIDInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
 		Spec: appsv1alpha1.ThunderIDInstanceSpec{
 			Image: "thunderid:latest",
 			Config: appsv1alpha1.AppConfigSpec{Database: &appsv1alpha1.DatabaseSpec{
-				SecretRef: "db-secret", Config: pg, RuntimeTransient: pg, Entity: pg, RuntimePersistent: pg,
+				Config: pg, RuntimeTransient: pg, Entity: pg, RuntimePersistent: pg,
 			}},
 		},
 	}

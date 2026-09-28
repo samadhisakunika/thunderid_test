@@ -10,7 +10,9 @@ spec:
     database:
       # ThunderID has four independent scopes; config+entity share one physical database, and so
       # do runtimeTransient+runtimePersistent (see README's Database section), but each is set
-      # explicitly here since ThunderID's own schema doesn't encode that pairing.
+      # explicitly here since ThunderID's own schema doesn't encode that pairing. Each scope names
+      # its own postgres.passwordRef (Secret+key) — all four share one Secret+key here, but two scopes
+      # could just as well point at different keys of the same Secret to each get their own password.
       config:
         type: postgres
         postgres:
@@ -19,6 +21,9 @@ spec:
           username: postgres
           name: thunderid_config
           sslmode: disable
+          passwordRef:
+            name: my-postgres-db
+            key: password
       entity:
         type: postgres
         postgres:
@@ -27,6 +32,9 @@ spec:
           username: postgres
           name: thunderid_config
           sslmode: disable
+          passwordRef:
+            name: my-postgres-db
+            key: password
       runtimeTransient:
         type: postgres
         postgres:
@@ -35,6 +43,9 @@ spec:
           username: postgres
           name: thunderid_runtime
           sslmode: disable
+          passwordRef:
+            name: my-postgres-db
+            key: password
       runtimePersistent:
         type: postgres
         postgres:
@@ -43,4 +54,6 @@ spec:
           username: postgres
           name: thunderid_runtime
           sslmode: disable
-      secretRef: my-postgres-db
+          passwordRef:
+            name: my-postgres-db
+            key: password

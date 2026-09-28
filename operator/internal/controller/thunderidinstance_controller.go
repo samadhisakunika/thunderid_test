@@ -597,12 +597,13 @@ const (
 )
 
 // Volume/VolumeMount/container names shared across reconcileDeployment and createBootstrapJob -
-// both build near-identical mounts for the same underlying Secrets/ConfigMap.
+// both build near-identical mounts for the same underlying Secrets/ConfigMap. The database
+// scopes' own Volume names come from databaseVolumeName (database_config.go) instead — one per
+// scope, not a single fixed name here.
 const (
 	volumeNameConfig   = "config"
 	volumeNameSecurity = "security"
 	volumeNameSecrets  = "secrets"
-	volumeNameDatabase = "database"
 	volumeNameEmail    = "email"
 	volumeNameData     = "data"
 
@@ -841,13 +842,16 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 		Name:      volumeNameSecrets,
 		MountPath: secretsMountPath,
 	})
-	// Add the volume mount for the database password secret.
-	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name:      volumeNameDatabase,
-		MountPath: "/opt/thunderid/" + databasePasswordMountPath,
-		SubPath:   databaseSecretKeyPassword,
-		ReadOnly:  true,
-	})
+	// Add one volume mount per postgres scope's password (createBootstrapJob only ever runs when
+	// usingPostgres(instance) is true — see reconcileBootstrapJob — so every scope has one).
+	for _, ss := range collectDatabaseScopeSecrets(instance) {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      databaseVolumeName(ss.scope),
+			MountPath: "/opt/thunderid/" + databasePasswordMountPath(ss.scope),
+			SubPath:   databaseSecretKeyPassword,
+			ReadOnly:  true,
+		})
+	}
 	// Add the volume mount for the email password secret, if email auth is enabled.
 	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
@@ -884,23 +888,27 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 			Name:         volumeNameSecrets,
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		},
-		{
-			Name: volumeNameDatabase,
+	}
+	for _, ss := range collectDatabaseScopeSecrets(instance) {
+		volumes = append(volumes, corev1.Volume{
+			Name: databaseVolumeName(ss.scope),
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: instance.Spec.Config.Database.SecretRef,
-					Items:      []corev1.KeyToPath{{Key: databaseSecretKeyPassword, Path: databaseSecretKeyPassword}},
+					SecretName:  ss.ref.Name,
+					Items:       []corev1.KeyToPath{{Key: ss.ref.Key, Path: databaseSecretKeyPassword}},
+					DefaultMode: &defaultMode,
 				},
 			},
-		},
+		})
 	}
 	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.EnableAuthentication {
 		volumes = append(volumes, corev1.Volume{
 			Name: volumeNameEmail,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: instance.Spec.Config.Email.SecretRef,
-					Items:      []corev1.KeyToPath{{Key: emailSecretKeyPassword, Path: databaseSecretKeyPassword}},
+					SecretName:  instance.Spec.Config.Email.SMTP.SecretRef.Name,
+					Items:       []corev1.KeyToPath{{Key: instance.Spec.Config.Email.SMTP.SecretRef.Key, Path: emailSecretKeyPassword}},
+					DefaultMode: &defaultMode,
 				},
 			},
 		})
@@ -1176,16 +1184,18 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			ReadOnly:  true,
 		})
 	}
-	if usingPostgres(instance) {
-		// Nested under the config/secrets directory mount above — Kubernetes bind-mounts each
-		// volumeMount independently, so a single-file mount here doesn't conflict with the
-		// directory mount it sits inside. Only the password is Secret-sourced: the rest of the
-		// postgres connection details are inlined directly into deployment.yaml (see
-		// resolveDatabaseConfig), matching how ThunderID resolves file:// values for its other
-		// secrets (direct_auth_secret, crypto.key).
+	// One mount per postgres scope that actually has a passwordRef — not gated on usingPostgres(instance)
+	// (all four scopes postgres): a mixed sqlite/postgres config needs exactly the postgres
+	// scopes' passwords mounted, no more, no less. Nested under the config/secrets directory
+	// mount above — Kubernetes bind-mounts each volumeMount independently, so a single-file mount
+	// here doesn't conflict with the directory mount it sits inside. Only the password is
+	// Secret-sourced: the rest of the postgres connection details are inlined directly into
+	// deployment.yaml (see resolveDatabaseConfig), matching how ThunderID resolves file:// values
+	// for its other secrets (direct_auth_secret, crypto.key).
+	for _, ss := range collectDatabaseScopeSecrets(instance) {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      volumeNameDatabase,
-			MountPath: "/opt/thunderid/" + databasePasswordMountPath,
+			Name:      databaseVolumeName(ss.scope),
+			MountPath: "/opt/thunderid/" + databasePasswordMountPath(ss.scope),
 			SubPath:   databaseSecretKeyPassword,
 			ReadOnly:  true,
 		})
@@ -1230,13 +1240,14 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			},
 		})
 	}
-	if usingPostgres(instance) {
+	for _, ss := range collectDatabaseScopeSecrets(instance) {
 		volumes = append(volumes, corev1.Volume{
-			Name: volumeNameDatabase,
+			Name: databaseVolumeName(ss.scope),
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: instance.Spec.Config.Database.SecretRef,
-					Items:      []corev1.KeyToPath{{Key: databaseSecretKeyPassword, Path: databaseSecretKeyPassword}},
+					SecretName:  ss.ref.Name,
+					Items:       []corev1.KeyToPath{{Key: ss.ref.Key, Path: databaseSecretKeyPassword}},
+					DefaultMode: &defaultMode,
 				},
 			},
 		})
@@ -1246,8 +1257,9 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 			Name: volumeNameEmail,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: instance.Spec.Config.Email.SecretRef,
-					Items:      []corev1.KeyToPath{{Key: emailSecretKeyPassword, Path: databaseSecretKeyPassword}},
+					SecretName:  instance.Spec.Config.Email.SMTP.SecretRef.Name,
+					Items:       []corev1.KeyToPath{{Key: instance.Spec.Config.Email.SMTP.SecretRef.Key, Path: emailSecretKeyPassword}},
+					DefaultMode: &defaultMode,
 				},
 			},
 		})

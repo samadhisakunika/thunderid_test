@@ -82,7 +82,7 @@ func diagnosePod(pod *corev1.Pod) (unhealthy bool, issue podIssue) {
 
 // diagnoseMissingSecret looks for the specific, easy-to-hit cause behind a CreateContainerConfigError:
 // a Secret name relevant to instance (the one named by whichever EnvironmentValues is labeled for it,
-// config.database.secretRef, config.email.secretRef) that exists somewhere in the cluster, just
+// any config.database.<scope>.postgres.passwordRef, config.email.smtp.secretRef) that exists somewhere in the cluster, just
 // not in instance's namespace. Kubelet's own "secret \"X\" not found" message only ever means
 // "not found in this pod's namespace" — it has no way to know whether X exists elsewhere, so this
 // is the only place that can tell a genuinely-missing Secret apart from one that's simply in the
@@ -96,11 +96,11 @@ func diagnoseMissingSecret(ctx context.Context, c client.Client, instance *appsv
 	if env, err := findEnvironment(ctx, c, instance); err == nil && env != nil {
 		names = append(names, env.Name)
 	}
-	if instance.Spec.Config.Database != nil && instance.Spec.Config.Database.SecretRef != "" {
-		names = append(names, instance.Spec.Config.Database.SecretRef)
+	for _, ss := range collectDatabaseScopeSecrets(instance) {
+		names = append(names, ss.ref.Name)
 	}
-	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SecretRef != "" {
-		names = append(names, instance.Spec.Config.Email.SecretRef)
+	if instance.Spec.Config.Email != nil && instance.Spec.Config.Email.SMTP.SecretRef != nil {
+		names = append(names, instance.Spec.Config.Email.SMTP.SecretRef.Name)
 	}
 
 	for _, name := range names {
@@ -115,7 +115,7 @@ func diagnoseMissingSecret(ctx context.Context, c client.Client, instance *appsv
 		for _, s := range all.Items {
 			if s.Name == name && s.Namespace != instance.Namespace {
 				return fmt.Sprintf(
-					"Secret %q not found in namespace %q, but a Secret with that name exists in namespace %q — Secrets must be in the same namespace as the instance (check the EnvironmentValues labeled thunderid.io/instance=%s, database.secretRef, email.secretRef)",
+					"Secret %q not found in namespace %q, but a Secret with that name exists in namespace %q — Secrets must be in the same namespace as the instance (check the EnvironmentValues labeled thunderid.io/instance=%s, database.<scope>.postgres.passwordRef, email.smtp.secretRef)",
 					name, instance.Namespace, s.Namespace, instance.Name)
 			}
 		}

@@ -27,6 +27,9 @@ import (
 )
 
 const (
+	// emailSecretKeyPassword is the fixed local filename spec.config.email.secretRef's (arbitrary)
+	// key is projected to inside the email Volume — same role as databaseSecretKeyPassword plays
+	// for the database scopes' Volumes.
 	emailSecretKeyPassword = "password"
 
 	// emailPasswordMountPath is where the password key of spec.config.email.secretRef is mounted into
@@ -53,17 +56,18 @@ func (r *ThunderIDInstanceReconciler) resolveEmailConfig(
 
 	password := ""
 	if email.SMTP.EnableAuthentication {
-		if email.SecretRef == "" {
-			return "", fmt.Errorf("spec.config.email.smtp.enableAuthentication is true but spec.config.email.secretRef is not set")
+		secretRef := email.SMTP.SecretRef
+		if secretRef == nil || secretRef.Name == "" || secretRef.Key == "" {
+			return "", fmt.Errorf("spec.config.email.smtp.enableAuthentication is true but spec.config.email.smtp.secretRef.name/secretRef.key is not set")
 		}
 		secret := &corev1.Secret{}
 		if err := r.Get(ctx, types.NamespacedName{
-			Name: email.SecretRef, Namespace: instance.Namespace,
+			Name: secretRef.Name, Namespace: instance.Namespace,
 		}, secret); err != nil {
-			return "", fmt.Errorf("spec.config.email.secretRef %q: %w", email.SecretRef, err)
+			return "", fmt.Errorf("spec.config.email.smtp.secretRef %q: %w", secretRef.Name, err)
 		}
-		if string(secret.Data[emailSecretKeyPassword]) == "" {
-			return "", fmt.Errorf("spec.config.email.secretRef %q is missing required key: password", email.SecretRef)
+		if string(secret.Data[secretRef.Key]) == "" {
+			return "", fmt.Errorf("spec.config.email.smtp.secretRef: Secret %q is missing required key %q", secretRef.Name, secretRef.Key)
 		}
 		password = "file://" + emailPasswordMountPath
 	}

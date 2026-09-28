@@ -39,9 +39,8 @@ type SQLiteBackendSpec struct {
 }
 
 // PostgresBackendSpec configures one database scope's PostgreSQL connection — mirrors
-// ThunderID's own database.<scope>.postgres: block, except password: DatabaseSpec.SecretRef backs
-// every postgres scope's password uniformly, since ThunderID's own password field is always a
-// file:// reference regardless of scope.
+// ThunderID's own database.<scope>.postgres: block, except password: PasswordRef backs it, since
+// ThunderID's own password field is always a file:// reference, never inline.
 type PostgresBackendSpec struct {
 	// +optional
 	Hostname string `json:"hostname,omitempty"`
@@ -60,6 +59,26 @@ type PostgresBackendSpec struct {
 	MaxIdleConns int32 `json:"maxIdleConns,omitempty"`
 	// +optional
 	ConnMaxLifetime int32 `json:"connMaxLifetime,omitempty"`
+
+	// PasswordRef names the Secret+key holding this scope's PostgreSQL password. Required (this scope's
+	// DatabaseBackendSpec.Type is "postgres" whenever Postgres itself is set). K8s-only glue, not
+	// a ThunderID field. Scopes are independent: point two scopes' PasswordRef at the same Secret with
+	// different Key values to give each its own password out of one Secret object, or at the same
+	// Secret+Key to share one password across them (today's only option before this field
+	// existed) — the operator mounts exactly what each scope's PasswordRef says, nothing more.
+	// +optional
+	PasswordRef *SecretKeyRef `json:"passwordRef,omitempty"`
+}
+
+// SecretKeyRef names one key within one Secret in the ThunderIDInstance's own namespace — the
+// k8s-only glue for a single credential value. Unlike corev1.SecretKeySelector this has no
+// "optional" flag: a SecretKeyRef is only ever set when the value it points at is required, so a
+// missing Secret or key is always a config error, surfaced the same way any other one is.
+type SecretKeyRef struct {
+	// Name of the Secret, in the same namespace as the ThunderIDInstance.
+	Name string `json:"name"`
+	// Key within the Secret holding the value.
+	Key string `json:"key"`
 }
 
 // DatabaseBackendSpec is one database scope. ThunderID has four (config, runtime_transient,
@@ -94,12 +113,6 @@ type DatabaseSpec struct {
 	Entity DatabaseBackendSpec `json:"entity,omitempty"`
 	// +optional
 	RuntimePersistent DatabaseBackendSpec `json:"runtimePersistent,omitempty"`
-
-	// SecretRef names a Secret holding the PostgreSQL password, under key "password" — shared by
-	// every scope whose type is postgres. K8s-only glue, not a ThunderID field. Required when any
-	// scope's type is postgres.
-	// +optional
-	SecretRef string `json:"secretRef,omitempty"`
 }
 
 // TLSConfigSpec mirrors ThunderID's own deployment.yaml "tls:" section — only min_version is
@@ -135,7 +148,7 @@ type PasskeyConfigSpec struct {
 }
 
 // SMTPConfigSpec mirrors ThunderID's own deployment.yaml "email.smtp:" section, except password:
-// EmailSpec.SecretRef backs it, since ThunderID's own password field is always a file:// reference.
+// SecretRef backs it, since ThunderID's own password field is always a file:// reference.
 type SMTPConfigSpec struct {
 	// +kubebuilder:validation:Required
 	Host string `json:"host"`
@@ -155,9 +168,16 @@ type SMTPConfigSpec struct {
 	// +optional
 	EnableStartTLS bool `json:"enableStartTLS,omitempty"`
 
-	// EnableAuthentication authenticates to the SMTP server using Username/EmailSpec.SecretRef.
+	// EnableAuthentication authenticates to the SMTP server using Username/SecretRef.
 	// +optional
 	EnableAuthentication bool `json:"enableAuthentication,omitempty"`
+
+	// SecretRef names the Secret+key holding the SMTP password. Required when
+	// EnableAuthentication is true, ignored otherwise. K8s-only glue, not a ThunderID field. Same
+	// Secret object a spec.config.database scope's postgres.passwordRef uses is fine too — just a
+	// different Key.
+	// +optional
+	SecretRef *SecretKeyRef `json:"secretRef,omitempty"`
 }
 
 // EmailSpec configures the SMTP client ThunderID uses for outbound email (registration
@@ -166,11 +186,6 @@ type SMTPConfigSpec struct {
 type EmailSpec struct {
 	// +kubebuilder:validation:Required
 	SMTP SMTPConfigSpec `json:"smtp"`
-
-	// SecretRef names a Secret holding the SMTP password, under key "password". Required when
-	// smtp.enableAuthentication is true, ignored otherwise. K8s-only glue, not a ThunderID field.
-	// +optional
-	SecretRef string `json:"secretRef,omitempty"`
 }
 
 // AutoScalingSpec configures a HorizontalPodAutoscaler for the Deployment - see reconcileHPA.

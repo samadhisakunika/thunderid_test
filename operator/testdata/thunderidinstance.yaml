@@ -35,14 +35,18 @@ spec:
 
   # config groups everything that maps directly into ThunderID's own deployment.yaml, mirroring
   # its own top-level blocks (database:/tls:/jwt:/passkey:/email:) 1:1 — copy field names
-  # straight from a real deployment.yaml, besides the Kubernetes-only glue (port doubles as k8s
-  # wiring; secretRef fields source a password from a Secret since ThunderID's own password
-  # field is always a file:// reference).
+  # straight from a real deployment.yaml, besides the Kubernetes-only glue (passwordRef/secretRef fields
+  # source a password from a Secret since ThunderID's own password field is always a file://
+  # reference; port doubles as k8s wiring).
   config:
     database:
       # ThunderID has four independent scopes. config+entity share one physical database in
       # practice, and so do runtimeTransient+runtimePersistent (see database_config.go), but
       # each is set explicitly here since ThunderID's own schema doesn't encode that pairing.
+      # Each scope names its own passwordRef (Secret+key) — all four point at the same Secret and key
+      # here (thunderid-db/password), the same single shared password this instance used before
+      # passwordRef went per-scope; nothing stops two scopes from pointing at different keys of the same
+      # Secret to give each its own password instead (see database_config_test.go).
       config:
         type: postgres
         postgres:
@@ -51,6 +55,9 @@ spec:
           username: "postgres"
           name: "thunderid_config"
           sslmode: "disable"
+          passwordRef:
+            name: thunderid-db
+            key: password
       entity:
         type: postgres
         postgres:
@@ -59,6 +66,9 @@ spec:
           username: "postgres"
           name: "thunderid_config"
           sslmode: "disable"
+          passwordRef:
+            name: thunderid-db
+            key: password
       runtimeTransient:
         type: postgres
         postgres:
@@ -67,6 +77,9 @@ spec:
           username: "postgres"
           name: "thunderid_runtime"
           sslmode: "disable"
+          passwordRef:
+            name: thunderid-db
+            key: password
       runtimePersistent:
         type: postgres
         postgres:
@@ -75,7 +88,9 @@ spec:
           username: "postgres"
           name: "thunderid_runtime"
           sslmode: "disable"
-      secretRef: thunderid-db
+          passwordRef:
+            name: thunderid-db
+            key: password
 
     port: 8090
     tls:
@@ -95,4 +110,6 @@ spec:
         enableStartTLS: true
         enableAuthentication: false
         # username: "smtp-user"
-      # secretRef: my-smtp-secret
+        # secretRef:
+        #   name: my-smtp-secret
+        #   key: password

@@ -51,7 +51,7 @@ Resource CRD (spec.resource_type: application|flow|theme|organization_unit|
 ```
 
 **Key facts:**
-- Every `ThunderIDInstance` must pick a persistent backend: either `spec.dataVolumeSize` (PVC-backed SQLite — `repository/database` persists, `setup.sh` runs once on the pod's first-ever start and is skipped on every restart after that) or every `spec.config.database` scope set to `type: postgres` with `spec.config.database.secretRef` (external PostgreSQL — see [Database](#database) below; the base seed from `spec.resourcesConfigMap` is imported into the database once via a hash-gated bootstrap Job, not on every restart, and `spec.dataVolumeSize` is ignored since there's no local state to persist). Setting neither is rejected — ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
+- Every `ThunderIDInstance` must pick a persistent backend: either `spec.dataVolumeSize` (PVC-backed SQLite — `repository/database` persists, `setup.sh` runs once on the pod's first-ever start and is skipped on every restart after that) or every `spec.config.database` scope set to `type: postgres` with its own `passwordRef` (external PostgreSQL — see [Database](#database) below; the base seed from `spec.resourcesConfigMap` is imported into the database once via a hash-gated bootstrap Job, not on every restart, and `spec.dataVolumeSize` is ignored since there's no local state to persist). Setting neither is rejected — ephemeral, wipe-on-every-restart SQLite is not a supported configuration.
 - The ThunderID image bakes in its own default organization unit, user types, and flows (`default` OU, `Person` user type, `console-app-flow`, `cloud-login-flow`, etc.) — `spec.resourcesConfigMap` is **optional**, only needed if you want to seed additional base resources beyond those defaults.
 - Every `resource_type` is loaded at **pod startup** via mounted ConfigMaps, in dependency order — organization units first (everything else can reference `ouId`), resource servers and user types early (roles/users reference them), users before groups (groups reference users by id), groups and resource servers before roles (roles reference both by id), applications last (they can reference themes, flows, and organization units). A config change triggers a rolling restart; it is not applied live. Each `Resource` reports `Pending` → `Ready`/`Error` on its `status.phase` while the rollout is verified.
 - `spec.domain` is **optional** and unset by default — every local/dev workflow in this repo reaches ThunderID via `kubectl port-forward svc/<name> 8090:8090` → `https://localhost:8090` instead, which is what the operator assumes when no domain is set. Setting `spec.domain` creates a real `Ingress` for external access (a real deployment with real DNS), but the `public_url` value it feeds into ThunderID's own config isn't actually a field ThunderID's schema recognizes (see the image's own `config/default.json`, which has no `public_url` anywhere). ThunderID silently ignores it either way, so this only matters for the `Ingress` routing itself, not anything ThunderID does internally.
@@ -81,8 +81,8 @@ deployed into.
   `loadtest` namespace, reconciled by the same operator alongside instances in `default`.
 - **A `ThunderIDInstance` and everything that belongs to it must share one namespace** — the
   `Resource`s labeled with its name, the `EnvironmentValues` (if any) labeled with its name, and every
-  Secret named directly in its spec: `spec.config.database.secretRef`,
-  `spec.config.email.secretRef` (hand-written, same rule). The operator resolves a `Resource`'s or
+  Secret named directly in its spec: every `spec.config.database.<scope>.postgres.passwordRef.name`,
+  `spec.config.email.smtp.secretRef` (hand-written, same rule). The operator resolves a `Resource`'s or
   `EnvironmentValues`'s owning instance by looking it up **in the `Resource`'s/`EnvironmentValues`'s own
   namespace** — there's no cross-namespace reference. Splitting an instance's objects across
   namespaces just means the `Resource`s/`EnvironmentValues` never find their instance; splitting a
@@ -257,7 +257,7 @@ The top-level resource. Creates and manages a `Deployment`, `Service`, and (opti
 | `spec.resourcesConfigMap` | No | ConfigMap containing *additional* base resources YAML, seeded alongside the image's own built-in defaults (default OU, user types, flows). Not required for normal use |
 | *(none — see `EnvironmentValues`)* | — | Environment variables come from whichever `EnvironmentValues` in this namespace is labeled `thunderid.io/instance: <this instance's name>`, not a spec field — see [Env vars & `{{.VAR}}` placeholders](#env-vars--var-placeholders) below |
 | `spec.config.database` | See note | Mirrors ThunderID's own `database:` section 1:1 — four independent scopes (`config`, `runtimeTransient`, `entity`, `runtimePersistent`), each with `type: sqlite` (default) or `type: postgres` and a matching `sqlite:`/`postgres:` block. Unset means the image's built-in sqlite defaults for all four. See [Database](#database) below. Unless every scope is `type: postgres`, `spec.dataVolumeSize` **must** be set — a `ThunderIDInstance` with neither is rejected |
-| `spec.config.database.secretRef` | No | Required when any scope's `type` is `postgres`: name of the Secret holding the `password` key, shared across every postgres scope |
+| `spec.config.database.<scope>.postgres.passwordRef` | No | Required when that scope's `type` is `postgres`: `{name, key}` naming the Secret+key holding that scope's password. Independent per scope — point two scopes at the same Secret with different `key`s for separate passwords, or the same Secret+key to share one, as today's default pattern does |
 | `spec.tlsSecret` | No | Kubernetes Secret name for TLS |
 | `spec.dataVolumeSize` | See note | e.g. `"1Gi"`. Provisions a ReadWriteOnce PVC for `repository/database` (the SQLite files) and makes `setup.sh` run only once — on every restart after the first, the entrypoint finds a marker file on that volume and skips straight to `start.sh`. Only meaningful with `replicas: 1` (the Deployment switches to a `Recreate` strategy since the PVC can't be mounted by two pods at once). Unnecessary only when every `spec.config.database` scope is `type: postgres` |
 | `spec.replicas` | No | Replica count (set to 0 when using HPA, which manages replicas) |
@@ -267,7 +267,7 @@ The top-level resource. Creates and manages a `Deployment`, `Service`, and (opti
 | `spec.config.tls.minVersion` | No | Minimum TLS version ThunderID's own HTTPS listener accepts (default `"1.3"`, also accepts `"1.2"`). Unrelated to `spec.tlsSecret`, which is the Ingress's TLS termination |
 | `spec.config.jwt.preferredKeyId` | No | Which built-in signing key (`default-key` (RSA) or `ecdsa-key` (ECDSA)) ThunderID signs new tokens with. Default `default-key`; both remain valid for verifying already-issued tokens either way |
 | `spec.config.passkey.extraAllowedOrigins` | No | Extra WebAuthn/passkey origins beyond the instance's own public URL — e.g. a separate frontend origin that also needs to register/verify passkeys |
-| `spec.config.email` | No | Outbound SMTP config, mirroring ThunderID's own `email:` section — `spec.config.email.smtp.host` / `.port` / `.fromAddress` required, `.username` / `.enableAuthentication` / `.enableStartTLS` optional. Unset means no email section at all — same as the image's own default. `spec.config.email.secretRef` names a Secret holding the SMTP password under key `password`, required when `smtp.enableAuthentication: true` |
+| `spec.config.email` | No | Outbound SMTP config, mirroring ThunderID's own `email:` section — `spec.config.email.smtp.host` / `.port` / `.fromAddress` required, `.username` / `.enableAuthentication` / `.enableStartTLS` optional. Unset means no email section at all — same as the image's own default. `spec.config.email.smtp.secretRef: {name, key}` names the Secret+key holding the SMTP password, required when `smtp.enableAuthentication: true` — can point at the same Secret a database scope's `postgres.passwordRef` already uses, just a different `key` |
 
 #### Public URL / Ingress
 
@@ -320,7 +320,7 @@ spec:
 
 #### Database
 
-`spec.config.database` mirrors ThunderID's own `database:` section 1:1 — four independent scopes (`config`, `runtimeTransient`, `entity`, `runtimePersistent`), each with its own `type`/`sqlite`/`postgres` block, rather than one connection reused everywhere. By default `spec.config.database` is unset and every scope uses the image's built-in sqlite files — no configuration needed. To use PostgreSQL instead, set every scope's `type: postgres` with its own connection block — ThunderID's own schema has no shortcut for "same connection everywhere," so neither does this, redundancy included — plus a Secret holding just the password:
+`spec.config.database` mirrors ThunderID's own `database:` section 1:1 — four independent scopes (`config`, `runtimeTransient`, `entity`, `runtimePersistent`), each with its own `type`/`sqlite`/`postgres` block, rather than one connection reused everywhere. By default `spec.config.database` is unset and every scope uses the image's built-in sqlite files — no configuration needed. To use PostgreSQL instead, set every scope's `type: postgres` with its own connection block — ThunderID's own schema has no shortcut for "same connection everywhere," so neither does this, redundancy included — plus a `passwordRef: {name, key}` per scope naming the Secret+key holding that scope's password:
 
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
@@ -339,6 +339,9 @@ spec:
           username: "thunderid"
           name: "thunderid_config"
           sslmode: "require"         # optional; require (default), verify-full, verify-ca, or disable
+          passwordRef:
+            name: thunderid-db
+            key: password
       entity:
         type: postgres
         postgres:
@@ -347,6 +350,9 @@ spec:
           username: "thunderid"
           name: "thunderid_config"   # same database as config: — see Manual setup below
           sslmode: "require"
+          passwordRef:
+            name: thunderid-db
+            key: password
       runtimeTransient:
         type: postgres
         postgres:
@@ -355,6 +361,9 @@ spec:
           username: "thunderid"
           name: "thunderid_runtime"
           sslmode: "require"
+          passwordRef:
+            name: thunderid-db
+            key: password
       runtimePersistent:
         type: postgres
         postgres:
@@ -363,7 +372,9 @@ spec:
           username: "thunderid"
           name: "thunderid_runtime"  # same database as runtimeTransient: — see Manual setup below
           sslmode: "require"
-      secretRef: thunderid-db
+          passwordRef:
+            name: thunderid-db
+            key: password
 ---
 apiVersion: v1
 kind: Secret
@@ -375,6 +386,8 @@ stringData:
 ```
 
 Each scope's fields are inlined directly into the generated `deployment.yaml` almost verbatim; only `password` stays in the Secret, mounted into the pod as a file and referenced with a `file://` URI, the same way ThunderID resolves `direct_auth_secret` and `crypto.key`. A scope's `sqlite`/`postgres` sub-fields left unset fall back to the same defaults used when `spec.config.database` is omitted entirely.
+
+Every postgres scope needs its own `passwordRef` — there's no shared/top-level fallback. The four scopes above all point at the same Secret+key (`thunderid-db`/`password`), matching a single password reused everywhere, but they don't have to: point two scopes' `passwordRef` at the same Secret with **different** `key` values to give each its own password without a second Secret object, e.g. `config`/`entity` using `key: config-password` and `runtimeTransient`/`runtimePersistent` using `key: runtime-password` on one `thunderid-db` Secret holding both keys.
 
 #### Manual database & schema setup (PostgreSQL)
 
@@ -630,7 +643,7 @@ kubectl logs -n system deployment/controller-manager
 ```
 
 **Cause 2:** The Secret named by whichever `EnvironmentValues` is labeled for this instance, or by
-`spec.config.database.secretRef`/`spec.config.email.secretRef`, doesn't exist **in the instance's
+any `spec.config.database.<scope>.postgres.passwordRef.name`/`spec.config.email.smtp.secretRef`, doesn't exist **in the instance's
 own namespace** — see [Namespaces](#namespaces). Most often the Secret does exist, just in the
 wrong namespace (e.g. an `EnvironmentValues`-generated one left in `default` while the instance itself
 is elsewhere), or the `EnvironmentValues` is missing its `thunderid.io/instance` label entirely.

@@ -79,10 +79,10 @@ func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationSecretNot
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
 		Spec: appsv1alpha1.ThunderIDInstanceSpec{
 			Config: appsv1alpha1.AppConfigSpec{Email: &appsv1alpha1.EmailSpec{
-				SecretRef: "does-not-exist",
 				SMTP: appsv1alpha1.SMTPConfigSpec{
 					Host: "smtp.example.com", Port: 587, FromAddress: "noreply@example.com",
 					EnableAuthentication: true,
+					SecretRef:            &appsv1alpha1.SecretKeyRef{Name: "does-not-exist", Key: "password"},
 				},
 			}},
 		},
@@ -102,17 +102,17 @@ func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationMissingPa
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
 		Spec: appsv1alpha1.ThunderIDInstanceSpec{
 			Config: appsv1alpha1.AppConfigSpec{Email: &appsv1alpha1.EmailSpec{
-				SecretRef: "email-secret",
 				SMTP: appsv1alpha1.SMTPConfigSpec{
 					Host: "smtp.example.com", Port: 587, FromAddress: "noreply@example.com",
 					EnableAuthentication: true,
+					SecretRef:            &appsv1alpha1.SecretKeyRef{Name: "email-secret", Key: "password"},
 				},
 			}},
 		},
 	}
 	_, err := r.resolveEmailConfig(context.Background(), instance)
 	suite.Require().Error(err)
-	suite.Contains(err.Error(), "missing required key: password")
+	suite.Contains(err.Error(), `missing required key "password"`)
 }
 
 func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationSuccess() {
@@ -125,10 +125,10 @@ func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationSuccess()
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
 		Spec: appsv1alpha1.ThunderIDInstanceSpec{
 			Config: appsv1alpha1.AppConfigSpec{Email: &appsv1alpha1.EmailSpec{
-				SecretRef: "email-secret",
 				SMTP: appsv1alpha1.SMTPConfigSpec{
 					Host: "smtp.example.com", Port: 587, Username: "svc", FromAddress: "noreply@example.com",
 					EnableAuthentication: true, EnableStartTLS: true,
+					SecretRef: &appsv1alpha1.SecretKeyRef{Name: "email-secret", Key: "password"},
 				},
 			}},
 		},
@@ -140,4 +140,30 @@ func (suite *EmailConfigTestSuite) TestResolveEmailConfigAuthenticationSuccess()
 	suite.Contains(block, `password: "file://`+emailPasswordMountPath+`"`)
 	suite.Contains(block, "enable_authentication: true")
 	suite.Contains(block, "enable_start_tls: true")
+}
+
+// TestResolveEmailConfigSameSecretDifferentKeyAsDatabase proves email.smtp.secretRef can point at
+// the same Secret object a database scope's postgres.passwordRef already uses, just a different key —
+// no separate Secret required.
+func (suite *EmailConfigTestSuite) TestResolveEmailConfigSameSecretDifferentKeyAsDatabase() {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "shared-secret", Namespace: "default"},
+		Data:       map[string][]byte{"db-password": []byte("dbpass"), "smtp-password": []byte("smtppass")},
+	}
+	r := newFakeReconciler(secret)
+	instance := &appsv1alpha1.ThunderIDInstance{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+		Spec: appsv1alpha1.ThunderIDInstanceSpec{
+			Config: appsv1alpha1.AppConfigSpec{Email: &appsv1alpha1.EmailSpec{
+				SMTP: appsv1alpha1.SMTPConfigSpec{
+					Host: "smtp.example.com", Port: 587, FromAddress: "noreply@example.com",
+					EnableAuthentication: true,
+					SecretRef:            &appsv1alpha1.SecretKeyRef{Name: "shared-secret", Key: "smtp-password"},
+				},
+			}},
+		},
+	}
+	block, err := r.resolveEmailConfig(context.Background(), instance)
+	suite.Require().NoError(err)
+	suite.Contains(block, `password: "file://`+emailPasswordMountPath+`"`)
 }
