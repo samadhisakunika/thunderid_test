@@ -1,12 +1,15 @@
 #!/usr/bin/env pwsh
+# Requires PowerShell 7+ (the ternary operator below isn't available in Windows PowerShell 5.1).
+#
 # Mirrors the Makefile's test/test-unit/test-integration targets for Windows, where `make` isn't
 # available (see CLAUDE.md's Windows constraints) - same pattern this project's own ThunderID
 # product repo uses (Makefile -> ./build.sh on Linux/macOS, ./build.ps1 standalone on Windows).
 #
 # Unlike the Makefile, this does NOT run manifests/generate first: those depend on controller-gen,
-# which is a Linux ELF binary in this repo (bin/controller-gen) that Make always resolves to
-# regardless of host OS - CRD YAML and deepcopy code are generated manually on Windows instead
-# (see CLAUDE.md). Everything else - fmt, vet, the actual test run - works natively here.
+# a Linux ELF binary the Makefile downloads on demand (`go_install_tool`, into a gitignored bin/ -
+# never committed) that Make always resolves to regardless of host OS. CRD YAML and deepcopy code
+# are generated manually on Windows instead (see CLAUDE.md). Everything else - fmt, vet, the
+# actual test run - works natively here.
 
 [CmdletBinding()]
 param(
@@ -32,8 +35,8 @@ function Test-Integration {
     go fmt ./...
     go vet -tags=integration ./...
     # No KUBEBUILDER_ASSETS export needed here (unlike the Makefile) - suite_test.go's
-    # resolveEnvTestBinDir resolves the right envtest binaries itself, including the
-    # bin-win/setup-envtest.exe substitute this OS needs.
+    # resolveEnvTestBinDir resolves the right envtest binaries itself via `go run
+    # setup-envtest@latest`, the same fetch every OS uses.
     $goArgs = @('test', '-tags=integration', '-v') + ($GoTestFlags ? $GoTestFlags.Split(' ') : @()) +
         @('./internal/controller/...', '-coverprofile', 'cover.out')
     & go @goArgs

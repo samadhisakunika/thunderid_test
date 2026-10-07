@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -293,9 +292,17 @@ func serviceAccountToken() (string, error) {
 
 	By("creating temporary file to store the token request")
 	secretName := fmt.Sprintf("%s-token-request", serviceAccountName)
-	tokenRequestFile := filepath.Join("/tmp", secretName)
-	err := os.WriteFile(tokenRequestFile, []byte(tokenRequestRawString), os.FileMode(0o644))
+	f, err := os.CreateTemp("", secretName+"-*")
 	if err != nil {
+		return "", err
+	}
+	tokenRequestFile := f.Name()
+	defer os.Remove(tokenRequestFile)
+	if _, err := f.Write([]byte(tokenRequestRawString)); err != nil {
+		f.Close()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
 		return "", err
 	}
 

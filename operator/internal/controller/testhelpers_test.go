@@ -22,6 +22,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -55,7 +56,8 @@ func newFakeReconciler(objs ...runtime.Object) *ThunderIDInstanceReconciler {
 		// of applying the update.
 		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&appsv1alpha1.ThunderIDInstance{}).
 			WithRuntimeObjects(objs...).Build(),
-		Scheme: scheme,
+		Scheme:   scheme,
+		Recorder: &record.FakeRecorder{},
 	}
 }
 
@@ -68,7 +70,8 @@ func newFakeReconcilerWithInterceptor(funcs interceptor.Funcs, objs ...runtime.O
 	return &ThunderIDInstanceReconciler{
 		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&appsv1alpha1.ThunderIDInstance{}).
 			WithInterceptorFuncs(funcs).WithRuntimeObjects(objs...).Build(),
-		Scheme: scheme,
+		Scheme:   scheme,
+		Recorder: &record.FakeRecorder{},
 	}
 }
 
@@ -85,7 +88,8 @@ func newFakeResourceReconciler(objs ...runtime.Object) *ResourceReconciler {
 	return &ResourceReconciler{
 		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&appsv1alpha1.Resource{}).
 			WithRuntimeObjects(objs...).Build(),
-		Scheme: scheme,
+		Scheme:   scheme,
+		Recorder: &record.FakeRecorder{},
 	}
 }
 
@@ -96,7 +100,8 @@ func newFakeResourceReconcilerWithInterceptor(funcs interceptor.Funcs, objs ...r
 	return &ResourceReconciler{
 		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&appsv1alpha1.Resource{}).
 			WithInterceptorFuncs(funcs).WithRuntimeObjects(objs...).Build(),
-		Scheme: scheme,
+		Scheme:   scheme,
+		Recorder: &record.FakeRecorder{},
 	}
 }
 
@@ -115,7 +120,8 @@ func newFakeEnvironmentReconciler(objs ...runtime.Object) *EnvironmentValuesReco
 		// of applying the update.
 		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&appsv1alpha1.EnvironmentValues{}).
 			WithRuntimeObjects(objs...).Build(),
-		Scheme: scheme,
+		Scheme:   scheme,
+		Recorder: &record.FakeRecorder{},
 	}
 }
 
@@ -126,8 +132,24 @@ func newFakeEnvironmentReconcilerWithInterceptor(funcs interceptor.Funcs, objs .
 	return &EnvironmentValuesReconciler{
 		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&appsv1alpha1.EnvironmentValues{}).
 			WithInterceptorFuncs(funcs).WithRuntimeObjects(objs...).Build(),
-		Scheme: scheme,
+		Scheme:   scheme,
+		Recorder: &record.FakeRecorder{},
 	}
+}
+
+// controlledBy marks obj as controlled by instance, the way every create path in the operator
+// does - fixtures standing in for objects the operator itself created need it to pass
+// requireOwnedBy.
+func controlledBy[T metav1.Object](instance *appsv1alpha1.ThunderIDInstance, obj T) T {
+	isController := true
+	obj.SetOwnerReferences(append(obj.GetOwnerReferences(), metav1.OwnerReference{
+		APIVersion: appsv1alpha1.GroupVersion.String(),
+		Kind:       "ThunderIDInstance",
+		Name:       instance.Name,
+		UID:        instance.UID,
+		Controller: &isController,
+	}))
+	return obj
 }
 
 func fakeRecorder() record.EventRecorder {

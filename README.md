@@ -29,7 +29,7 @@ A Kubernetes operator that manages [ThunderID](https://github.com/thunder-id/thu
 
 | Tool | Notes |
 |------|-------|
-| Go 1.21+ | Only needed for local development |
+| Go 1.26+ | Only needed for local development |
 | kubectl | Configured to talk to your cluster |
 | Kubernetes 1.28+ | Local: [kind](https://kind.sigs.k8s.io/) or [minikube](https://minikube.sigs.k8s.io/) |
 | make | Needed for operator build/deploy targets |
@@ -133,13 +133,8 @@ organization unit, user types, and flows (`default` OU, `Person` user type,
 *additional* base resources beyond those defaults, point `spec.resourcesConfigMap`
 at a ConfigMap of your own; it's optional, not required.
 
-Wait for the pod to be ready:
-
-```bash
-kubectl get pod -w
-```
-
-You should see a pod reach `1/1 Running`.
+The `ThunderIDInstance` object now exists, but nothing creates its Deployment/Service/pod
+yet — that only happens once the operator (step 3 below) is running and reconciles it.
 
 ---
 
@@ -162,6 +157,14 @@ make deploy IMG=<your-registry>/thunderid-operator:latest
 ```
 or install the [Helm chart](charts/thunderid-operator) instead — see its own README for a `helm install` walkthrough.
 
+Once the operator is running, it picks up the `ThunderIDInstance` applied in step 2. Wait for the pod to be ready:
+
+```bash
+kubectl get pod -w
+```
+
+You should see a pod reach `1/1 Running`.
+
 ---
 
 ### 4. Register an application
@@ -181,6 +184,7 @@ spec:
   name: My Console App
   ouId: "<id of the 'default' OrganizationUnit>"
   authFlowId: "<id of the 'console-app-flow' Flow>"
+  type: browser
   isRegistrationFlowEnabled: true
   isRecoveryFlowEnabled: false
   allowedUserTypes:
@@ -401,13 +405,15 @@ ThunderID's 4 scopes map to only **2 physical databases** in practice — `confi
 createdb -U postgres thunderid_config
 createdb -U postgres thunderid_runtime
 
-# 2. Load schema into each. Schema SQL is committed in this repo — extracted from a running
-#    ThunderID pod's dbscripts/*/postgres.sql, which is where it'd otherwise only be reachable
-#    from (no pod exists yet on a first-time setup, so extracting live isn't an option day one).
-psql -U postgres -d thunderid_config -f operator/configdb.sql
-psql -U postgres -d thunderid_config -f operator/entitydb.sql
-psql -U postgres -d thunderid_runtime -f operator/runtime_persistent.sql
-psql -U postgres -d thunderid_runtime -f operator/runtime_transient.sql
+# 2. Load schema into each, from the same scripts ThunderID's own runtime uses:
+#    backend/dbscripts/<name>/postgres.sql in the main thunder-id/thunderid repo. This
+#    standalone test repo has no backend/ of its own (it's operator-only) - clone
+#    thunder-id/thunderid separately to get these, or extract them from a running
+#    ThunderID pod's own copy at the same relative path.
+psql -U postgres -d thunderid_config -f backend/dbscripts/configdb/postgres.sql
+psql -U postgres -d thunderid_config -f backend/dbscripts/entitydb/postgres.sql
+psql -U postgres -d thunderid_runtime -f backend/dbscripts/runtime_persistent/postgres.sql
+psql -U postgres -d thunderid_runtime -f backend/dbscripts/runtime_transient/postgres.sql
 ```
 
 Re-running `psql -f` against an already-initialized database will error on `CREATE TABLE`/`CREATE TYPE` statements for objects that already exist — that's expected on a re-run, not a sign anything's wrong; the schema only needs to be loaded once per database.
@@ -458,7 +464,7 @@ spec:
 | everything else under `spec` | ThunderID's own field names for that `resource_type` (`name`, `ouId`, `handle`, `type`, ...) — copy-paste ThunderID's own exported YAML in directly (dropping its `id:` line, which the operator generates itself). Any field can hold a `{{.VAR}}` token — see [Env vars & `{{.VAR}}` placeholders](#env-vars--var-placeholders) below |
 
 **Design note:** Everything under `spec` except `resource_type` is forwarded into ThunderID's own bootstrap schema for that resource type essentially as-is. The operator does **not** resolve handles, validate required fields, or otherwise interpret the content — that's ThunderID's own bootstrap loader's job. This means:
-- A mistake (missing required field, a bad ID, malformed JSON) is **not** caught at `kubectl apply` time — it's caught at ThunderID's own bootstrap time, surfaced as a `ThunderIDError`/`ThunderIDCrashed` Event on the CR (see [Checking Status](#checking-status)).
+- A mistake (missing required field, a bad ID, malformed JSON) is **not** caught at `kubectl apply` time — it's caught at ThunderID's own bootstrap time, surfaced as a `ThunderIDError`/`ThunderIDCrashed` Event on the owning `ThunderIDInstance`, not on this CR itself (see [Checking Status](#checking-status)).
 - Cross-references (`ouId`, `authFlowId`, `themeId`, `resourceServerId`, member/assignment IDs, ...) can be literal ThunderID IDs, the same as if you were editing ThunderID's own `resources.yaml` by hand. Or use `*Handle`-style fields (`ouHandle`, `authFlowHandle`, `registrationFlowHandle`, `recoveryFlowHandle`) — ThunderID's own bootstrap loader resolves them itself. `themeHandle` is the one exception — not supported by ThunderID at all; use `themeId`.
 - None of the field names in the table below are enforced by the operator or the CRD schema; get the exact set ThunderID's bootstrap loader accepts from its own docs/schema when in doubt.
 
@@ -489,7 +495,7 @@ Any field, in any `resource_type` — a user's `credentials.password`, an applic
 
 A `ThunderIDInstance` auto-discovers its env Secret the same way a `Resource` finds its owning instance, just in reverse: whichever `EnvironmentValues` in the instance's namespace carries the label `thunderid.io/instance: <instance name>` is the one whose Secret gets mounted whole via `envFrom`. There's no field on `ThunderIDInstanceSpec` naming it — the reference lives on the `EnvironmentValues` side. At most one `EnvironmentValues` may carry a given instance's label; more than one is a config error surfaced as an `InvalidSpec` event rather than picking one arbitrarily. The operator only ever mounts this Secret whole — it never creates, reads individual keys from, or generates values into it. Two ways to author it, both producing exactly the same Secret and both fully supported:
 
-**Apply an `EnvironmentValues`** — a declarative CR: the operator syncs `spec.env` into a Secret of the same name, then overwrites each synced key's value in `spec.env` with a masked marker (`thunderid-masked:<up to 4 leading chars>****:len=<n>`) so the plaintext is never visible again via `kubectl get/describe environmentvalues`. The object itself is never deleted — `status.keys` lists which keys are currently synced. To change a value later, re-apply with new plaintext for just that key; `kubectl apply`'s 3-way merge leaves already-masked sibling keys untouched. The plaintext briefly exists in the `EnvironmentValues` object's own `spec` in etcd before it's masked — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for that short window. **Always apply `EnvironmentValues` with `kubectl apply --server-side`**, never plain `kubectl apply` — plain apply copies the whole manifest, plaintext included, into the object's `last-applied-configuration` annotation, bypassing the masking entirely (see `operator/gitops/README.md`). Never put `EnvironmentValues` under GitOps (Flux) management — a continuously-reconciling GitOps tool will fight the masking:
+**Apply an `EnvironmentValues`** — a declarative CR: the operator syncs `spec.env` into a Secret of the same name, then overwrites each synced key's value in `spec.env` with a masked marker (`thunderid-masked:<up to 3 leading chars>**********`) so the plaintext — and even its real length — is never visible again via `kubectl get/describe environmentvalues`. The object itself is never deleted — `status.keys` lists which keys are currently synced. To change a value later, re-apply with new plaintext for just that key; `kubectl apply`'s 3-way merge leaves already-masked sibling keys untouched. The plaintext briefly exists in the `EnvironmentValues` object's own `spec` in etcd before it's masked — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for that short window. **Always apply `EnvironmentValues` with `kubectl apply --server-side`**, never plain `kubectl apply` — plain apply copies the whole manifest, plaintext included, into the object's `last-applied-configuration` annotation, bypassing the masking entirely (see `operator/gitops/README.md`). Never put `EnvironmentValues` under GitOps (Flux) management — a continuously-reconciling GitOps tool will fight the masking:
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
 kind: EnvironmentValues
@@ -584,15 +590,27 @@ Look at the **Events** section. Event types:
 |--------|---------|
 | `Synced` | Config change detected; ThunderID pod is restarting |
 | `Ready` | Resource loaded successfully |
-| `ThunderIDError` | ThunderID rejected the config — APP error code and message are shown |
-| `ThunderIDCrashed` | Pod is in CrashLoopBackOff; no structured error found in logs |
 | `UnknownType` | `spec.resource_type` isn't set, or isn't one this operator maps to a ConfigMap — see the [`resource_type` values](#resource_type-values) table |
 | `InvalidSpec` | `spec.resource_type` couldn't be parsed out of `spec` at all |
 | `SyncFailed` | Writing this resource into its ConfigMap failed (e.g. a ConfigMap `Update` conflict) |
 
-> **Tip:** `ThunderIDError` only appears after the pod reaches stable `CrashLoopBackOff`. Wait until `kubectl get pod` shows `CrashLoopBackOff` before running `kubectl describe resource`.
-
 Events are per-object, not merged across `resource_type`s — `kubectl describe resource <name>` only ever shows *that* object's own events, same as before every kind was collapsed into the generic `Resource` CRD (one CR per application/flow/user/etc. still exists, `spec.resource_type` just picks the ConfigMap it renders into). For a combined view across every kind at once, `kubectl describe thunderidinstance <name>` is the place to look: a `SyncFailed` also fires a `ResourceSyncFailed` event on the owning `ThunderIDInstance` (naming the resource and its `resource_type`), so that one object's Events section becomes an aggregate feed of every dependent `Resource`'s sync failures. It additionally shows a `DEGRADED` count summarizing how many dependent `Resource`s (of any `resource_type`) currently have a sync failure, without needing to check each one individually.
+
+**Pod-crash diagnostics — `CrashLoopBackOff`, `ThunderIDError`, `ThunderIDCrashed` — always land on the `ThunderIDInstance`, never on a `Resource`**, regardless of which resource's reconcile happened to notice the crash:
+
+```bash
+kubectl describe thunderidinstance <name>
+```
+
+| Reason | Meaning |
+|--------|---------|
+| `CrashLoopBackOff` | The pod is crash-looping (or stuck resolving a config reference, e.g. a missing Secret) |
+| `ThunderIDError` | ThunderID rejected the config — APP error code and message are shown |
+| `ThunderIDCrashed` | Pod is in CrashLoopBackOff; no structured error found in logs |
+
+The serving pod (and therefore whatever's currently crashing it) is shared by every `Resource` bound to the instance — a crash log has no way to identify which resource's bad spec actually caused it, so attaching it to one resource in particular would just be a guess, and every other resource re-verifying health during the same outage would independently re-diagnose and re-emit the identical message onto itself too. Kubernetes' own event de-duplication (same object + reason + message) collapses repeat diagnoses of one ongoing crash into a single `ThunderIDInstance` Event with an increasing count instead.
+
+> **Tip:** `ThunderIDError` only appears after the pod reaches stable `CrashLoopBackOff`. Wait until `kubectl get pod` shows `CrashLoopBackOff` before running `kubectl describe thunderidinstance`.
 
 ---
 
@@ -618,7 +636,7 @@ kubectl delete pod inspect-image --wait=false
 - `client_credentials` grant type with `tokenEndpointAuthMethod: none`
 - `client_credentials` with `publicClient: true`
 
-**Fix:** Read the `ThunderIDError` event message — it states the exact constraint violated.
+**Fix:** Read the `ThunderIDError` event message on the owning `ThunderIDInstance` (`kubectl describe thunderidinstance <name>`) — it states the exact constraint violated.
 
 ### APP-1042 — Application type is required
 
@@ -630,7 +648,7 @@ kubectl delete pod inspect-image --wait=false
 
 **Cause:** The pod has not yet reached stable `CrashLoopBackOff`. The operator fetches logs only after the pod enters `CrashLoopBackOff` (typically within 30–40 seconds of the first crash).
 
-**Fix:** Wait for `kubectl get pod` to show `CrashLoopBackOff`, then re-run `kubectl describe resource`.
+**Fix:** Wait for `kubectl get pod` to show `CrashLoopBackOff`, then re-run `kubectl describe thunderidinstance` — not `kubectl describe resource`, since crash diagnostics land on the owning `ThunderIDInstance`.
 
 ### Pod never reaches Ready after applying ThunderIDInstance
 
@@ -639,7 +657,7 @@ kubectl delete pod inspect-image --wait=false
 **Fix:** Check that `make run` is still active in your terminal, or check the operator pod logs if deployed in-cluster:
 
 ```bash
-kubectl logs -n system deployment/controller-manager
+kubectl logs -n operator-system deployment/operator-controller-manager
 ```
 
 **Cause 2:** The Secret named by whichever `EnvironmentValues` is labeled for this instance, or by

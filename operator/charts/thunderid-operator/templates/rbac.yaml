@@ -265,12 +265,16 @@ rules:
   - apps.thunderid.io
   resources:
   - thunderidinstances
+  - resources
+  - environmentvalues
   verbs:
   - '*'
 - apiGroups:
   - apps.thunderid.io
   resources:
   - thunderidinstances/status
+  - resources/status
+  - environmentvalues/status
   verbs:
   - get
 ---
@@ -285,6 +289,8 @@ rules:
   - apps.thunderid.io
   resources:
   - thunderidinstances
+  - resources
+  - environmentvalues
   verbs:
   - create
   - delete
@@ -297,6 +303,8 @@ rules:
   - apps.thunderid.io
   resources:
   - thunderidinstances/status
+  - resources/status
+  - environmentvalues/status
   verbs:
   - get
 ---
@@ -311,6 +319,8 @@ rules:
   - apps.thunderid.io
   resources:
   - thunderidinstances
+  - resources
+  - environmentvalues
   verbs:
   - get
   - list
@@ -319,6 +329,8 @@ rules:
   - apps.thunderid.io
   resources:
   - thunderidinstances/status
+  - resources/status
+  - environmentvalues/status
   verbs:
   - get
 {{- end }}

@@ -35,6 +35,23 @@ type ResourceStatus struct {
 	// +optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
 
+	// SyncedResourceType is the spec.resource_type value last successfully synced to a ConfigMap —
+	// not necessarily the current spec.resource_type. Lets the controller detect a resource_type
+	// change (and rebuild the old type's ConfigMap to remove the stale entry, not just the new
+	// type's) and know which ConfigMap to clean up on deletion even if spec.resource_type has
+	// since been edited to something invalid or unknown.
+	// +optional
+	SyncedResourceType string `json:"syncedResourceType,omitempty"`
+
+	// SyncedInstance is the ThunderIDInstance name (thunderid.io/instance label value) last
+	// successfully synced to — not necessarily the current label value. Mirrors
+	// SyncedResourceType's reasoning: lets the controller detect the object being moved to a
+	// different instance (and remove the stale entry from the old instance's ConfigMap, not just
+	// stop writing to it) and know which instance to clean up on deletion even if the label has
+	// since been changed or points at an instance that's gone.
+	// +optional
+	SyncedInstance string `json:"syncedInstance,omitempty"`
+
 	// +listType=map
 	// +listMapKey=type
 	// +optional

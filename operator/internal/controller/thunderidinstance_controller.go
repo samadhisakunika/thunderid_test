@@ -366,6 +366,11 @@ func (r *ThunderIDInstanceReconciler) mapServingPodToInstance(ctx context.Contex
 	if err := r.List(ctx, jobs, client.InNamespace(pod.Namespace),
 		client.MatchingLabels{appLabelKey: instanceName, bootstrapRoleLabelKey: bootstrapRoleLabelValue}); err == nil {
 		for i := range jobs.Items {
+			// Labels alone are forgeable - only delete Jobs the named instance actually created.
+			if ctrlRef := metav1.GetControllerOf(&jobs.Items[i]); ctrlRef == nil ||
+				ctrlRef.Kind != "ThunderIDInstance" || ctrlRef.Name != instanceName {
+				continue
+			}
 			if bootstrapJobFailed(&jobs.Items[i]) {
 				log.Info("serving pod restarted; deleting failed bootstrap Job so bootstrap retries fresh",
 					"pod", pod.Name, "job", jobs.Items[i].Name)
@@ -502,6 +507,9 @@ func (r *ThunderIDInstanceReconciler) reconcileConfigMap(
 	if err != nil {
 		return "", "", "", "", err
 	}
+	if err := requireOwnedBy(r.Recorder, instance, cm, "ConfigMap"); err != nil {
+		return "", "", "", "", err
+	}
 	// Skip update if content is unchanged to avoid triggering unnecessary reconciles.
 	if cm.Data[deploymentYAMLKey] == data[deploymentYAMLKey] && cm.Data["resources.yaml"] == data["resources.yaml"] {
 		log.V(1).Info("config ConfigMap unchanged, skipping update", "name", cm.Name)
@@ -535,10 +543,35 @@ func (r *ThunderIDInstanceReconciler) appendResourceConfigMap(
 		}
 		return "", err
 	}
+	if err := requireOwnedBy(r.Recorder, instance, cm, "ConfigMap"); err != nil {
+		return "", err
+	}
 	if content := cm.Data[key]; content != "" {
 		return "\n" + content, nil
 	}
 	return "", nil
+}
+
+// reasonOwnershipConflict is the Event reason emitted by requireOwnedBy.
+const reasonOwnershipConflict = "OwnershipConflict"
+
+// requireOwnedBy returns an error (and emits an OwnershipConflict Event on instance) unless obj is
+// controlled by instance. Every child object this operator manages is named after its instance
+// (<name>, <name>-config, <name>-security, ...), and every create path sets the controller
+// reference — so an existing object at one of those names that isn't controlled by instance belongs
+// to someone else. Without this check, anyone allowed to create a ThunderIDInstance could name it
+// after a Deployment/Service/Secret/... they can't otherwise write, and the operator would update,
+// delete, or mount (e.g. reuse another workload's Secret as this instance's security Secret) that
+// object on their behalf. Called on every get-then-update/delete/reuse path, never on create.
+func requireOwnedBy(recorder record.EventRecorder, instance *appsv1alpha1.ThunderIDInstance, obj client.Object, kind string) error {
+	if metav1.IsControlledBy(obj, instance) {
+		return nil
+	}
+	err := fmt.Errorf("%s %q already exists and is not controlled by ThunderIDInstance %q; "+
+		"refusing to modify, delete, or reuse it — rename the instance or remove the conflicting %s",
+		kind, obj.GetName(), instance.Name, kind)
+	recorder.Event(instance, corev1.EventTypeWarning, reasonOwnershipConflict, err.Error())
+	return err
 }
 
 // reconcileDataVolume ensures the PersistentVolumeClaim backing setup.sh's once-only marker
@@ -555,7 +588,8 @@ func (r *ThunderIDInstanceReconciler) reconcileDataVolume(
 	pvc := &corev1.PersistentVolumeClaim{}
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name + "-data", Namespace: instance.Namespace}, pvc)
 	if err == nil {
-		return nil
+		// The Deployment mounts this claim - reusing someone else's would hand this instance their data.
+		return requireOwnedBy(r.Recorder, instance, pvc, "PersistentVolumeClaim")
 	}
 	if !errors.IsNotFound(err) {
 		return err
@@ -616,9 +650,11 @@ const (
 	adminUsernameEnvKey = "ADMIN_USERNAME"
 	adminPasswordEnvKey = "ADMIN_PASSWORD"
 
-	// defaultAdminCredential is the bootstrap admin username/password ThunderID's own setup.sh
-	// creates when neither env var above is overridden - same literal value for both.
-	defaultAdminCredential = "admin"
+	// defaultAdminUsername is the bootstrap admin username ThunderID's own setup.sh creates when
+	// ADMIN_USERNAME isn't overridden. Not a secret, so it stays a literal here - the password
+	// half comes from the security Secret's securityKeyAdminPassword instead (see
+	// reconcileSecuritySecret), never a hardcoded literal.
+	defaultAdminUsername = "admin"
 )
 
 // reconcileBootstrapJob imports resources.yaml into the postgres database via a one-shot Job,
@@ -661,6 +697,9 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 	existing := &batchv1.Job{}
 	err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: instance.Namespace}, existing)
 	if err == nil {
+		if err := requireOwnedBy(r.Recorder, instance, existing, "Job"); err != nil {
+			return err
+		}
 		if !bootstrapJobFailed(existing) {
 			// Still running, or succeeded — nothing to do.
 			return nil
@@ -705,6 +744,10 @@ func (r *ThunderIDInstanceReconciler) reconcileBootstrapJob(
 		log.Info("resources/database config changed, deleting stale bootstrap Job(s)", "count", len(staleJobs.Items))
 	}
 	for _, j := range staleJobs.Items {
+		// Labels alone are forgeable - only delete Jobs this instance actually created.
+		if !metav1.IsControlledBy(&j, instance) {
+			continue
+		}
 		if err := r.Delete(ctx, &j, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
@@ -975,8 +1018,13 @@ func (r *ThunderIDInstanceReconciler) createBootstrapJob(
 							Image:   instance.Spec.Image,
 							Command: []string{bashBinPath, "-c", "cd /opt/thunderid && " + bootstrapCmd},
 							Env: []corev1.EnvVar{
-								{Name: adminUsernameEnvKey, Value: defaultAdminCredential},
-								{Name: adminPasswordEnvKey, Value: defaultAdminCredential},
+								{Name: adminUsernameEnvKey, Value: defaultAdminUsername},
+								{Name: adminPasswordEnvKey, ValueFrom: &corev1.EnvVarSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{Name: securitySecretName},
+										Key:                  securityKeyAdminPassword,
+									},
+								}},
 							},
 							VolumeMounts: volumeMounts,
 						},
@@ -1371,8 +1419,13 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 								Image:   instance.Spec.Image,
 								Command: []string{bashBinPath, "-c", startCmd},
 								Env: []corev1.EnvVar{
-									{Name: adminUsernameEnvKey, Value: defaultAdminCredential},
-									{Name: adminPasswordEnvKey, Value: defaultAdminCredential},
+									{Name: adminUsernameEnvKey, Value: defaultAdminUsername},
+									{Name: adminPasswordEnvKey, ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{Name: securitySecretName},
+											Key:                  securityKeyAdminPassword,
+										},
+									}},
 								},
 								EnvFrom:        envFrom,
 								Ports:          []corev1.ContainerPort{{ContainerPort: port, Protocol: corev1.ProtocolTCP}},
@@ -1395,6 +1448,9 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	if err != nil {
 		return err
 	}
+	if err := requireOwnedBy(r.Recorder, instance, dep, "Deployment"); err != nil {
+		return err
+	}
 
 	// Snapshot the whole object before mutating, so the diff below covers every field this
 	// function manages — adding a new field to the Deployment template later is automatically
@@ -1412,8 +1468,13 @@ func (r *ThunderIDInstanceReconciler) reconcileDeployment(
 	dep.Spec.Template.Spec.Containers[0].Image = instance.Spec.Image
 	dep.Spec.Template.Spec.Containers[0].Command = []string{bashBinPath, "-c", startCmd}
 	dep.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{
-		{Name: adminUsernameEnvKey, Value: defaultAdminCredential},
-		{Name: adminPasswordEnvKey, Value: defaultAdminCredential},
+		{Name: adminUsernameEnvKey, Value: defaultAdminUsername},
+		{Name: adminPasswordEnvKey, ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: securitySecretName},
+				Key:                  securityKeyAdminPassword,
+			},
+		}},
 	}
 	dep.Spec.Template.Spec.Containers[0].EnvFrom = envFrom
 	dep.Spec.Template.Spec.Containers[0].VolumeMounts = volumeMounts
@@ -1547,6 +1608,9 @@ func (r *ThunderIDInstanceReconciler) reconcileService(
 	if err != nil {
 		return err
 	}
+	if err := requireOwnedBy(r.Recorder, instance, svc, "Service"); err != nil {
+		return err
+	}
 	// spec.config.port is the only thing about this Service that ever changes after creation — no
 	// other field is derived from the CR at all — so a plain equality check on it is enough to
 	// decide whether an update is needed, unlike the Deployment's much larger diff.
@@ -1583,6 +1647,11 @@ func (r *ThunderIDInstanceReconciler) reconcileIngress(
 	// No domain means no Ingress — the default, local-dev path (kubectl port-forward instead).
 	// If one exists from a time when spec.domain was set, clean it up rather than leave it
 	// orphaned pointing at a host nobody configured anymore.
+	if err == nil {
+		if err := requireOwnedBy(r.Recorder, instance, ing, "Ingress"); err != nil {
+			return err
+		}
+	}
 	if instance.Spec.Domain == "" {
 		if err == nil {
 			log.Info("spec.domain cleared, deleting Ingress")
@@ -1590,34 +1659,36 @@ func (r *ThunderIDInstanceReconciler) reconcileIngress(
 		}
 		return client.IgnoreNotFound(err)
 	}
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
 
-	if errors.IsNotFound(err) {
-		log.Info("creating Ingress", "domain", instance.Spec.Domain)
-		ing = &networkingv1.Ingress{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      instance.Name,
-				Namespace: instance.Namespace,
-				Annotations: map[string]string{
-					"nginx.ingress.kubernetes.io/backend-protocol": "HTTPS",
-					"nginx.ingress.kubernetes.io/ssl-redirect":     "true",
-				},
+	// Built once for both the create and update paths, so a domain/tlsSecret/port change is
+	// applied identically regardless of whether the Ingress already exists.
+	desired := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name,
+			Namespace: instance.Namespace,
+			Annotations: map[string]string{
+				"nginx.ingress.kubernetes.io/backend-protocol": "HTTPS",
+				"nginx.ingress.kubernetes.io/ssl-redirect":     "true",
 			},
-			Spec: networkingv1.IngressSpec{
-				Rules: []networkingv1.IngressRule{
-					{
-						Host: instance.Spec.Domain,
-						IngressRuleValue: networkingv1.IngressRuleValue{
-							HTTP: &networkingv1.HTTPIngressRuleValue{
-								Paths: []networkingv1.HTTPIngressPath{
-									{
-										Path:     "/",
-										PathType: &pathType,
-										Backend: networkingv1.IngressBackend{
-											Service: &networkingv1.IngressServiceBackend{
-												Name: instance.Name,
-												Port: networkingv1.ServiceBackendPort{
-													Number: port,
-												},
+		},
+		Spec: networkingv1.IngressSpec{
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: instance.Spec.Domain,
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: &pathType,
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: instance.Name,
+											Port: networkingv1.ServiceBackendPort{
+												Number: port,
 											},
 										},
 									},
@@ -1627,30 +1698,35 @@ func (r *ThunderIDInstanceReconciler) reconcileIngress(
 					},
 				},
 			},
-		}
-		if instance.Spec.TLSSecret != "" {
-			ing.Spec.TLS = []networkingv1.IngressTLS{
-				{
-					Hosts:      []string{instance.Spec.Domain},
-					SecretName: instance.Spec.TLSSecret,
-				},
-			}
-		}
-		_ = ctrl.SetControllerReference(instance, ing, r.Scheme)
-		return r.Create(ctx, ing)
+		},
 	}
-	if err != nil {
-		return err
+	if instance.Spec.TLSSecret != "" {
+		desired.Spec.TLS = []networkingv1.IngressTLS{
+			{
+				Hosts:      []string{instance.Spec.Domain},
+				SecretName: instance.Spec.TLSSecret,
+			},
+		}
 	}
-	// spec.config.port drift is the only thing this checks for on an existing Ingress — domain/tlsSecret
-	// changes on an already-created Ingress are a pre-existing gap, unrelated to this check.
-	if len(ing.Spec.Rules) == 1 && len(ing.Spec.Rules[0].HTTP.Paths) == 1 &&
-		ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number == port {
+
+	if errors.IsNotFound(err) {
+		log.Info("creating Ingress", "domain", instance.Spec.Domain)
+		_ = ctrl.SetControllerReference(instance, desired, r.Scheme)
+		return r.Create(ctx, desired)
+	}
+
+	// Compare and replace the whole spec, rather than diffing individual fields (e.g. just the
+	// backend port, as a prior version of this check did) — that missed domain/tlsSecret changes
+	// entirely, and indexing into ing.Spec.Rules[0].HTTP.Paths[0] without checking their length
+	// first would panic on every reconcile if the Ingress's rules/http block were ever edited or
+	// removed out from under it (e.g. by hand, or by another controller).
+	if equality.Semantic.DeepEqual(ing.Spec, desired.Spec) {
 		return nil
 	}
-	log.Info("Ingress backend port drifted, updating", "port", port)
-	ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number = port
-	return r.Update(ctx, ing)
+	log.Info("Ingress spec drifted, updating", "domain", instance.Spec.Domain, "port", port)
+	patch := client.MergeFrom(ing.DeepCopy())
+	ing.Spec = desired.Spec
+	return r.Patch(ctx, ing, patch)
 }
 
 // reconcileHPA creates or updates the HorizontalPodAutoscaler to match spec.autoScaling, or
@@ -1666,6 +1742,9 @@ func (r *ThunderIDInstanceReconciler) reconcileHPA(ctx context.Context, instance
 		// No autoscaling desired — delete HPA if it exists.
 		existing := &autoscalingv2.HorizontalPodAutoscaler{}
 		if err := r.Get(ctx, hpaKey, existing); err == nil {
+			if err := requireOwnedBy(r.Recorder, instance, existing, "HorizontalPodAutoscaler"); err != nil {
+				return err
+			}
 			log.Info("spec.autoScaling cleared, deleting HPA")
 			return r.Delete(ctx, existing)
 		}
@@ -1704,6 +1783,9 @@ func (r *ThunderIDInstanceReconciler) reconcileHPA(ctx context.Context, instance
 		return r.Create(ctx, desired)
 	}
 	if err != nil {
+		return err
+	}
+	if err := requireOwnedBy(r.Recorder, instance, existing, "HorizontalPodAutoscaler"); err != nil {
 		return err
 	}
 

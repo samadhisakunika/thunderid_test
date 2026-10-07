@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -171,13 +172,41 @@ func (suite *ReconcileDeploymentInternalsTestSuite) TestNilTemplateAnnotationsIn
 			},
 		},
 	}
-	r := newFakeReconciler(instance, existing)
+	r := newFakeReconciler(instance, controlledBy(instance, existing))
 
 	suite.Require().NoError(r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security"))
 
 	dep := &appsv1.Deployment{}
 	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst", Namespace: "default"}, dep))
 	suite.Equal("hash1", dep.Spec.Template.Annotations["thunderid.io/config-hash"])
+}
+
+// An instance named after a Deployment it didn't create must not take that Deployment over.
+func (suite *ReconcileDeploymentInternalsTestSuite) TestForeignDeploymentIsNotTakenOver() {
+	instance := baselineSQLiteInstance()
+	foreign := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "other"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "other"}},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "other", Image: "someone-elses-image"}},
+				},
+			},
+		},
+	}
+	r := newFakeReconciler(instance, foreign)
+	recorder := record.NewFakeRecorder(5)
+	r.Recorder = recorder
+
+	err := r.reconcileDeployment(context.Background(), instance, "hash1", false, "inst-security")
+	suite.Require().Error(err)
+
+	dep := &appsv1.Deployment{}
+	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "inst", Namespace: "default"}, dep))
+	suite.Equal("someone-elses-image", dep.Spec.Template.Spec.Containers[0].Image, "a foreign Deployment must be left untouched")
+	suite.Contains(<-recorder.Events, reasonOwnershipConflict)
 }
 
 func (suite *ReconcileDeploymentInternalsTestSuite) TestUpdateRetryGetErrorPropagates() {

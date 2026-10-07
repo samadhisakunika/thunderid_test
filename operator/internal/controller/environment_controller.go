@@ -44,7 +44,7 @@ import (
 // colliding with it isn't a realistic concern.
 const maskPrefix = "thunderid-masked:"
 
-var maskPattern = regexp.MustCompile(`^thunderid-masked:.*:len=\d+$`)
+var maskPattern = regexp.MustCompile(`^thunderid-masked:.{0,3}\*{10}$`)
 
 func isMasked(v string) bool {
 	return maskPattern.MatchString(v)
@@ -73,19 +73,25 @@ func managedKeySet(secret *corev1.Secret) map[string]bool {
 	return set
 }
 
-// maskValue reveals at most the first 4 characters of v (never all of it, even for a value 4
+// maskValue reveals at most the first 3 characters of v (never all of it, even for a value 3
 // characters or shorter — a short value gets a shorter reveal instead) so a developer can
-// eyeball "is this the value I think it is" without the full secret ever living in etcd.
+// eyeball "is this the value I think it is" without the full secret ever living in etcd. The
+// star run is always exactly 10 characters, and v's real length is never stated anywhere in the
+// output — both deliberately: v's length isn't needed for the eyeball check the reveal already
+// gives, and stating it (exactly, or even as a coarse bucket) alongside a fixed-size reveal would
+// narrow a short value down to very few possibilities — e.g. a 4-character value would have only
+// one truly unknown character left if its exact length were known too.
 func maskValue(v string) string {
 	n := len(v)
-	reveal := max(min(4, n-1), 0)
-	masked := v[:reveal] + strings.Repeat("*", n-reveal)
-	return fmt.Sprintf("%s%s:len=%d", maskPrefix, masked, n)
+	reveal := min(3, max(n-1, 0))
+	masked := v[:reveal] + strings.Repeat("*", 10)
+	return maskPrefix + masked
 }
 
 // EnvironmentValuesReconciler mirrors spec.env into a Secret of the same name, then overwrites each
-// synced key's value in spec.env with a masked marker (up to 4 leading characters + stars +
-// length, never the rest of the raw value) — see EnvironmentValues's own doc comment for the reasoning.
+// synced key's value in spec.env with a masked marker (up to 3 leading characters + a fixed-size
+// star run, never the rest of the raw value, and never its real length either) — see
+// EnvironmentValues's own doc comment for the reasoning.
 // Status.Keys lists which keys are currently synced (names only, no values) for debugging "did
 // my key actually get picked up."
 //
@@ -119,7 +125,7 @@ func (r *EnvironmentValuesReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	ctx = logf.IntoContext(ctx, log)
 
 	// Sync spec.env into the Secret and mask any newly-synced keys.
-	keys, maskedAny, err := r.syncSecretAndMask(ctx, obj)
+	keys, missingKeys, maskedAny, err := r.syncSecretAndMask(ctx, obj)
 	if err != nil {
 		log.Error(err, "failed to sync Secret from EnvironmentValues")
 		r.Recorder.Event(obj, corev1.EventTypeWarning, "SyncFailed", err.Error())
@@ -128,6 +134,22 @@ func (r *EnvironmentValuesReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		obj.Status.SecretName = obj.Name
 		_ = r.Status().Update(ctx, obj)
 		return ctrl.Result{}, err
+	}
+
+	// A key masked in spec.env but missing from the Secret (e.g. deleted out-of-band) can't be
+	// recovered from its marker — surface it as unsynced instead of silently reporting it in
+	// status.keys as if it were still backed by a real value.
+	if len(missingKeys) > 0 {
+		log.Info("key(s) masked in spec.env are missing from the Secret", "missingKeys", missingKeys)
+		r.Recorder.Eventf(obj, corev1.EventTypeWarning, "MissingSecretValue",
+			"key(s) %v are masked in spec.env but missing from Secret %q; re-apply with plaintext to resync them",
+			missingKeys, obj.Name)
+		obj.Status.Phase = phaseError
+		obj.Status.Synced = false
+		obj.Status.SecretName = obj.Name
+		obj.Status.Keys = keys
+		_ = r.Status().Update(ctx, obj)
+		return ctrl.Result{}, nil
 	}
 
 	// Reflect the result in status.
@@ -154,42 +176,45 @@ func (r *EnvironmentValuesReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 // syncSecretAndMask makes the Secret's Data an exact match for obj.Spec.Env's real values
 // (a masked key keeps whatever the Secret already holds; a new-plaintext key is written then
-// masked in place) and returns the current key names. It persists the spec mutation via Update
-// only when at least one key held new plaintext this pass, so a fully-masked object converges
-// instead of looping.
-func (r *EnvironmentValuesReconciler) syncSecretAndMask(ctx context.Context, obj *appsv1alpha1.EnvironmentValues) ([]string, bool, error) {
+// masked in place) and returns the current key names, plus any masked key whose value is missing
+// from the Secret (see the loop below). It persists the spec mutation via Update only when at
+// least one key held new plaintext this pass, so a fully-masked object converges instead of
+// looping.
+func (r *EnvironmentValuesReconciler) syncSecretAndMask(ctx context.Context, obj *appsv1alpha1.EnvironmentValues) (keys, missingKeys []string, maskedAny bool, err error) {
 	// Fetch the existing Secret, if any.
 	existing := &corev1.Secret{}
-	err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Name}, existing)
+	getErr := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Name}, existing)
 	found := true
-	if errors.IsNotFound(err) {
+	if errors.IsNotFound(getErr) {
 		found = false
-	} else if err != nil {
-		return nil, false, err
+	} else if getErr != nil {
+		return nil, nil, false, getErr
 	}
 
 	data := make(map[string][]byte, len(obj.Spec.Env))
 	maskedSpec := make(map[string]string, len(obj.Spec.Env))
-	keys := make([]string, 0, len(obj.Spec.Env))
+	keys = make([]string, 0, len(obj.Spec.Env))
 	var newlyMasked []string
-	maskedAny := false
 
 	// Split spec.env into already-masked (carry over) and new-plaintext (write and mask) keys.
 	for k, v := range obj.Spec.Env {
-		keys = append(keys, k)
 		if isMasked(v) {
 			// Already synced on a previous reconcile — carry over whatever the Secret already
 			// holds for this key rather than the marker itself. If the Secret lost the key (e.g.
 			// someone deleted it out-of-band) there's no way to recover the real value from the
-			// marker; the key is simply absent from the Secret until re-applied with plaintext.
+			// marker — report it as missing instead of claiming it's still synced.
+			maskedSpec[k] = v
 			if found {
 				if b, ok := existing.Data[k]; ok {
 					data[k] = b
+					keys = append(keys, k)
+					continue
 				}
 			}
-			maskedSpec[k] = v
+			missingKeys = append(missingKeys, k)
 			continue
 		}
+		keys = append(keys, k)
 		data[k] = []byte(v)
 		maskedSpec[k] = maskValue(v)
 		maskedAny = true
@@ -199,7 +224,7 @@ func (r *EnvironmentValuesReconciler) syncSecretAndMask(ctx context.Context, obj
 
 	// Write the Secret.
 	if err := r.upsertSecret(ctx, obj, found, existing, data); err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	if maskedAny {
@@ -209,11 +234,11 @@ func (r *EnvironmentValuesReconciler) syncSecretAndMask(ctx context.Context, obj
 		logf.FromContext(ctx).Info("synced new plaintext key(s) to the Secret and masked them in spec.env",
 			"newlyMaskedKeys", newlyMasked, "totalKeys", len(keys))
 		if err := r.maskSpec(ctx, obj, maskedSpec); err != nil {
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	}
 
-	return keys, maskedAny, nil
+	return keys, missingKeys, maskedAny, nil
 }
 
 // upsertSecret creates the Secret if it doesn't exist yet, or otherwise merges data into it:
@@ -236,6 +261,7 @@ func (r *EnvironmentValuesReconciler) upsertSecret(ctx context.Context, obj *app
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        obj.Name,
 				Namespace:   obj.Namespace,
+				Labels:      map[string]string{appsv1alpha1.EnvironmentValuesAdoptLabel: obj.Name},
 				Annotations: map[string]string{managedKeysAnnotation: managedKeysValue},
 			},
 			Type: corev1.SecretTypeOpaque,
@@ -243,21 +269,38 @@ func (r *EnvironmentValuesReconciler) upsertSecret(ctx context.Context, obj *app
 		})
 	}
 
+	// A Secret this controller has never written to before (no managedKeysAnnotation) must
+	// explicitly opt in via EnvironmentValuesAdoptLabel before it's touched — matching by Secret
+	// name alone would let anyone who can create an EnvironmentValues overwrite keys in any
+	// same-named Secret in the namespace, including ones they have no RBAC permission to edit
+	// directly. A Secret this controller already manages always carries the label itself (set on
+	// create, just above), so this only gates the first touch of a pre-existing, hand-written one.
+	if len(managedKeySet(existing)) == 0 && existing.Labels[appsv1alpha1.EnvironmentValuesAdoptLabel] != obj.Name {
+		return fmt.Errorf(
+			"secret %q already exists and is not labeled for adoption by this EnvironmentValues "+
+				"(add label %s=%s to the Secret to allow it)",
+			obj.Name, appsv1alpha1.EnvironmentValuesAdoptLabel, obj.Name)
+	}
+
 	// Merge, not replace: start from whatever the Secret already has, drop only the keys this
 	// controller previously wrote (per managedKeysAnnotation) that are no longer in spec.env —
 	// preserving the existing declarative "dropped key stops being synced" behavior — then lay
 	// this pass's data on top. A key neither previously-managed nor in this pass's data (a
 	// foreign key) is never touched.
-	previouslyManaged := managedKeySet(existing)
-	finalData := make(map[string][]byte, len(existing.Data)+len(data))
-	maps.Copy(finalData, existing.Data)
-	for k := range previouslyManaged {
-		if _, stillWanted := data[k]; !stillWanted {
-			delete(finalData, k)
+	merge := func(base *corev1.Secret) map[string][]byte {
+		previouslyManaged := managedKeySet(base)
+		finalData := make(map[string][]byte, len(base.Data)+len(data))
+		maps.Copy(finalData, base.Data)
+		for k := range previouslyManaged {
+			if _, stillWanted := data[k]; !stillWanted {
+				delete(finalData, k)
+			}
 		}
+		maps.Copy(finalData, data)
+		return finalData
 	}
-	maps.Copy(finalData, data)
 
+	finalData := merge(existing)
 	if existing.Annotations[managedKeysAnnotation] == "" && len(existing.Data) > 0 {
 		log.Info("Secret already existed with unmanaged key(s), adopting only the keys spec.env names", "managedKeys", managedKeys)
 		r.Recorder.Eventf(obj, corev1.EventTypeWarning, "AdoptedExistingSecret",
@@ -277,35 +320,35 @@ func (r *EnvironmentValuesReconciler) upsertSecret(ctx context.Context, obj *app
 		if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Name}, latest); err != nil {
 			return err
 		}
+		// Recomputed from latest, not the outer finalData snapshot: a retry only happens after a
+		// conflict, meaning latest.Data may hold a concurrent change (e.g. a foreign key added
+		// out-of-band) made since this function's own initial Get - overwriting with the stale
+		// snapshot would silently drop it even though the write itself succeeds. Must run before
+		// the managedKeysAnnotation write just below: merge reads that same annotation off latest
+		// to know what was previously managed, so writing the new value first would make every
+		// key look previously-managed as of this pass and never get dropped.
+		newData := merge(latest)
 		if latest.Annotations == nil {
 			latest.Annotations = map[string]string{}
 		}
 		latest.Annotations[managedKeysAnnotation] = managedKeysValue
-		latest.Data = finalData
+		latest.Data = newData
 		latest.StringData = nil
 		return r.Update(ctx, latest)
 	})
 }
 
 // maskSpec persists obj.Spec.Env = maskedSpec so the raw value of any key synced this pass is
-// never visible via `kubectl get/describe environmentvalues` again.
+// never visible via `kubectl get/describe environmentvalues` again. Writes using obj's own
+// ResourceVersion (from Reconcile's original Get) rather than retrying against a freshly-fetched
+// copy: maskedSpec was computed from obj.Spec.Env as read at the start of this reconcile, so
+// blindly retrying past a conflict and overwriting spec.env with that now-stale value would
+// silently discard whatever a concurrent edit (e.g. a new key added via kubectl apply) just
+// wrote. Letting the conflict surface instead means the caller's error path runs and
+// controller-runtime requeues, re-reading the current spec.env from scratch next time.
 func (r *EnvironmentValuesReconciler) maskSpec(ctx context.Context, obj *appsv1alpha1.EnvironmentValues, maskedSpec map[string]string) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		latest := &appsv1alpha1.EnvironmentValues{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Name}, latest); err != nil {
-			return err
-		}
-		latest.Spec.Env = maskedSpec
-		if err := r.Update(ctx, latest); err != nil {
-			return err
-		}
-		// Write the now-current ResourceVersion (and any other metadata) back into the
-		// caller's obj — Reconcile's subsequent Status().Update(ctx, obj) would otherwise use
-		// the ResourceVersion from before this Update and always lose a conflict against the
-		// spec change just made here.
-		*obj = *latest
-		return nil
-	})
+	obj.Spec.Env = maskedSpec
+	return r.Update(ctx, obj)
 }
 
 // SetupWithManager sets up the controller with the Manager.

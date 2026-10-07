@@ -355,7 +355,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapUpd
 			}
 			return c.Update(ctx, o, opts...)
 		},
-	}, instance, res, existingCM)
+	}, instance, res, controlledBy(instance, existingCM))
 
 	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "translation", "")
 	suite.Require().Error(err)
@@ -422,11 +422,45 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapRet
 			}
 			return c.Get(ctx, key, o, opts...)
 		},
-	}, instance, res, existingCM)
+	}, instance, res, controlledBy(instance, existingCM))
 
 	_, err := r.rebuildResourcesConfigMap(context.Background(), instance, "server_config", "")
 	suite.Require().Error(err)
 	suite.ErrorIs(err, wantErr)
+}
+
+// On a move (role -> group), the new location must be recorded in status before the new
+// ConfigMap is written: if it were recorded after and that write failed, a second move before a
+// successful retry would purge the old (already empty) location and orphan the entry here.
+func (suite *ResourceReconcileFailureTestSuite) TestReconcileRecordsNewLocationBeforeRebuild() {
+	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
+	obj := &appsv1alpha1.Resource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "r", Namespace: "default",
+			Finalizers: []string{resourceFinalizer},
+			Labels:     map[string]string{appsv1alpha1.InstanceRefLabel: "inst"},
+		},
+		Spec:   rawSpec(`{"resource_type":"group","name":"x"}`),
+		Status: appsv1alpha1.ResourceStatus{SyncedResourceType: "role", SyncedInstance: "inst"},
+	}
+	wantErr := errors.New("simulated ConfigMap create failure")
+	r := newFakeResourceReconcilerWithInterceptor(interceptor.Funcs{
+		Create: func(ctx context.Context, c client.WithWatch, o client.Object, opts ...client.CreateOption) error {
+			if cm, ok := o.(*corev1.ConfigMap); ok && cm.Name == "inst-groups" {
+				return wantErr
+			}
+			return c.Create(ctx, o, opts...)
+		},
+	}, instance, obj)
+	r.Recorder = fakeRecorder()
+
+	_, err := r.Reconcile(context.Background(), reconcileRequest("r"))
+	suite.Require().ErrorIs(err, wantErr)
+
+	updated := &appsv1alpha1.Resource{}
+	suite.Require().NoError(r.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "default"}, updated))
+	suite.Equal("group", updated.Status.SyncedResourceType, "status must already name the new location when its write fails")
+	suite.Equal("inst", updated.Status.SyncedInstance)
 }
 
 func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapNilDataInitialized() {
@@ -438,7 +472,7 @@ func (suite *ResourceReconcileFailureTestSuite) TestRebuildResourcesConfigMapNil
 	// Data left nil (not just empty) - the update path must initialize it rather than panic on
 	// a nil-map write.
 	existingCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "inst-themes", Namespace: "default"}}
-	r := newFakeResourceReconciler(instance, res, existingCM)
+	r := newFakeResourceReconciler(instance, res, controlledBy(instance, existingCM))
 
 	changed, err := r.rebuildResourcesConfigMap(context.Background(), instance, "theme", "")
 	suite.Require().NoError(err)

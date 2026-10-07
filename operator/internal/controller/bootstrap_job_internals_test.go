@@ -74,7 +74,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobRetryDelet
 			}
 			return c.Delete(ctx, o, opts...)
 		},
-	}, instance, failedJob)
+	}, instance, controlledBy(instance, failedJob))
 	r.KubeClient = k8sfake.NewSimpleClientset() // no matching pod -> not a permanent failure, tries to delete+retry
 
 	err := r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security")
@@ -113,7 +113,7 @@ func (suite *BootstrapJobInternalsTestSuite) TestReconcileBootstrapJobStaleDelet
 			}
 			return c.Delete(ctx, o, opts...)
 		},
-	}, instance, staleJob)
+	}, instance, controlledBy(instance, staleJob))
 
 	err := r.reconcileBootstrapJob(context.Background(), instance, "new-seed", "inst-security")
 	suite.Require().Error(err)

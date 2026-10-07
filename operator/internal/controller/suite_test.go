@@ -155,11 +155,18 @@ func envtestK8sVersion() (string, error) {
 
 // resolveEnvTestBinDir gets envtest's etcd/kube-apiserver/kubectl for the current OS by invoking
 // setup-envtest, the same tool the Makefile's "test"/"setup-envtest" targets already use - so
-// `make test` and a plain `go test` end up resolving binaries the same way. On every OS but
-// Windows this runs `go run ...setup-envtest@latest`, which compiles the tool natively for
-// whatever OS/arch it's invoked on - no committed per-OS binaries, no permission quirks (unlike
-// cross-fetching one OS's binaries from another's tooling, which does not reliably carry over the
-// executable bit). See below for the Windows branch.
+// `make test` and a plain `go test` end up resolving binaries the same way. This runs
+// `go run ...setup-envtest@latest`, which compiles the tool natively for whatever OS/arch it's
+// invoked on - no committed per-OS binaries, no permission quirks (unlike cross-fetching one OS's
+// binaries from another's tooling, which does not reliably carry over the executable bit).
+// Confirmed live this works identically on Windows: setup-envtest logs a harmless
+// "unable to remove downloaded archive" error to stderr on Windows (a file-locking artifact of
+// its own temp-file cleanup, unrelated to whether the fetch itself succeeded) but still exits 0
+// with the correct binaries extracted and the resolved path on stdout - cmd.Output() below only
+// ever sees stdout, so that stderr noise never reaches the caller. An earlier version special-cased
+// Windows to a vendored "bin-win/setup-envtest.exe" binary, believing `go run` didn't work there;
+// that was never actually true, and it made this test suite dependent on the vendored binary
+// existing (and staying in the repo's history) rather than fetching the same tool every OS uses.
 //
 // If KUBEBUILDER_ASSETS is already set (e.g. by `make test` itself), this is skipped entirely -
 // controller-runtime's own BinPathFinder gives that env var precedence over BinaryAssetsDirectory
@@ -176,11 +183,7 @@ func resolveEnvTestBinDir() string {
 	// killOrphanedEnvtestProcesses's later match against Windows' (always-absolute)
 	// Win32_Process ExecutablePath never fire - leaking an orphaned etcd/kube-apiserver on every
 	// run (confirmed live).
-	binDir := filepath.Join("..", "..", "bin")
-	if runtime.GOOS == "windows" {
-		binDir = filepath.Join("..", "..", "bin-win")
-	}
-	absBinDir, err := filepath.Abs(binDir)
+	absBinDir, err := filepath.Abs(filepath.Join("..", "..", "bin"))
 	if err != nil {
 		logf.Log.Error(err, "failed to resolve envtest bin dir")
 		return ""
@@ -194,15 +197,6 @@ func resolveEnvTestBinDir() string {
 
 	cmd := exec.Command("go", "run", "sigs.k8s.io/controller-runtime/tools/setup-envtest@latest",
 		"use", k8sVersion, "--bin-dir", absBinDir, "-p", "path")
-	if runtime.GOOS == "windows" {
-		// No `make` on Windows (see the package's Windows-constraints notes) and setup-envtest
-		// isn't installed globally either, so a prebuilt "bin-win/setup-envtest.exe" is vendored
-		// instead - the same kind of Windows-specific substitute this project already uses
-		// elsewhere (e.g. "bin-win/controller-gen.exe" in place of the Linux-ELF one committed
-		// for other platforms).
-		cmd = exec.Command(filepath.Join("..", "..", "bin-win", "setup-envtest.exe"),
-			"use", k8sVersion, "--bin-dir", absBinDir, "-p", "path")
-	}
 	out, err := cmd.Output()
 	if err != nil {
 		logf.Log.Error(err, "failed to resolve envtest binaries via setup-envtest")

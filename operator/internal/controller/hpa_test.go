@@ -74,7 +74,7 @@ func (suite *HPATestSuite) TestReconcileHPANilAutoScalingNoExistingIsNoop() {
 
 func (suite *HPATestSuite) TestReconcileHPANilAutoScalingDeletesExisting() {
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
-	existing := &autoscalingv2.HorizontalPodAutoscaler{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
+	existing := controlledBy(instance, &autoscalingv2.HorizontalPodAutoscaler{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}})
 	r := newFakeReconciler(instance, existing)
 
 	suite.Require().NoError(r.reconcileHPA(context.Background(), instance))
@@ -110,14 +110,14 @@ func (suite *HPATestSuite) TestReconcileHPAPatchesWhenSpecDrifted() {
 		},
 	}
 	oldMax := int32(3)
-	existing := &autoscalingv2.HorizontalPodAutoscaler{
+	existing := controlledBy(instance, &autoscalingv2.HorizontalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
 		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
 			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: "inst"},
 			MinReplicas:    &oldMax,
 			MaxReplicas:    3,
 		},
-	}
+	})
 	r := newFakeReconciler(instance, existing)
 
 	suite.Require().NoError(r.reconcileHPA(context.Background(), instance))

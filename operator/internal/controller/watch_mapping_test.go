@@ -161,7 +161,8 @@ func (suite *WatchMappingTestSuite) TestMapServingPodToInstanceDeletesFailedBoot
 			Conditions: []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}},
 		},
 	}
-	r := newFakeReconciler(job)
+	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
+	r := newFakeReconciler(controlledBy(instance, job))
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "default", Labels: map[string]string{"app": "inst"}}}
 
 	reqs := r.mapServingPodToInstance(context.Background(), pod)
@@ -169,6 +170,26 @@ func (suite *WatchMappingTestSuite) TestMapServingPodToInstanceDeletesFailedBoot
 
 	err := r.Get(context.Background(), types.NamespacedName{Name: "inst-bootstrap-abc", Namespace: "default"}, &batchv1.Job{})
 	suite.True(errors.IsNotFound(err), "a Failed bootstrap Job for the pod's instance must be deleted so the next reconcile retries fresh")
+}
+
+func (suite *WatchMappingTestSuite) TestMapServingPodToInstanceLeavesForeignFailedJobAlone() {
+	// Carries the bootstrap labels but wasn't created by the instance - labels alone are forgeable.
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "inst-bootstrap-abc", Namespace: "default",
+			Labels: map[string]string{"app": "inst", "thunderid.io/role": "bootstrap"},
+		},
+		Status: batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}},
+		},
+	}
+	r := newFakeReconciler(job)
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "default", Labels: map[string]string{"app": "inst"}}}
+
+	r.mapServingPodToInstance(context.Background(), pod)
+
+	err := r.Get(context.Background(), types.NamespacedName{Name: "inst-bootstrap-abc", Namespace: "default"}, &batchv1.Job{})
+	suite.NoError(err, "a Job not controlled by the instance must never be deleted")
 }
 
 func (suite *WatchMappingTestSuite) TestBootstrapAttempt() {

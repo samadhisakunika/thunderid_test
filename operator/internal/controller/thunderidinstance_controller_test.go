@@ -42,10 +42,15 @@ var _ = Describe("ThunderIDInstance Controller", func() {
 	var (
 		resourceName       string
 		typeNamespacedName types.NamespacedName
+		specCounter        int
 	)
 
 	BeforeEach(func() {
-		resourceName = fmt.Sprintf("test-instance-%d", GinkgoRandomSeed())
+		// Unique per spec, not just per run: envtest has no garbage collector, so a previous
+		// spec's owned objects (e.g. <name>-config) outlive its deleted instance and would trip
+		// requireOwnedBy if the next spec reused the same name.
+		specCounter++
+		resourceName = fmt.Sprintf("test-instance-%d-%d", GinkgoRandomSeed(), specCounter)
 		typeNamespacedName = types.NamespacedName{Name: resourceName, Namespace: resourceNamespace}
 	})
 

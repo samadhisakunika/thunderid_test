@@ -44,14 +44,15 @@ import (
 )
 
 const (
-	securityKeyServerCert  = "server.cert"
-	securityKeyServerKey   = "server.key"
-	securityKeySigningCert = "signing.cert"
-	securityKeySigningKey  = "signing.key"
-	securityKeyECDSACert   = "ecdsa-signing.cert"
-	securityKeyECDSAKey    = "ecdsa-signing.key"
-	securityKeyCryptoKey   = "crypto.key"
-	securityKeyDirectAuth  = "direct_auth_secret"
+	securityKeyServerCert    = "server.cert"
+	securityKeyServerKey     = "server.key"
+	securityKeySigningCert   = "signing.cert"
+	securityKeySigningKey    = "signing.key"
+	securityKeyECDSACert     = "ecdsa-signing.cert"
+	securityKeyECDSAKey      = "ecdsa-signing.key"
+	securityKeyCryptoKey     = "crypto.key"
+	securityKeyDirectAuth    = "direct_auth_secret"
+	securityKeyAdminPassword = "admin-password"
 )
 
 // securityCertMountKeys are mounted read-only, individually by key name (via subPath), onto
@@ -66,10 +67,11 @@ var securityCertMountKeys = []string{
 }
 
 // securityAllKeys is every key a security Secret — generated or user-supplied — must contain.
-var securityAllKeys = append(append([]string{}, securityCertMountKeys...), securityKeyDirectAuth)
+var securityAllKeys = append(append([]string{}, securityCertMountKeys...), securityKeyDirectAuth, securityKeyAdminPassword)
 
 // reconcileSecuritySecret ensures a Secret holding ThunderID's TLS/JWT-signing/encryption key
-// material exists for this instance, generating it once on first create. It is deliberately
+// material and bootstrap admin password exists for this instance, generating it once on first
+// create. It is deliberately
 // never updated afterwards: setup.sh inside the ThunderID container only regenerates a
 // cert/key pair when the file is absent, so keeping this Secret's content stable across
 // reconciles is what keeps the JWT signing key (and therefore already-issued session tokens)
@@ -109,6 +111,11 @@ func (r *ThunderIDInstanceReconciler) reconcileSecuritySecret(
 	existing := &corev1.Secret{}
 	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: instance.Namespace}, existing)
 	if err == nil {
+		// Mounted into the pod as TLS/signing key material - reusing a Secret this instance doesn't
+		// control would hand it another workload's keys.
+		if err := requireOwnedBy(r.Recorder, instance, existing, "Secret"); err != nil {
+			return "", err
+		}
 		log.V(1).Info("security Secret already exists, reusing (never regenerated - see reconcileSecuritySecret's own doc comment)", "name", secretName)
 		return secretName, nil
 	}
@@ -137,6 +144,10 @@ func (r *ThunderIDInstanceReconciler) reconcileSecuritySecret(
 	if err != nil {
 		return "", fmt.Errorf("generating direct auth secret: %w", err)
 	}
+	adminPassword, err := randomHexSecret()
+	if err != nil {
+		return "", fmt.Errorf("generating admin password: %w", err)
+	}
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -145,14 +156,15 @@ func (r *ThunderIDInstanceReconciler) reconcileSecuritySecret(
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			securityKeyServerCert:  serverCert,
-			securityKeyServerKey:   serverKey,
-			securityKeySigningCert: signingCert,
-			securityKeySigningKey:  signingKey,
-			securityKeyECDSACert:   ecdsaCert,
-			securityKeyECDSAKey:    ecdsaKey,
-			securityKeyCryptoKey:   cryptoKey,
-			securityKeyDirectAuth:  directAuthSecret,
+			securityKeyServerCert:    serverCert,
+			securityKeyServerKey:     serverKey,
+			securityKeySigningCert:   signingCert,
+			securityKeySigningKey:    signingKey,
+			securityKeyECDSACert:     ecdsaCert,
+			securityKeyECDSAKey:      ecdsaKey,
+			securityKeyCryptoKey:     cryptoKey,
+			securityKeyDirectAuth:    directAuthSecret,
+			securityKeyAdminPassword: adminPassword,
 		},
 	}
 	_ = ctrl.SetControllerReference(instance, secret, r.Scheme)

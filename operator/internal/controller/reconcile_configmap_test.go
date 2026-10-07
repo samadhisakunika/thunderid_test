@@ -180,7 +180,7 @@ func (suite *ReconcileConfigMapTestSuite) TestConfigMapRetryGetErrorPropagates()
 			}
 			return c.Get(ctx, key, o, opts...)
 		},
-	}, instance, existingCM)
+	}, instance, controlledBy(instance, existingCM))
 
 	_, _, _, _, err := r.reconcileConfigMap(context.Background(), instance, "https://localhost:8090")
 	suite.Require().Error(err)

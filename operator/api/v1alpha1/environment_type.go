@@ -25,11 +25,11 @@ import (
 type EnvironmentValuesSpec struct {
 	// Env holds this environment's key-value pairs, mirrored into the generated Secret's Data.
 	// Plaintext only until the next reconcile: the controller overwrites each key's value here
-	// with a masked marker ("thunderid-masked:<up to 4 leading chars>****:len=<n>") once it's
-	// synced to the Secret, so only a short prefix (never the rest of the raw value) is visible
-	// via `kubectl get/describe environmentvalues` past that point — see the controller. To change a
-	// key's value later, re-apply with new plaintext for just that key; kubectl apply's 3-way
-	// merge leaves already-masked sibling keys untouched.
+	// with a masked marker ("thunderid-masked:<up to 3 leading chars>**********") once it's
+	// synced to the Secret, so only a short prefix (never the rest of the raw value, and never
+	// its real length either) is visible via `kubectl get/describe environmentvalues` past that
+	// point — see the controller. To change a key's value later, re-apply with new plaintext for
+	// just that key; kubectl apply's 3-way merge leaves already-masked sibling keys untouched.
 	// +optional
 	Env map[string]string `json:"env,omitempty"`
 }
@@ -85,7 +85,11 @@ type EnvironmentValuesStatus struct {
 // picking one arbitrarily. A hand-written Secret with no matching EnvironmentValues object can still be
 // discovered the same way: create a thin EnvironmentValues with that Secret's name, the label, and no
 // spec.env (or spec.env omitted) — its reconcile then adopts the existing Secret without touching
-// its contents (see upsertSecret's "adopted" path in environment_controller.go).
+// its contents (see upsertSecret's "adopted" path in environment_controller.go). The Secret must
+// also carry EnvironmentValuesAdoptLabel (thunderid.io/environment-values: <this name>) or
+// adoption is refused — matching by Secret name alone would let anyone who can create an
+// EnvironmentValues overwrite keys in any same-named Secret in the namespace, including ones they
+// have no RBAC permission to edit directly.
 type EnvironmentValues struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

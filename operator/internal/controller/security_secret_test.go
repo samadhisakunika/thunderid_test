@@ -119,6 +119,21 @@ func (suite *SecuritySecretTestSuite) TestReconcileSecuritySecretGeneratesOnce()
 	suite.Equal(firstResourceVersion, secret2.ResourceVersion, "Secret must not be modified on second reconcile")
 }
 
+// A pre-existing <name>-security Secret the instance didn't create must not be reused - it would
+// mount another workload's TLS/signing keys into this instance's pod.
+func (suite *SecuritySecretTestSuite) TestReconcileSecuritySecretForeignSecretRejected() {
+	foreign := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "inst-security", Namespace: "default"},
+		Data:       map[string][]byte{securityKeyServerKey: []byte("someone-elses-key")},
+	}
+	r := newFakeReconciler(foreign)
+	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
+
+	_, err := r.reconcileSecuritySecret(context.Background(), instance)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not controlled by ThunderIDInstance")
+}
+
 func (suite *SecuritySecretTestSuite) TestReconcileSecuritySecretUserSuppliedValid() {
 	data := map[string][]byte{}
 	for _, key := range securityAllKeys {

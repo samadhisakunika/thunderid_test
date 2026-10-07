@@ -60,6 +60,15 @@ const appLabelKey = "app"
 // reconcileDeployment - matched here against a pod's container statuses to find its health.
 const thunderidContainerName = "thunderid"
 
+// Bounds on fetchAndEmitPodErrors's crash-log fetch, which reads the whole response into memory
+// but only ever inspects its tail. 500 lines is far more than the 5 it reports while still
+// comfortably covering a startup failure's stack trace; the byte cap is the backstop for a
+// container logging very long lines (the API server truncates mid-line at the limit).
+const (
+	podLogTailLines  = 500
+	podLogLimitBytes = 1 << 20 // 1 MiB
+)
+
 // Resource.Status.Phase values (a plain string field, not a typed enum - see ResourceStatus).
 // phaseError is also used by EnvironmentValuesReconciler for the same "something went wrong" meaning
 // on EnvironmentValues.Status.Phase.
@@ -183,8 +192,17 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// clear (the object would be stuck Terminating indefinitely) if it were checked first.
 	if !obj.DeletionTimestamp.IsZero() {
 		if slices.Contains(obj.Finalizers, resourceFinalizer) {
+			// Use the last-synced instance, not the current label: the label may have been
+			// changed (or the object moved) after the finalizer was added, and the stale entry
+			// actually lives under whichever instance it was last synced to, not wherever the
+			// label points now. Falls back to the current label only if nothing was ever
+			// successfully synced.
+			cleanupInstanceName := obj.Status.SyncedInstance
+			if cleanupInstanceName == "" {
+				cleanupInstanceName = obj.Labels[appsv1alpha1.InstanceRefLabel]
+			}
 			instance := &appsv1alpha1.ThunderIDInstance{}
-			if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
+			if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: cleanupInstanceName}, instance); err != nil {
 				if client.IgnoreNotFound(err) != nil {
 					return ctrl.Result{}, err
 				}
@@ -192,9 +210,26 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				// to remove this resource from. Fall through to just drop the finalizer.
 				log.Info("owning ThunderIDInstance already gone, dropping finalizer without syncing")
 			} else {
-				log.Info("Resource deleted, removing it from the resources ConfigMap")
-				if _, err := r.rebuildResourcesConfigMap(ctx, instance, resourceType, string(obj.UID)); err != nil {
-					return ctrl.Result{}, err
+				// Use the last-synced type, not the freshly-parsed one: spec.resource_type may
+				// have been edited to something invalid or unknown after the finalizer was added,
+				// and that type is where this object's stale entry actually lives, not wherever
+				// spec.resource_type points now. Falls back to the freshly-parsed type only if
+				// nothing was ever successfully synced (the object never got past its first sync
+				// attempt) - matches the old behavior for that edge case.
+				cleanupType := obj.Status.SyncedResourceType
+				if cleanupType == "" {
+					cleanupType = resourceType
+				}
+				if _, ok := resourceTypeMeta[cleanupType]; !ok {
+					// Nothing was ever validly synced under a known type - there's no ConfigMap
+					// entry to remove. Erroring here (as rebuildResourcesConfigMap would) leaves
+					// the finalizer stuck forever with no way to clear it.
+					log.Info("no known resource_type to clean up on deletion, dropping finalizer without syncing", "cleanupType", cleanupType)
+				} else {
+					log.Info("Resource deleted, removing it from the resources ConfigMap", "cleanupType", cleanupType)
+					if _, err := r.rebuildResourcesConfigMap(ctx, instance, cleanupType, string(obj.UID)); err != nil {
+						return ctrl.Result{}, err
+					}
 				}
 			}
 			obj.Finalizers = slices.DeleteFunc(obj.Finalizers, func(f string) bool { return f == resourceFinalizer })
@@ -205,24 +240,53 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
+	instanceName := obj.Labels[appsv1alpha1.InstanceRefLabel]
+
 	// Reject an unknown resource_type.
 	if _, ok := resourceTypeMeta[resourceType]; !ok {
 		log.Info("unknown spec.resource_type")
+		// spec.resource_type may have been edited from a valid type to this one after a
+		// successful sync: that earlier entry is stale now, and the sync path below - the only
+		// other thing that purges it - is never reached while the type stays unknown.
+		purged, err := r.purgeIfStale(ctx, obj, nil, instanceName, resourceType)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		r.Recorder.Eventf(obj, corev1.EventTypeWarning, "UnknownType", "spec.resource_type %q is not a known ThunderID resource_type", resourceType)
 		obj.Status.Phase = phaseError
 		obj.Status.Synced = false
+		if purged {
+			obj.Status.SyncedResourceType = ""
+			obj.Status.SyncedInstance = ""
+		}
 		_ = r.Status().Update(ctx, obj)
 		return ctrl.Result{}, nil
 	}
 
 	// Fetch the owning ThunderIDInstance.
 	instance := &appsv1alpha1.ThunderIDInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Labels[appsv1alpha1.InstanceRefLabel]}, instance); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: instanceName}, instance); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", obj.Labels[appsv1alpha1.InstanceRefLabel])
+			log.Info("ThunderIDInstance not found, waiting for it to be created", "instanceRef", instanceName)
+			// Same reasoning as the unknown-type branch: if the thunderid.io/instance label was
+			// repointed at an instance that doesn't exist (yet), the entry under the instance
+			// this object was last synced to is stale, and requeuing until the new instance
+			// shows up would leave it in that old ConfigMap indefinitely. A still-current
+			// location (the owning instance merely deleted) isn't stale and is left alone - its
+			// ConfigMaps went with it.
+			purged, perr := r.purgeIfStale(ctx, obj, nil, instanceName, resourceType)
+			if perr != nil {
+				return ctrl.Result{}, perr
+			}
+			if purged {
+				obj.Status.SyncedResourceType = ""
+				obj.Status.SyncedInstance = ""
+				obj.Status.Synced = false
+				_ = r.Status().Update(ctx, obj)
+			}
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", obj.Labels[appsv1alpha1.InstanceRefLabel])
+		log.Error(err, "failed to get ThunderIDInstance", "instanceRef", instanceName)
 		return ctrl.Result{}, err
 	}
 
@@ -233,6 +297,42 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
+	}
+
+	// spec.resource_type and/or the thunderid.io/instance label may have changed since the last
+	// successful sync (e.g. role -> group, or moved to a different instance): the old
+	// (instance, type) pair's ConfigMap still has this object's stale entry, and nothing else
+	// will remove it — rebuildResourcesConfigMap for the new instance/type below only ever looks
+	// at the new pair's own ConfigMap. Purge the old entry first, the same way deletion does,
+	// before syncing into the new one.
+	if _, err := r.purgeIfStale(ctx, obj, instance, instance.Name, resourceType); err != nil {
+		obj.Status.Phase = phaseError
+		obj.Status.Synced = false
+		_ = r.Status().Update(ctx, obj)
+		return ctrl.Result{}, err
+	}
+
+	// Record the pair this object is about to be synced to *before* writing its entry there, not
+	// after. Written after, a failed status write would leave the new ConfigMap holding this
+	// object's entry while Status still names the old (already purged) pair; if resource_type or
+	// the instance label then changed again before a successful retry, the next purgeIfStale would
+	// target that already-empty old pair and orphan the entry in the intermediate ConfigMap.
+	// Written first, every failure point is harmless: a failed status write here means nothing was
+	// written to the new pair yet (the retry just re-purges the empty old pair, a no-op), and a
+	// failed rebuild below leaves Status pointing at a pair that holds no entry, or a partial one,
+	// for purgeIfStale/deletion to clean up either way.
+	// Also needed when changed is false on a genuine move: rebuildResourcesConfigMap lists every
+	// object currently bound to (instance, resourceType), so a concurrent reconcile of a sibling
+	// resource can already have written this object's entry moments earlier. Skipping it would
+	// leave Status pointing at the emptied old pair, and deletion would clean up there instead of
+	// here, leaving the real entry behind forever.
+	if obj.Status.SyncedResourceType != resourceType || obj.Status.SyncedInstance != instance.Name {
+		obj.Status.SyncedResourceType = resourceType
+		obj.Status.SyncedInstance = instance.Name
+		if err := r.Status().Update(ctx, obj); err != nil {
+			log.Error(err, "failed to record synced resource_type/instance")
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Sync into the resources ConfigMap.
@@ -246,6 +346,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		_ = r.Status().Update(ctx, obj)
 		return ctrl.Result{}, err
 	}
+
 	// Nothing changed - just verify ThunderID health instead of re-syncing.
 	if obj.Status.Phase == phasePending && !changed {
 		if obj.Status.LastSyncTime != nil {
@@ -272,6 +373,8 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	obj.Status.Synced = false
 	obj.Status.LastSyncTime = &now
 	obj.Status.ID = string(obj.UID)
+	obj.Status.SyncedResourceType = resourceType
+	obj.Status.SyncedInstance = instance.Name
 	if err := r.Status().Update(ctx, obj); err != nil {
 		log.Error(err, "failed to update resource status")
 		return ctrl.Result{}, err
@@ -281,9 +384,80 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
+// purgeIfStale removes obj's entry from the ConfigMap it was last successfully synced to
+// (Status.SyncedInstance + Status.SyncedResourceType), when that is no longer the location obj
+// would sync to now. It returns true once that stale location has been dealt with — purged, or
+// found already gone — so a caller that stops reconciling here (an unknown resource_type, a
+// missing owning instance) knows it can clear those two status fields and not re-purge the same
+// entry on every subsequent reconcile. It returns false when nothing was ever synced, or when
+// the recorded location is still the current one: the status fields are accurate then and must
+// be left alone.
+//
+// currentInstance is the already-fetched ThunderIDInstance named by newInstanceName when the
+// caller has one, purely to skip a redundant Get, or nil when it has none (not fetched yet, or
+// no longer exists).
+func (r *ResourceReconciler) purgeIfStale(ctx context.Context, obj *appsv1alpha1.Resource,
+	currentInstance *appsv1alpha1.ThunderIDInstance, newInstanceName, newResourceType string) (bool, error) {
+	log := logf.FromContext(ctx)
+
+	oldType := obj.Status.SyncedResourceType
+	if oldType == "" {
+		// Never successfully synced anywhere - there's no entry to remove.
+		return false, nil
+	}
+	oldInstanceName := obj.Status.SyncedInstance
+	if oldInstanceName == "" {
+		// Synced before SyncedInstance was recorded: the only instance it can have gone to is
+		// whichever one the object is bound to now.
+		oldInstanceName = newInstanceName
+	}
+	if oldInstanceName == "" {
+		return false, nil
+	}
+	if oldInstanceName == newInstanceName && oldType == newResourceType {
+		// Still the current location - an ordinary re-sync, not a move.
+		return false, nil
+	}
+
+	oldInstance := currentInstance
+	if oldInstance == nil || oldInstanceName != oldInstance.Name {
+		fetched := &appsv1alpha1.ThunderIDInstance{}
+		if err := r.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: oldInstanceName}, fetched); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				return false, err
+			}
+			// Old instance already gone - its ConfigMaps went with it, nothing left to remove
+			// this resource from.
+			return true, nil
+		}
+		oldInstance = fetched
+	}
+	if _, ok := resourceTypeMeta[oldType]; !ok {
+		// A type this operator no longer knows maps to no ConfigMap at all.
+		return true, nil
+	}
+
+	log.Info("spec.resource_type or instance changed, removing stale entry from old ConfigMap", "oldInstance", oldInstance.Name, "oldType", oldType)
+	if _, err := r.rebuildResourcesConfigMap(ctx, oldInstance, oldType, string(obj.UID)); err != nil {
+		log.Error(err, "failed to clean up old ConfigMap", "oldInstance", oldInstance.Name, "oldType", oldType)
+		r.Recorder.Eventf(obj, corev1.EventTypeWarning, "SyncFailed", "failed to remove stale entry from old instance %q / resource_type %q's ConfigMap: %v", oldInstance.Name, oldType, err)
+		return false, err
+	}
+	return true, nil
+}
+
 // checkThunderIDHealth inspects the serving pod's container status for obj's owning instance:
 // a crash sets Phase=Error (and, once escalated to CrashLoopBackOff, emits the pod's error logs
-// via fetchAndEmitPodErrors); otherwise it sets Phase=Ready/Synced=true once healthy.
+// via fetchAndEmitPodErrors); otherwise it sets Phase=Ready/Synced=true once healthy. Every
+// diagnostic Event (CrashLoopBackOff/missing-secret here, ThunderIDError/ThunderIDCrashed in
+// fetchAndEmitPodErrors) is emitted on instance, never on obj: the pod - and therefore its crash
+// reason and logs - is shared by every Resource bound to instance, so a diagnosis attached to
+// whichever resource happens to be polling would misattribute it to that resource specifically,
+// and every other resource re-verifying health during the same outage would independently
+// re-diagnose and re-emit the identical message onto itself too. Targeting instance also means
+// repeated calls for the same ongoing issue collapse into one Event with an incrementing count
+// (the EventRecorder's own dedup keys on object+reason+message), instead of spamming a separate
+// misattributed Event per bystander resource.
 func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *appsv1alpha1.Resource, instance *appsv1alpha1.ThunderIDInstance) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -310,7 +484,7 @@ func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *apps
 			_ = r.Status().Update(ctx, obj)
 		}
 		if message != "" {
-			r.Recorder.Event(obj, corev1.EventTypeWarning, issue.reason, message)
+			r.Recorder.Event(instance, corev1.EventTypeWarning, issue.reason, message)
 		}
 		// CrashLoopBackOff is the only reason with real container logs worth fetching; every
 		// other reason (a config-resolution failure, or a crash not yet escalated to
@@ -318,7 +492,7 @@ func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *apps
 		if issue.reason != reasonCrashLoopBackOff {
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
-		r.fetchAndEmitPodErrors(ctx, obj, instance.Namespace, pod.Name)
+		r.fetchAndEmitPodErrors(ctx, instance, instance.Namespace, pod.Name)
 		return ctrl.Result{}, nil
 	}
 
@@ -338,22 +512,32 @@ func (r *ResourceReconciler) checkThunderIDHealth(ctx context.Context, obj *apps
 // fetchAndEmitPodErrors fetches podName's crashed container logs (preferring the previous
 // instance's logs, falling back to the current one) and emits up to 5 ERROR-level lines as
 // ThunderIDError events, or — if none matched — the last 5 lines of output as ThunderIDCrashed
-// events instead.
-func (r *ResourceReconciler) fetchAndEmitPodErrors(ctx context.Context, obj *appsv1alpha1.Resource, namespace, podName string) {
-	// Fetch the crashed container's logs, preferring the previous instance.
-	req := r.KubeClient.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
-		Previous:  true,
-		Container: thunderidContainerName,
-	})
+// events instead, all on target (see checkThunderIDHealth's doc comment for why never a specific
+// Resource). target is client.Object rather than the concrete ThunderIDInstance type since
+// Recorder.Event is the only thing done with it here.
+func (r *ResourceReconciler) fetchAndEmitPodErrors(ctx context.Context, target client.Object, namespace, podName string) {
+	// Fetch the crashed container's logs, preferring the previous instance. Bounded on both axes
+	// because the whole response is read into memory below: only the tail is ever inspected (the
+	// last 5 lines, or the first 5 ERROR lines within that tail), so an unbounded request would
+	// pull a crash-looping container's entire log history — arbitrarily large — just to discard
+	// nearly all of it.
+	logOptions := func(previous bool) *corev1.PodLogOptions {
+		tail, limit := int64(podLogTailLines), int64(podLogLimitBytes)
+		return &corev1.PodLogOptions{
+			Previous:   previous,
+			Container:  thunderidContainerName,
+			TailLines:  &tail,
+			LimitBytes: &limit,
+		}
+	}
+	req := r.KubeClient.CoreV1().Pods(namespace).GetLogs(podName, logOptions(true))
 	rc, err := req.Stream(ctx)
 	if err != nil {
-		req = r.KubeClient.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
-			Container: thunderidContainerName,
-		})
+		req = r.KubeClient.CoreV1().Pods(namespace).GetLogs(podName, logOptions(false))
 		rc, err = req.Stream(ctx)
 	}
 	if err != nil {
-		r.Recorder.Event(obj, corev1.EventTypeWarning, "ThunderIDCrashed",
+		r.Recorder.Event(target, corev1.EventTypeWarning, "ThunderIDCrashed",
 			fmt.Sprintf("pod %s is in CrashLoopBackOff (could not fetch logs: %v)", podName, err))
 		return
 	}
@@ -361,7 +545,7 @@ func (r *ResourceReconciler) fetchAndEmitPodErrors(ctx context.Context, obj *app
 
 	data, err := io.ReadAll(rc)
 	if err != nil {
-		r.Recorder.Event(obj, corev1.EventTypeWarning, "ThunderIDCrashed",
+		r.Recorder.Event(target, corev1.EventTypeWarning, "ThunderIDCrashed",
 			fmt.Sprintf("pod %s is in CrashLoopBackOff", podName))
 		return
 	}
@@ -374,7 +558,7 @@ func (r *ResourceReconciler) fetchAndEmitPodErrors(ctx context.Context, obj *app
 			continue
 		}
 		if strings.Contains(line, "level=ERROR") || strings.Contains(line, `"level":"ERROR"`) {
-			r.Recorder.Event(obj, corev1.EventTypeWarning, "ThunderIDError", line)
+			r.Recorder.Event(target, corev1.EventTypeWarning, "ThunderIDError", line)
 			errCount++
 			if errCount >= 5 {
 				break
@@ -391,7 +575,7 @@ func (r *ResourceReconciler) fetchAndEmitPodErrors(ctx context.Context, obj *app
 			}
 		}
 		for _, line := range tail {
-			r.Recorder.Event(obj, corev1.EventTypeWarning, "ThunderIDCrashed", line)
+			r.Recorder.Event(target, corev1.EventTypeWarning, "ThunderIDCrashed", line)
 		}
 	}
 }
@@ -469,6 +653,9 @@ func (r *ResourceReconciler) rebuildResourcesConfigMap(ctx context.Context, inst
 	} else if err != nil {
 		return false, err
 	} else {
+		if err := requireOwnedBy(r.Recorder, instance, cm, "ConfigMap"); err != nil {
+			return false, err
+		}
 		updateErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			latest := &corev1.ConfigMap{}
 			if err := r.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: cmName}, latest); err != nil {

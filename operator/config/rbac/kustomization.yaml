@@ -25,4 +25,10 @@ resources:
 - thunderidinstance_admin_role.yaml
 - thunderidinstance_editor_role.yaml
 - thunderidinstance_viewer_role.yaml
+- resource_admin_role.yaml
+- resource_editor_role.yaml
+- resource_viewer_role.yaml
+- environmentvalues_admin_role.yaml
+- environmentvalues_editor_role.yaml
+- environmentvalues_viewer_role.yaml
 

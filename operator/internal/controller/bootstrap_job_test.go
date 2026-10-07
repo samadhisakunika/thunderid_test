@@ -73,7 +73,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobStillRunningIsLeftA
 		Name: "inst-bootstrap-seed1", Namespace: "default",
 		Labels: map[string]string{"app": "inst", "thunderid.io/role": "bootstrap", bootstrapAttemptLabel: "1"},
 	}}
-	r := newFakeReconciler(instance, existing)
+	r := newFakeReconciler(instance, controlledBy(instance, existing))
 
 	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security"))
 
@@ -95,7 +95,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobPermanentFailureSto
 		Name: "inst-bootstrap-seed1-xyz", Namespace: "default",
 		Labels: map[string]string{"app": "inst", "thunderid.io/role": "bootstrap", bootstrapAttemptLabel: "1"},
 	}}
-	r := newFakeReconciler(instance, failedJob)
+	r := newFakeReconciler(instance, controlledBy(instance, failedJob))
 	fr := record.NewFakeRecorder(20)
 	r.Recorder = fr
 	cs := k8sfake.NewSimpleClientset(bootstrapPod)
@@ -121,7 +121,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobRetryLimitReached()
 		},
 		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}},
 	}
-	r := newFakeReconciler(instance, failedJob)
+	r := newFakeReconciler(instance, controlledBy(instance, failedJob))
 	fr := record.NewFakeRecorder(20)
 	r.Recorder = fr
 	r.KubeClient = k8sfake.NewSimpleClientset() // no matching pod -> bootstrapPermanentFailureReason returns ""
@@ -141,7 +141,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobRetriesBelowLimit()
 		},
 		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}},
 	}
-	r := newFakeReconciler(instance, failedJob)
+	r := newFakeReconciler(instance, controlledBy(instance, failedJob))
 	r.KubeClient = k8sfake.NewSimpleClientset() // no matching pod -> not a permanent failure
 
 	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "seed1", "inst-security"))
@@ -158,7 +158,7 @@ func (suite *BootstrapJobTestSuite) TestReconcileBootstrapJobHashChangeReplacesS
 		Name: "inst-bootstrap-old-seed", Namespace: "default",
 		Labels: map[string]string{"app": "inst", "thunderid.io/role": "bootstrap", bootstrapAttemptLabel: "1"},
 	}}
-	r := newFakeReconciler(instance, staleJob)
+	r := newFakeReconciler(instance, controlledBy(instance, staleJob))
 
 	suite.Require().NoError(r.reconcileBootstrapJob(context.Background(), instance, "new-seed", "inst-security"))
 
@@ -230,7 +230,7 @@ func (suite *BootstrapJobTestSuite) TestAppendResourceConfigMapReturnsContentWit
 		ObjectMeta: metav1.ObjectMeta{Name: "inst-layouts", Namespace: "default"},
 		Data:       map[string]string{"layouts.yaml": "---\nname: 'admin'\n"},
 	}
-	r := newFakeReconciler(instance, cm)
+	r := newFakeReconciler(instance, controlledBy(instance, cm))
 
 	content, err := r.appendResourceConfigMap(context.Background(), instance, "-layouts", "layouts.yaml")
 	suite.Require().NoError(err)
@@ -240,7 +240,7 @@ func (suite *BootstrapJobTestSuite) TestAppendResourceConfigMapReturnsContentWit
 func (suite *BootstrapJobTestSuite) TestAppendResourceConfigMapEmptyKeyIsEmpty() {
 	instance := &appsv1alpha1.ThunderIDInstance{ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"}}
 	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "inst-connections", Namespace: "default"}}
-	r := newFakeReconciler(instance, cm)
+	r := newFakeReconciler(instance, controlledBy(instance, cm))
 
 	content, err := r.appendResourceConfigMap(context.Background(), instance, "-connections", "connections.yaml")
 	suite.Require().NoError(err)

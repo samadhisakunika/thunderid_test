@@ -1,7 +1,7 @@
 # thunderid-operator
 
 A Helm chart for the ThunderID Kubernetes operator, which deploys and configures
-[ThunderID](https://github.com/wso2/thunderid) (a WSO2 IAM platform) via CRDs.
+[ThunderID](https://github.com/thunder-id/thunderid) via CRDs.
 
 This chart is a Helm-packaged equivalent of the project's `config/` kustomize
 manifests — same RBAC, same Deployment, same 3 CRDs — so either install path
@@ -35,7 +35,7 @@ kubectl delete -f charts/thunderid-operator/crds/
 |---|---|---|
 | `replicaCount` | `1` | Operator pod replica count. |
 | `image.repository` | `controller` | Operator image repository. |
-| `image.tag` | `latest` | Operator image tag; defaults to `.Chart.AppVersion` if unset. |
+| `image.tag` | `""` | Operator image tag; defaults to `.Chart.AppVersion` if unset. |
 | `image.pullPolicy` | `IfNotPresent` | |
 | `imagePullSecrets` | `[]` | |
 | `serviceAccount.create` | `true` | Create a ServiceAccount for the operator. |
