@@ -14,7 +14,7 @@ A Kubernetes operator that manages [ThunderID](https://github.com/thunder-id/thu
   - [2. Start ThunderID](#2-start-thunderid)
   - [3. Run the operator](#3-run-the-operator)
   - [4. Register an application](#4-register-an-application)
-- [GitOps (Flux)](#gitops-flux)
+- [Demo app](#demo-app)
 - [Helm Chart](#helm-chart)
 - [Custom Resources](#custom-resources)
   - [ThunderIDInstance](#thunderidinstance)
@@ -124,7 +124,7 @@ thunderidinstances.apps.thunderid.io
 Apply a `ThunderIDInstance` to create and manage a ThunderID deployment:
 
 ```bash
-kubectl apply -f operator/gitops/thunderidConfig.yaml
+kubectl apply -f operator/testdata/thunderidConfig.yaml
 ```
 
 No base resources ConfigMap needed — the image bakes in its own default
@@ -222,23 +222,9 @@ kubectl describe resource my-console-app
 
 ---
 
-## GitOps (Flux)
+## Demo app
 
-`operator/gitops/` is watched by [Flux](https://fluxcd.io): a `CustomResourceDefinition`-first `crds` Kustomization applies `operator/config/crd/bases/`, and a `flux-system` Kustomization (which `dependsOn: crds` for correct ordering) applies everything else in that directory — including `thunderidConfig.yaml` and any `Resource` CRs placed there. Edit a file, `git commit`, `git push`, and it's live on the cluster with no `kubectl apply` at all.
-
-This is optional — steps 1–4 above work standalone with plain `kubectl apply`. To set up your own Flux instance against a fork of this repo, install the [Flux CLI](https://fluxcd.io/flux/installation/) and run:
-
-```bash
-export GITHUB_TOKEN="your-token-here"   # classic PAT with repo scope
-flux bootstrap github \
-  --owner=<your-github-username> \
-  --repository=<your-fork-name> \
-  --branch=main \
-  --path=operator/gitops \
-  --personal
-```
-
-See [demo-partner-app/README.md](demo-partner-app/README.md) for a full worked example, including how to speed up Flux's default poll intervals for faster iteration.
+A React app that signs in through a ThunderID instance run by this operator lives in its own repo: [thunderid-demo](https://github.com/samadhisakunika/thunderid-demo).
 
 ---
 
@@ -495,7 +481,7 @@ Any field, in any `resource_type` — a user's `credentials.password`, an applic
 
 A `ThunderIDInstance` auto-discovers its env Secret the same way a `Resource` finds its owning instance, just in reverse: whichever `EnvironmentValues` in the instance's namespace carries the label `thunderid.io/instance: <instance name>` is the one whose Secret gets mounted whole via `envFrom`. There's no field on `ThunderIDInstanceSpec` naming it — the reference lives on the `EnvironmentValues` side. At most one `EnvironmentValues` may carry a given instance's label; more than one is a config error surfaced as an `InvalidSpec` event rather than picking one arbitrarily. The operator only ever mounts this Secret whole — it never creates, reads individual keys from, or generates values into it. Two ways to author it, both producing exactly the same Secret and both fully supported:
 
-**Apply an `EnvironmentValues`** — a declarative CR: the operator syncs `spec.env` into a Secret of the same name, then overwrites each synced key's value in `spec.env` with a masked marker (`thunderid-masked:<up to 3 leading chars>**********`) so the plaintext — and even its real length — is never visible again via `kubectl get/describe environmentvalues`. The object itself is never deleted — `status.keys` lists which keys are currently synced. To change a value later, re-apply with new plaintext for just that key; `kubectl apply`'s 3-way merge leaves already-masked sibling keys untouched. The plaintext briefly exists in the `EnvironmentValues` object's own `spec` in etcd before it's masked — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for that short window. **Always apply `EnvironmentValues` with `kubectl apply --server-side`**, never plain `kubectl apply` — plain apply copies the whole manifest, plaintext included, into the object's `last-applied-configuration` annotation, bypassing the masking entirely (see `operator/gitops/README.md`). Never put `EnvironmentValues` under GitOps (Flux) management — a continuously-reconciling GitOps tool will fight the masking:
+**Apply an `EnvironmentValues`** — a declarative CR: the operator syncs `spec.env` into a Secret of the same name, then overwrites each synced key's value in `spec.env` with a masked marker (`thunderid-masked:<up to 3 leading chars>**********`) so the plaintext — and even its real length — is never visible again via `kubectl get/describe environmentvalues`. The object itself is never deleted — `status.keys` lists which keys are currently synced. To change a value later, re-apply with new plaintext for just that key; `kubectl apply`'s 3-way merge leaves already-masked sibling keys untouched. The plaintext briefly exists in the `EnvironmentValues` object's own `spec` in etcd before it's masked — unlike the Secret it produces, that object gets none of Kubernetes' Secret-specific handling (base64, RBAC scoped to `secrets`, and encryption-at-rest where the cluster has it configured) for that short window. **Always apply `EnvironmentValues` with `kubectl apply --server-side`**, never plain `kubectl apply` — plain apply copies the whole manifest, plaintext included, into the object's `last-applied-configuration` annotation, bypassing the masking entirely (the same leak happens on a hand-applied `Secret`; `kubectl describe secret` hiding values doesn't touch that annotation). `--server-side` never writes that annotation, and it rejects an accidental reapply of an unedited file with a conflict instead of overwriting the masked values. To change one key, apply a manifest containing only that key — resubmitting the full original file makes every already-masked key conflict, and `--force-conflicts` would overwrite them all. An object that already carries the annotation from an earlier plain apply needs it stripped once: `kubectl annotate <kind> <name> kubectl.kubernetes.io/last-applied-configuration- -n <namespace>`. Never put `EnvironmentValues` under GitOps (Flux) management — a continuously-reconciling GitOps tool will fight the masking:
 ```yaml
 apiVersion: apps.thunderid.io/v1alpha1
 kind: EnvironmentValues

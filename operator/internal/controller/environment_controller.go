@@ -98,7 +98,7 @@ func maskValue(v string) string {
 // Updating a value later means re-applying the same EnvironmentValues with new plaintext for that key
 // — kubectl apply's 3-way merge only sends the changed field, so already-masked sibling keys are
 // untouched. Do NOT put EnvironmentValues under GitOps (Flux) management — see
-// operator/gitops/README.md.
+// README.md, "Env vars & {{.VAR}} placeholders".
 type EnvironmentValuesReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme

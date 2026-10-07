@@ -37,7 +37,7 @@ spec:
           change to one can't accidentally cascade-delete the other. Do NOT put this CRD under GitOps
           (Flux) management: a continuously reconciling GitOps tool enforces live-must-match-Git and
           will fight the masking forever (reverting it back to plaintext every reconcile) — see
-          operator/gitops/README.md.
+          README.md, "Env vars & {{.VAR}} placeholders".
 
           Labeling this object with InstanceRefLabel (thunderid.io/instance: <name>, same label a
           Resource uses) makes that ThunderIDInstance auto-discover this EnvironmentValues's Secret and mount
